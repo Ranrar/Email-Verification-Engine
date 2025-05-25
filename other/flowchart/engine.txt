@@ -1,0 +1,65 @@
+                           +----------------+
+                           |     Start      | 
+                           +--------+-------+
+                                    |
+                                    v
+                        +--------------------------+ 
+                        | Format Validation        |  
+                        | (EvFilter.validate)      |
+                        +--------+-----------------+
+                                 |
+              +------------------+------------------+
+              |                                     |
+              v                                     v
+   +--------------------------+         +-----------------------------+  
+   | 📬 Email Checks           |         | 🌐 Domain Checks          |  
+   +--------------------------+         +-----------------------------+    
+
+   | - Extract local/domain    |         | - Check if blocked          |
+   |   (EvFilter.extract)      |         |   (DomainFilter.is_blocked) |
+   |                          |         |                             |
+   | - Catch-all Detection     |         | - Resolve A/AAAA & MX       |
+   |   (SMTPComm.check_domain) |         |   (DNSResolver.get_mx)      |
+   |                          |         |                             |
+   | - SMTP Mailbox Check      |         | - WHOIS Info                |
+   |   (SMTPComm.verify)       |         |   (WhoisLookup.get)         |
+   |                          |         |                             |
+   | - IMAP/POP3 (optional)    |         | - GeoIP / ASN               |
+   |   (ProtocolCheck.imap)    |         |   (GeoIPResolver.get)       |
+   |                          |         |                             |
+   |                          |         | - DNSBL / RBL Check         |
+   |                          |         |   (ReputationChecker.check) |
+   +------------+-------------+         |                             |
+                \                       | - TLS, cert info (opt.)     |
+                 \                      |   (TLSInspector.inspect)    |
+                  \                     |                             |
+                   \                    +-------------+---------------+
+                    \                                |
+                     \                               v
+                      \                 +------------------------------+
+                       \                | SPF / DKIM / DMARC Check     |
+                        \--------------> | (AuthSecChecker.run_all)     |
+                                         +--------------+--------------+
+                                                        |
+                                                        v
+                                         +------------------------------+
+                                         | Calculate Confidence Score   |
+                                         | (ConfidenceScorer.calculate)|
+                                         +--------------+--------------+
+                                                        |
+                                                        v
+                                         +------------------------------+
+                                         | Set is_valid + Conf. Level   |
+                                         | (EmailRecord.set_flags)     |
+                                         +--------------+--------------+
+                                                        |
+                                                        v
+                                         +------------------------------+
+                                         | Log to DB + JSON             |
+                                         | (Logger.save_all)           |
+                                         +--------------+--------------+
+                                                        |
+                                                        v
+                                                 +-------------+
+                                                 |     End     |
+                                                 +-------------+

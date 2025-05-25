@@ -1,0 +1,1031 @@
+:root {
+    /* Light theme variables */
+    --bg-color: #f4f4f4;
+    --text-color: #333;
+    --menu-bg: #aaaaaa;
+    --menu-text: #000000;
+    --dropdown-bg: #888888;
+    --dropdown-text: #ffffff;
+    --container-bg: #fff;
+    --button-bg: #5cb85c;
+    --button-hover: #4cae4c;
+    --button-text: #fff;
+    
+    /* Toggle switch colors for light theme */
+    --toggle-bg: #ccc;
+    --toggle-active-bg: #5cb85c;
+    --toggle-button: white;
+    --toggle-active-button: white;
+    
+    /* ASCII Logo color for light theme */
+    --logo-color: #5cb85c;
+    --logo-shadow: rgba(0, 0, 0, 0.3);
+    
+    /* New variables for results container */
+    --results-container-bg: #f9f9f9;
+    --results-container-border: #ddd;
+    --results-heading-color: #333;
+    --results-row-border: #eee;
+    --valid-result-color: #2e7d32;
+    --invalid-result-color: #c62828;
+    
+    /* Message colors */
+    --message-error-bg: #ffebee;
+    --message-error-color: #c62828;
+    --message-error-border: #ffcdd2;
+    --message-success-bg: #e8f5e9;
+    --message-success-color: #2e7d32;
+    --message-success-border: #c8e6c9;
+    --message-info-bg: #e3f2fd;
+    --message-info-color: #1565c0;
+    --message-info-border: #bbdefb;
+    
+    /* Add new theme switch specific variables for light mode */
+    --theme-switch-bg: #4cae4c; /* Light blue when off (day) */
+    --theme-switch-active-bg: #4cae4c; /* Indigo when on (night) */
+}
+
+[data-theme="dark"] {
+    /* Dark theme variables */
+    --bg-color: #222;
+    --text-color: #eee;
+    --menu-bg: #444;
+    --menu-text: #ffffff;
+    --dropdown-bg: #555;
+    --dropdown-text: #ffffff;
+    --container-bg: #333;
+    --button-bg: #cc0000;
+    --button-hover: #990000;
+    --button-text: #fff;
+    
+    /* Toggle switch colors for dark theme */
+    --toggle-bg: #555;
+    --toggle-active-bg: #990000;
+    --toggle-button: #ddd;
+    --toggle-active-button: white;
+    
+    /* ASCII Logo color for dark theme */
+    --logo-color: #cc0000;
+    --logo-shadow: #990000(255, 255, 255, 0.1);
+    
+    /* New variables for results container in dark mode */
+    --results-container-bg: #2a2a2a;
+    --results-container-border: #444;
+    --results-heading-color: #eee;
+    --results-row-border: #444;
+    --valid-result-color: #4caf50;
+    --invalid-result-color: #ef5350;
+    
+    /* Message colors for dark mode */
+    --message-error-bg: #311b1b;
+    --message-error-color: #ef5350;
+    --message-error-border: #842029;
+    --message-success-bg: #1b311d;
+    --message-success-color: #4caf50;
+    --message-success-border: #2a5834;
+    --message-info-bg: #1a2733;
+    --message-info-color: #64b5f6;
+    --message-info-border: #0d47a1;
+    
+    /* Add new theme switch specific variables for dark mode */
+    --theme-switch-bg: #990000; /* Indigo when off (night) */
+    --theme-switch-active-bg: #990000; /* Light blue when on (day) */
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    transition: background-color 0.3s ease;
+    padding-top: 40px; /* Adjust this value to match your menu height */
+}
+
+/* Menu Bar Styles */
+.menu-bar {
+    background-color: var(--menu-bg);
+    width: 100%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    display: flex;
+    justify-content: space-between;
+}
+
+.menu-bar ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* Remove overflow:hidden which was hiding the dropdowns */
+.menu-bar > ul {
+    display: flex;
+}
+
+.menu-bar > ul > li {
+    position: relative;
+}
+
+.menu-bar a {
+    display: block;
+    color: var(--menu-text);
+    text-align: center;
+    padding: 14px 16px;
+    text-decoration: none;
+}
+
+.menu-bar > ul > li:hover {
+    background-color: var(--container-bg);
+}
+
+/* Dropdown Menu */
+.dropdown, .submenu {
+    display: none;
+    position: absolute;
+    background-color: var(--dropdown-bg);
+    min-width: 200px; /* Increased from 160px to accommodate longer text */
+    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    z-index: 200;
+}
+
+.dropdown {
+    top: 100%;
+    left: 0;
+}
+
+.dropdown a, .submenu a {
+    color: var(--dropdown-text);
+    padding: 10px 16px;
+    text-align: left;
+    white-space: nowrap; /* Prevent text wrapping */
+    overflow: hidden;
+    text-overflow: ellipsis; /* Show ... if text is too long */
+    display: block;
+    line-height: 1.4; /* Improve readability */
+}
+
+.dropdown a:hover, .submenu a:hover {
+    background-color: rgba(0,0,0,0.1);
+}
+
+/* Important: Make this more specific to ensure it works */
+.menu-bar > ul > li:hover > .dropdown {
+    display: block;
+}
+
+/* Submenu positioning and display */
+.has-submenu {
+    position: relative;
+}
+
+.submenu {
+    min-width: 100%;
+    left: 100%;
+    top: 0;
+    z-index: 300;
+}
+
+/* Make this more specific too */
+.has-submenu:hover > .submenu {
+    display: block;
+}
+
+/* Theme Switch - completely rebuilt to match toggle switch */
+.theme-switch-wrapper {
+    display: flex;
+    align-items: center;
+    padding: 0 16px 0 0; /* Added right padding of 16px */
+    justify-content: center;
+    gap: 8px; /* Use gap instead of margin for consistent spacing */
+}
+
+.theme-switch-wrapper span {
+    color: var(--menu-text);
+    font-size: 14px;
+    padding: 0;
+    margin: 0;
+}
+
+/* Make theme-switch exactly match toggle-switch */
+.theme-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    margin: 0; /* Remove any default margins */
+}
+
+.theme-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
+}
+
+/* Update the theme switch slider to use the custom variables */
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--theme-switch-bg); /* Change from --toggle-bg */
+    transition: .4s;
+    border-radius: 24px; /* Always use rounded corners */
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--toggle-button);
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: var(--theme-switch-active-bg); /* Change from --toggle-active-bg */
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
+    background-color: var(--toggle-active-button);
+}
+
+/* Remove these as they're redundant now */
+.slider.round {
+    border-radius: 24px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
+}
+
+/* Toggle Switch - for Log Monitoring */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--toggle-bg); /* Unchanged */
+    transition: .4s;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--toggle-button);
+    transition: .4s;
+}
+
+input:checked + .toggle-slider {
+    background-color: var(--toggle-active-bg); /* Unchanged */
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(26px);
+    background-color: var(--toggle-active-button);
+}
+
+.toggle-slider.round {
+    border-radius: 24px;
+}
+
+.toggle-slider.round:before {
+    border-radius: 50%;
+}
+
+/* Main Container */
+.container {
+    max-width: 600px;
+    margin: 20px auto;
+    background: var(--container-bg);
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    position: relative;
+    z-index: 50;
+    transition: background-color 0.3s ease;
+    padding-top: 15px;
+}
+
+h1 {
+    color: var(--text-color);
+}
+
+input[type="email"] {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid var(--results-container-border); /* Use theme variable instead of hardcoded #ccc */
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    box-sizing: border-box; /* This fixes the width issue */
+    transition: border-color 0.3s ease, background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Add focus state for better UX */
+input[type="email"]:focus {
+    outline: none;
+    border-color: var(--button-bg);
+    box-shadow: 0 0 3px var(--button-bg);
+}
+
+button {
+    background-color: var(--button-bg);
+    color: var(--button-text);
+    padding: 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: var(--button-hover);
+}
+
+/* Dialog styles */
+.dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    display: none;
+}
+
+.dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: var(--container-bg);
+    color: var(--text-color);
+    padding: 20px;
+    border-radius: 5px;
+    /* Changed from a full border to individual borders */
+    border-top: 1px solid var(--results-container-border);
+    border-left: 1px solid var(--results-container-border);
+    border-right: 1px solid var(--results-container-border);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+    z-index: 101;
+    min-width: 300px;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Keep the rest of your dialog styling unchanged */
+.dialog-title {
+    font-weight: bold;
+    font-size: 1.2em;
+    margin-bottom: 10px;
+    color: var(--text-color);
+    border-bottom: 1px solid var(--results-container-border);
+    padding-bottom: 8px;
+    transition: color 0.3s ease, border-color 0.3s ease;
+}
+
+.dialog-body {
+    margin-bottom: 20px;
+    color: var(--text-color);
+    transition: color 0.3s ease;
+}
+
+.dialog-buttons {
+    text-align: right;
+    padding-top: 10px;
+    border-top: 0px solid var(--results-container-border);
+    transition: border-color 0.3s ease;
+}
+
+.dialog-buttons button {
+    margin-left: 10px;
+    background-color: var(--button-bg);
+    color: var(--button-text);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dialog-buttons button:hover {
+    background-color: var(--button-hover);
+}
+
+.results-container {
+    margin-top: 20px;
+    border: 1px solid var(--results-container-border);
+    border-radius: 5px;
+    padding: 15px;
+    background-color: var(--results-container-bg);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.results-container h2 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+    color: var(--results-heading-color);
+    transition: color 0.3s ease;
+}
+
+.results-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.results-table tr {
+    border-bottom: 1px solid var(--results-row-border);
+    transition: border-color 0.3s ease;
+}
+
+.results-table tr:last-child {
+    border-bottom: none;
+}
+
+.results-table td {
+    padding: 8px 5px;
+    color: var(--text-color);
+    transition: color 0.3s ease;
+}
+
+.results-table td:first-child {
+    font-weight: bold;
+    width: 40%;
+}
+
+.valid-result {
+    color: var(--valid-result-color);
+    transition: color 0.3s ease;
+}
+
+.invalid-result {
+    color: var(--invalid-result-color);
+    transition: color 0.3s ease;
+}
+
+/* Show dropdown when the 'show' class is present */
+.dropdown.show, .submenu.show {
+    display: block;
+}
+
+/* Update message classes with theme variables */
+.message {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 4px;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.message.error {
+    background-color: var(--message-error-bg);
+    color: var(--message-error-color);
+    border: 1px solid var(--message-error-border);
+}
+
+.message.success {
+    background-color: var(--message-success-bg);
+    color: var(--message-success-color);
+    border: 1px solid var(--message-success-border);
+}
+
+.message.info {
+    background-color: var(--message-info-bg);
+    color: var(--message-info-color);
+    border: 1px solid var(--message-info-border);
+}
+
+/* ASCII Art Logo Styling */
+.ascii-art {
+    font-family: "Courier New", Courier, monospace; /* True monospace font */
+    white-space: pre;
+    text-align: left; /* Left-align the text */
+    font-size: 10px; /* Smaller size for better rendering */
+    line-height: 1.2; /* Tighter line spacing */
+    margin: 20px auto; /* Center the container */
+    color: var(--logo-color); /* Use theme variable instead of fixed color */
+    text-shadow: 0 0 2px var(--logo-shadow); /* Use theme variable for shadow */
+    max-width: 400px; /* Control the width */
+    display: table; /* This helps with centering while keeping text left-aligned */
+    margin-left: auto;
+    margin-right: auto;
+    transition: color 0.3s ease, text-shadow 0.3s ease; /* Smooth transition when theme changes */
+}
+
+/* Progress bar styling */
+.progress-container {
+    margin: 15px 0;
+}
+
+.progress-bar {
+    height: 10px;
+    background-color: var(--results-container-bg);
+    border-radius: 5px;
+    margin: 10px 0;
+    overflow: hidden;
+    border: 1px solid var(--results-container-border);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: var(--button-bg);
+    width: 0;
+    transition: width 0.3s ease, background-color 0.3s ease;
+    border-radius: 5px;
+}
+
+.step-info {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-color);
+    transition: color 0.3s ease;
+    font-size: 0.9em;
+}
+
+/* Expanded Details Styling */
+.show-more-container {
+    text-align: center;
+    margin: 15px 0;
+}
+
+.show-more-button {
+    background-color: var(--button-bg);
+    color: var(--button-text);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    font-size: 14px;
+}
+
+.show-more-button:hover {
+    background-color: var(--button-hover);
+}
+
+.expanded-details-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 15px;
+}
+
+.collapse-button {
+    background-color: var(--container-bg);
+    color: var(--text-color);
+    border: 1px solid var(--results-container-border);
+    padding: 5px 10px;
+    margin-left: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    font-size: 12px;
+}
+
+.collapse-button:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Accordion styling */
+.accordion {
+    border: 1px solid var(--results-container-border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+
+.accordion-item {
+    border-bottom: 1px solid var(--results-container-border);
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.accordion-item:last-child {
+    border-bottom: none;
+}
+
+.accordion-header {
+    padding: 12px 15px;
+    background-color: var(--results-container-bg);
+    color: var(--text-color);
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.3s ease;
+}
+
+.accordion-header:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.accordion-header::after {
+    content: '+';
+    font-size: 18px;
+}
+
+.accordion-item.active .accordion-header::after {
+    content: '-';
+}
+
+.accordion-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+    padding: 0 15px; /* Add side padding even when collapsed */
+}
+
+.accordion-item.active .accordion-content {
+    max-height: 100%; /* Adjust as needed */
+    padding: 15px; /* Add top and bottom padding when expanded */
+}
+
+.details-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.details-table tr {
+    border-bottom: 1px solid var(--results-container-border);
+}
+
+.details-table tr:last-child {
+    border-bottom: none;
+}
+
+.details-table td {
+    padding: 8px;
+    vertical-align: top;
+}
+
+.details-table td:first-child {
+    font-weight: bold;
+    width: 30%;
+    color: var(--results-heading-color);
+}
+
+.json-display {
+    background-color: var(--results-container-bg);
+    padding: 10px;
+    border-radius: 4px;
+    overflow: auto;
+    max-height: 400px;
+    color: var(--text-color);
+    font-family: monospace;
+    white-space: pre-wrap;
+    border: 1px solid var(--results-container-border);
+}
+
+/* Initialization page specific styles */
+.init-page {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding-top: 0; /* Override the default padding-top */
+}
+
+.loading-container {
+    max-width: 600px;
+    width: 100%;
+    background-color: var(--container-bg);
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    color: var(--text-color);
+    margin: 0 auto;
+}
+
+.system-message {
+    display: none; /* Hide log messages by default */
+}
+
+.copyright {
+    text-align: center;
+    font-size: 0.8em;
+    margin-top: 20px;
+    color: var(--text-color);
+}
+
+/* Notifier */
+.toast {
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    min-width: 250px;
+    max-width: 350px;
+    min-height: 24px;
+    transition: all 0.3s ease;
+    opacity: 0;
+    line-height: 1.4;
+}
+
+.generic-info, .task-info, .system-info, .debug-info{
+    background-color: #2196F3;
+    color: white;
+}
+
+.generic-success, .task-success, .system-success {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.generic-error, .task-error, .system-error, .auth-error, .log-error {
+    background-color: #f44336;
+    color: white;
+}
+
+.generic-warning, .system-warning, .user-warning, .log-warning {
+    background-color: #ff9800;
+    color: white;
+}
+
+.special-notice {
+    background-color: #9C27B0; 
+    color: white;
+}
+
+/* Persistent notifications */
+.toast[data-persistent="true"] {
+    cursor: pointer;
+    padding-right: 40px;
+    position: relative;
+}
+
+.toast[data-persistent="true"]:hover {
+    filter: brightness(1.1);
+}
+
+.toast .close-icon {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%); 
+    right: 14px;
+    font-size: 14px;
+    opacity: 0.7;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 50%;
+    margin-left: 10px;
+}
+
+.toast .close-icon:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+.toast-message {
+    margin-right: 20px;  /* Make room for the close icon */
+}
+
+.toast-details {
+    font-size: 0.9em;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    margin-top: 5px;
+    padding: 0;
+    opacity: 0.9;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+}
+
+.toast[data-persistent="true"]:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Settings Panel Overlay */
+.settings-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+}
+
+.settings-container {
+    background-color: var(--container-bg);
+    color: var(--text-color);
+    width: 80%;
+    max-width: 900px;
+    max-height: 90vh;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background-color: var(--button-bg);
+    color: white;
+}
+
+.settings-header h2 {
+    margin: 0;
+    color: white;
+}
+
+.close-button {
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0 8px;
+    border-radius: 4px;
+}
+
+.close-button:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.settings-content {
+    padding: 20px;
+    overflow-y: auto;
+    max-height: calc(90vh - 60px);
+}
+
+.settings-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--results-container-border);
+    margin-bottom: 20px;
+    gap: 5px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+
+.settings-tab-btn {
+    background-color: transparent;
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    color: var(--text-color);
+    font-weight: normal;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.settings-tab-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.settings-tab-btn.active {
+    color: var(--button-bg);
+    border-bottom: 3px solid var(--button-bg);
+    font-weight: bold;
+}
+
+.settings-tab-content {
+    margin-bottom: 30px;
+}
+
+.settings-form {
+    margin-top: 15px;
+}
+
+.settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 15px 0;
+    gap: 10px;
+    border-top: 1px solid var(--results-container-border);
+    margin-top: 20px;
+}
+
+.loader {
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    color: var(--text-color);
+}
+
+.btn {
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s ease;
+}
+
+.btn-primary {
+    background-color: var(--button-bg);
+    color: var(--button-text);
+    border: none;
+}
+
+.btn-primary:hover {
+    background-color: var(--button-hover);
+}
+
+.btn-secondary {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border: 1px solid var(--results-container-border);
+}
+
+.btn-secondary:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Settings specific input styling */
+.settings-form input[type="text"],
+.settings-form input[type="number"],
+.settings-form textarea,
+.settings-form select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--results-container-border);
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+.settings-form input:focus,
+.settings-form textarea:focus,
+.settings-form select:focus {
+    outline: none;
+    border-color: var(--button-bg);
+    box-shadow: 0 0 3px var(--button-bg);
+}
+
+/* Settings Button */
+.settings-button {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background-color: var(--button-bg);
+    color: var(--button-text);
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    margin-right: 15px;
+    transition: background-color 0.2s ease;
+}
+
+.settings-button:hover {
+    background-color: var(--button-hover);
+}
+
+.settings-button svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Adjust theme switch wrapper to accommodate button */
+.theme-switch-wrapper {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    padding-right: 15px;
+}
