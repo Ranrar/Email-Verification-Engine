@@ -10,7 +10,7 @@ Email Verification Engine
  ██████████     ░░███       ██████████
 ░░░░░░░░░░       ░░░       ░░░░░░░░░░
 
-Email Verification Engine V 0.1
+Email Verification Engine V 0.2
 Copytight © 2025 by Kim Skov Rasmussen
 https://github.com/Ranrar
 Read licens before use

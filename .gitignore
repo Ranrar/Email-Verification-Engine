@@ -1,4 +1,13 @@
 /.cache
 /logs
 /__pycache__
+/.gitignore
+/other/pg_tools.7z
+/src/database/__pycache__
 /src/database/key.env
+/src/database/backup
+/src/utils/__pycache__
+/src/managers/__pycache__
+/src/helpers/__pycache__
+/src/engine/__pycache__
+/src/engine/functions/__pycache__
