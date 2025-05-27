@@ -594,6 +594,20 @@ class CacheManager:
         
         try:
             with self.lock:
+                # Check if disk connection is available, reconnect if needed
+                if not hasattr(self, 'disk_conn') or self.disk_conn is None:
+                    logger.warning("Disk connection not available, attempting to reconnect")
+                    try:
+                        disk_cache_dir = self.settings.get("DISK_CACHE_DIR", "./.cache")
+                        os.makedirs(disk_cache_dir, exist_ok=True)
+                        self.disk_cache_path = os.path.join(disk_cache_dir, "cache.db")
+                        self.disk_conn = sqlite3.connect(self.disk_cache_path, check_same_thread=False)
+                        self._init_disk_cache()
+                        logger.info("Reconnected to disk cache")
+                    except Exception as e:
+                        logger.error(f"Failed to reconnect to disk cache: {e}")
+                        return {"error": "Disk connection unavailable"}
+                
                 # Level 2: DISKCACHE (SQLITE3) - Disk Cache
                 with self.disk_conn:
                     deleted = self.disk_conn.execute("DELETE FROM cache WHERE expires_at < ?", (now,)).rowcount
