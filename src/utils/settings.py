@@ -111,11 +111,20 @@ def update_app_setting(id: int, value: str):
 def update_rate_limit(id: int, value: str, enabled: bool):
     """Update a specific rate limit setting by ID"""
     try:
+        # Convert string value to integer
+        int_value = int(value)
+        
         sync_db.execute(
             "UPDATE rate_limit SET value = $1, enabled = $2 WHERE id = $3",
-            value, enabled, id
+            int_value, enabled, id
         )
         return {"success": True}
+    except ValueError as e:
+        logger.error(f"Error converting value to integer (id={id}, value='{value}'): {str(e)}")
+        return {
+            "success": False,
+            "error": f"Invalid value: '{value}' cannot be converted to integer"
+        }
     except Exception as e:
         logger.error(f"Error updating rate limit (id={id}): {str(e)}")
         return {

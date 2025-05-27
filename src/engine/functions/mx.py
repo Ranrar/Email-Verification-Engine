@@ -130,7 +130,8 @@ class MXCacher:
                 
             except dns.resolver.NXDOMAIN:
                 timer.add_metadata("error", "NXDOMAIN")
-                logger.warning(f"Domain {domain} does not exist (NXDOMAIN)")
+                # Change from warning to info
+                logger.info(f"Domain {domain} does not exist (NXDOMAIN)")
                 # Cache negative result with shorter TTL
                 cache_manager.set(cache_key, [], ttl=300)
                 return {
@@ -138,7 +139,8 @@ class MXCacher:
                     "mx_records": [],
                     "error": "Domain does not exist",
                     "timestamp": now_utc(),
-                    "duration_ms": timer.elapsed_ms
+                    "duration_ms": timer.elapsed_ms,
+                    "status": "NXDOMAIN"  # Add status field for easier checking
                 }
                 
             except dns.resolver.NoAnswer:
@@ -260,6 +262,19 @@ def fetch_mx_records(context):
     # Use existing MXCacher to lookup records
     mx_cacher = MXCacher()
     mx_result = mx_cacher.fetch_and_cache_mx(domain)
+    
+    # Return immediately if domain doesn't exist
+    if mx_result.get("error") == "Domain does not exist" or mx_result.get("status") == "NXDOMAIN":
+        logger.info(f"[{trace_id}] Validation stopped: {domain} does not exist")
+        return {
+            "valid": False,
+            "error": "Domain does not exist",
+            "records": [],
+            "has_mx": False,
+            "execution_time": mx_result.get("duration_ms", 0),
+            "domain_exists": False,  # Add explicit field about domain existence
+            "is_deliverable": False  # Add explicit deliverability status
+        }
     
     # Format result for validation system
     mx_records = mx_result.get("mx_records", [])

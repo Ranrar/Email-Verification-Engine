@@ -190,6 +190,25 @@ function addDebugButtonListeners() {
 }
 
 /**
+ * Show a notification using the global notification system
+ * @param {string} type_name - The notification type: 'success', 'error', 'warning', 'info'
+ * @param {string} message - The message to display
+ * @param {boolean} persistent - Whether the notification should persist until clicked
+ * @param {string} details - Optional additional details to show on hover
+ */
+function showDebugNotification(type_name, message, persistent = false, details = null) {
+    if (typeof show_message === 'function') {
+        // Use the global show_message function exposed by main.js
+        // Parameters match notifier.py: type_name, message, persistent, details
+        show_message(type_name, message, persistent, details);
+    } else {
+        // Fallback if show_message isn't available
+        console[type_name === 'error' ? 'error' : type_name === 'warning' ? 'warn' : 'log'](message);
+        alert(`${type_name.toUpperCase()}: ${message}${details ? '\n' + details : ''}`);
+    }
+}
+
+/**
  * Handle debug toggle actions
  */
 async function handleDebugToggle(action, isChecked) {
@@ -202,15 +221,15 @@ async function handleDebugToggle(action, isChecked) {
             if (!result.success) {
                 // If there was an error, revert the toggle
                 document.getElementById('log-monitoring-toggle').checked = !isChecked;
-                showDebugMessage('Error', `Failed to ${isChecked ? 'start' : 'stop'} log monitoring: ${result.error}`);
+                showDebugNotification('error', `Failed to ${isChecked ? 'start' : 'stop'} log monitoring`, true, result.error);
             }
-            // Success message removed
+            // Success message removed as requested
         }
     } catch (error) {
         console.error(`Error in debug toggle ${action}:`, error);
         // Revert the toggle on error
         document.getElementById('log-monitoring-toggle').checked = !isChecked;
-        showDebugMessage('Error', `Failed to toggle ${action}: ${error.message}`);
+        showDebugNotification('error', `Failed to toggle ${action}`, true, error.message);
     }
 }
 
@@ -227,7 +246,7 @@ async function handleDebugAction(action) {
                     'This will clear memory cache, disk cache, and database cache entries.', 
                     async () => {
                         const result = await eel.debug_action('purge-cache')();
-                        showDebugMessage('Cache Purged', result);
+                        showDebugNotification('success', 'Cache Purged', false, result);
                     });
                 break;
                 
@@ -261,7 +280,17 @@ async function handleDebugAction(action) {
                 break;
                 
             case 'test-notification':
-                eel.test_notifications(); // This will trigger the Python function that uses the notifier
+                // Test all notification types
+                showDebugNotification('info', 'This is a test info notification', false, 'Additional details for info message');
+                setTimeout(() => {
+                    showDebugNotification('success', 'This is a test success notification', false, 'Task completed successfully');
+                }, 1000);
+                setTimeout(() => {
+                    showDebugNotification('warning', 'This is a test warning notification', true, 'This is a persistent warning with details');
+                }, 2000);
+                setTimeout(() => {
+                    showDebugNotification('error', 'This is a test error notification', true, 'This is a persistent error with details');
+                }, 3000);
                 break;
                 
             case 'purge-exit':
@@ -282,9 +311,8 @@ async function handleDebugAction(action) {
                     monitoringToggle.checked = !isActive;
                 }
                 
-                // Success message removed
                 if (!result.success) {
-                    showDebugMessage('Error', `Error: ${result.error}`);
+                    showDebugNotification('error', 'Log monitoring toggle failed', true, result.error);
                 }
                 break;
                 
@@ -293,7 +321,7 @@ async function handleDebugAction(action) {
         }
     } catch (error) {
         console.error(`Error in debug action ${action}:`, error);
-        showDebugMessage('Error', `Failed to execute ${action}: ${error.message}`);
+        showDebugNotification('error', `Failed to execute ${action}`, true, error.message);
     }
 }
 

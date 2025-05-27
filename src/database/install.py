@@ -472,25 +472,43 @@ def check_database_and_handle_options():
                 # Handle restore
                 clear_screen()
                 print_info("=== Database Restore ===")
-                custom_path = prompt(
-                    message=HTML("<prompt>Enter backup file path (leave empty for default): </prompt>"),
+                backup_dir = Path(__file__).parent / "backups"
+                dump_files = sorted(backup_dir.glob("*.dump"))
+                if not dump_files:
+                    print_error("No .dump files found in the backup folder.")
+                    return True
+
+                print_highlight("\nAvailable backup files:")
+                for idx, file in enumerate(dump_files, 1):
+                    # Get file modified time and size
+                    mtime = file.stat().st_mtime
+                    size_mb = file.stat().st_size / (1024 * 1024)
+                    from datetime import datetime
+                    date_str = datetime.fromtimestamp(mtime).strftime('%m-%d-%Y')
+                    print_info(f"{idx}. Backup from {date_str} ({size_mb:.2f} MB) - {file.name}")
+
+                file_choice = prompt(
+                    message=HTML("<prompt>Select a backup file by number (or leave empty to cancel): </prompt>"),
                     style=style
                 ).strip()
-                
+                if not file_choice.isdigit() or int(file_choice) < 1 or int(file_choice) > len(dump_files):
+                    print_info("Restore cancelled.")
+                    return True
+
+                selected_file = dump_files[int(file_choice) - 1]
                 confirm = prompt(
-                    message=HTML("<prompt>This will overwrite your current database. Continue? (y/n): </prompt>"),
+                    message=HTML(f"<prompt>This will overwrite your current database with '{selected_file.name}'. Continue? (y/n): </prompt>"),
                     style=style
                 ).lower().strip()
-                
+
                 if confirm.startswith('y'):
                     clear_screen()
-                    print_info("Restoring database...")
-                    backup_path = custom_path if custom_path else None
-                    restore_database(backup_path)
+                    print_info(f"Restoring database from {selected_file.name} ...")
+                    restore_database(str(selected_file))
                 else:
                     clear_screen()
                     print_info("Database restore cancelled.")
-                    
+
                 return True
                 
             elif choice == "3":
@@ -625,14 +643,14 @@ def display_welcome_message():
     """Display a welcome message when the program starts"""
     clear_screen()
     print("\n" + "="*65)
-    print_formatted_text(HTML("<highlight>EVE Database installer</highlight>"), style=style)
+    print_formatted_text(HTML("<highlight>Email Verification Engine Database installer</highlight>"), style=style)
     print("="*65)
-    print_info("This utility helps you install, update, or reinstall the database for EVE.")
+    print_info("This utility helps you install, backup, or reinstall the database.")
     print("="*65 + "\n")
 
 if __name__ == "__main__":
     display_welcome_message()
-    print_formatted_text(HTML("<highlight>1.</highlight> Install/Reinstall database"), style=style)
+    print_formatted_text(HTML("<highlight>1.</highlight> Install/Backup database"), style=style)
     print_formatted_text(HTML("<highlight>2.</highlight> Update database tables (drop &amp; recreate)"), style=style)
     print_formatted_text(HTML("<highlight>3.</highlight> Exit"), style=style)
     choice = prompt(
@@ -642,6 +660,46 @@ if __name__ == "__main__":
     if choice == "1":
         check_database_and_handle_options()
     elif choice == "2":
-        update_database_tables()
+        clear_screen()
+        print_highlight("You are about to DROP ALL TABLES, VIEWS, FUNCTIONS, etc. and recreate the schema.")
+        confirm = prompt(
+            message=HTML("<prompt>This will ERASE ALL DATA. Are you sure? (y/n): </prompt>"),
+            style=style
+        ).lower().strip()
+        if not confirm.startswith('y'):
+            print_info("Update cancelled.")
+        else:
+            conn = connect_to_postgres()
+            if not conn:
+                print_error("Cannot connect to database. Aborting update.")
+            else:
+                # 1. Run drop.sql
+                drop_path = Path(__file__).parent / "drop.sql"
+                if not drop_path.exists():
+                    print_error(f"drop.sql not found: {drop_path}")
+                elif not execute_sql_file(conn, drop_path):
+                    print_error("Failed to execute drop.sql. Aborting.")
+                else:
+                    # 2. Confirm DB is empty (no tables)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';
+                    """)
+                    result = cursor.fetchone()
+                    table_count = result[0] if result is not None else 0
+                    if table_count > 0:
+                        print_error("Database is NOT empty after drop.sql. Aborting.")
+                    else:
+                        print_success("Database is empty. Proceeding to install schema.sql...")
+                        schema_path = Path(__file__).parent / "schema.sql"
+                        if not schema_path.exists():
+                            print_error(f"schema.sql not found: {schema_path}")
+                        elif execute_sql_file(conn, schema_path):
+                            print_success("Schema installed successfully!")
+                        else:
+                            print_error("Failed to execute schema.sql.")
+                    cursor.close()
+                conn.close()
+                print_info("Database connection closed.")
     else:
         print_info("Exiting installer.")

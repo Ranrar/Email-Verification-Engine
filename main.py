@@ -67,28 +67,74 @@ def verify_email(email):
         # Perform validation
         validation_result = engine.validate(email)
         
-        # Format the response for the frontend
+        # Format the response for the frontend with expanded details
         response = {
             "valid": validation_result.get("is_valid", False),
             "message": "Email is valid." if validation_result.get("is_valid") else "Email is invalid.",
             "details": {
+                # Core validation results
                 "confidence_score": validation_result.get("confidence_score", 0),
                 "confidence_level": validation_result.get("confidence_level", "Low"),
-                "smtp_verified": validation_result.get("smtp_result", False),
-                "is_disposable": validation_result.get("is_disposable", False),
-                "mx_records": validation_result.get("mx_records", []),
+                "is_deliverable": validation_result.get("smtp_result", False),
+                "is_format_valid": validation_result.get("is_format_valid", False),
+                "execution_time": validation_result.get("execution_time", 0),
+                "execution_time_formatted": validation_result.get("execution_time_formatted", ""),
+                
+                # Domain information
                 "domain": validation_result.get("domain", ""),
-                "trace_id": validation_result.get("trace_id", "")
+                "trace_id": validation_result.get("trace_id", ""),
+                "mx_records": validation_result.get("mx_records", []),
+                "mx_preferences": validation_result.get("mx_preferences", []),
+                
+                # Classification status
+                "is_disposable": validation_result.get("is_disposable", False),
+                "catch_all": validation_result.get("catch_all", False),
+                
+                # DNS security
+                "dns_security": {
+                    "spf": validation_result.get("spf_status", ""),
+                    "dkim": validation_result.get("dkim_status", ""),
+                    "dmarc": validation_result.get("dmarc_status", "")
+                },
+                
+                # SMTP validation details
+                "smtp": {
+                    "verified": validation_result.get("smtp_result", False),
+                    "error_code": validation_result.get("smtp_details", {}).get("smtp_error_code"),
+                    "server_message": validation_result.get("smtp_details", {}).get("server_message", ""),
+                    "connection_success": validation_result.get("smtp_details", {}).get("connection_success", False),
+                    "supports_tls": validation_result.get("smtp_details", {}).get("supports_starttls", False),
+                    "supports_auth": validation_result.get("smtp_details", {}).get("supports_auth", False)
+                },
+                
+                # Infrastructure information
+                "infrastructure": {
+                    "provider": validation_result.get("email_provider", {}).get("provider_name", "Unknown"),
+                    "self_hosted": validation_result.get("email_provider", {}).get("self_hosted", False),
+                    "countries": validation_result.get("infrastructure_info", {}).get("countries", [])
+                },
+                
+                # Blacklist/whitelist information
+                "list_status": {
+                    "blacklisted": validation_result.get("blacklist_info", {}).get("blacklisted", False),
+                    "whitelisted": validation_result.get("blacklist_info", {}).get("whitelisted", False),
+                    "source": validation_result.get("blacklist_info", {}).get("source", "")
+                },
+                
+                # Cache information if available
+                "cache_info": validation_result.get("cache_info", {})
             }
         }
         
-        print(f"Email validation completed for {email}: {response['valid']}")
+        # Include error message if present
+        if validation_result.get("error_message"):
+            response["details"]["error_message"] = validation_result.get("error_message")
+        
+        logger.info(f"Email validation completed for {email}: {response['valid']}")
         return response
         
     except Exception as e:
-        print(f"Error verifying email {email}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error verifying email {email}: {str(e)}", exc_info=True)
         return {
             "valid": False,
             "message": f"Error: {str(e)}",

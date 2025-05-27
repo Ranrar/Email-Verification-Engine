@@ -319,20 +319,7 @@ class RateLimitManager:
         # If it's not found, raise an error
         logger.error(f"Domain/MX rate limit '{setting_name}' not found in database")
         raise KeyError(f"Domain/MX rate limit '{setting_name}' not found in database")
-    
-    def get_auth_security_limit(self, setting_name: str) -> Any:
-        """Get a specific authentication/security rate limit"""
-        if self.auth_security_limits is None:
-            self._load_auth_security_limits()
         
-        # If setting exists, return it
-        if self.auth_security_limits is not None and setting_name in self.auth_security_limits:
-            return self.auth_security_limits[setting_name]
-        
-        # If it's not found, raise an error
-        logger.error(f"Auth/security rate limit '{setting_name}' not found in database")
-        raise KeyError(f"Auth/security rate limit '{setting_name}' not found in database")
-    
     def get_additional_protocol_limit(self, setting_name: str) -> Any:
         """Get a specific additional protocol rate limit"""
         if self.additional_limits is None:
@@ -345,20 +332,7 @@ class RateLimitManager:
         # If it's not found, raise an error
         logger.error(f"Additional protocol rate limit '{setting_name}' not found in database")
         raise KeyError(f"Additional protocol rate limit '{setting_name}' not found in database")
-        
-    def get_cache_limit(self, setting_name: str) -> Any:
-        """Get a specific cache-related rate limit"""
-        if self.cache_limits is None:
-            self._load_cache_limits()
-        
-        # If setting exists, return it
-        if self.cache_limits is not None and setting_name in self.cache_limits:
-            return self.cache_limits[setting_name]
-        
-        # If it's not found, raise an error
-        logger.error(f"Cache rate limit '{setting_name}' not found in database")
-        raise KeyError(f"Cache rate limit '{setting_name}' not found in database")
-    
+            
     def get_dns_limit(self, setting_name: str) -> Any:
         """Get a specific DNS rate limit"""
         if self.dns_limits is None:
@@ -490,29 +464,36 @@ class RateLimitManager:
         Record usage of a rate-limited resource
         """
         from src.managers.cache import cache_manager, CacheKeys
-        key = CacheKeys.rate_limit_state_key(category, resource_id)
-        count = cache_manager.get(key)
-        if not isinstance(count, int):
-            count = 0
+        key = f"rate_limit:{category}:{resource_id}"  # Simplified key format
+        count = cache_manager.get(key) or 0
         count += 1
-        cache_manager.set_with_ttl(key, count, 60)
+        cache_manager.set(key, count, ttl=60)
+        
+        # Debug log
+        logger.debug(f"Recorded usage: {category}.{resource_id} = {count}")
         return count
     
     def get_usage_count(self, category, resource_id):
         """Get current usage count for a rate-limited resource"""
-        from src.managers.cache import cache_manager, CacheKeys
-        key = CacheKeys.rate_limit_state_key(category, resource_id)
-        return cache_manager.get(key) or 0
+        from src.managers.cache import cache_manager
+        key = f"rate_limit:{category}:{resource_id}"  # Simplified key format
+        count = cache_manager.get(key) or 0
+        return count
     
     def check_rate_limit(self, category, resource_id, limit_name):
-        """
-        Check if a rate limit has been reached
-        """
+        """Check if a rate limit has been reached"""
         current_count = self.get_usage_count(category, resource_id)
         limit_value = None
+        
         try:
             if category == 'smtp':
                 limit_value = self.get_smtp_limit(limit_name)
+                
+                # FIXED: Validate limit value for max_connections_per_domain
+                if limit_name == 'max_connections_per_domain' and (limit_value is None or limit_value <= 0):
+                    logger.warning(f"Invalid {limit_name} value: {limit_value}, using default of 5")
+                    limit_value = 5  # Use a sensible default
+                
             elif category == 'dom_mx':
                 limit_value = self.get_domain_mx_limit(limit_name)
             elif category == 'auth_security':
@@ -528,9 +509,20 @@ class RateLimitManager:
                 return False, current_count
         except Exception as e:
             logger.error(f"Failed to get rate limit {category}.{limit_name}: {e}")
-            return False, current_count
+            if limit_name == 'max_connections_per_domain':
+                # For this critical setting, use a default instead of failing
+                limit_value = 5
+                logger.warning(f"Using default value of {limit_value} for {limit_name}")
+                return current_count >= limit_value, {'limit': limit_value, 'current': current_count}
+            else:
+                return False, current_count
         
-        return current_count >= limit_value, current_count
+        # FIXED: Ensure we have a valid limit value before comparison
+        if limit_value is None or limit_value <= 0:
+            logger.warning(f"Invalid limit value for {category}.{limit_name}: {limit_value}, allowing operation")
+            return False, {'limit': 'invalid', 'current': current_count}
+        
+        return current_count >= limit_value, {'limit': limit_value, 'current': current_count}
     
     def is_near_limit(self, category, resource_id, limit_name, threshold_percent=80):
         """
@@ -575,6 +567,52 @@ class RateLimitManager:
             return self.get_smtp_limit('rate_limit_block_duration')
         except KeyError:
             return 300  # 5 minutes default
+
+    # Add new helper methods for the SMTP domain management cache settings
+    def get_smtp_domain_stats_ttl(self):
+        """Get cache TTL for SMTP domain statistics"""
+        try:
+            return self.get_cache_limit('smtp_domain_stats_ttl')
+        except KeyError:
+            return 3600  # 1 hour default
+    
+    def get_smtp_attempt_history_ttl(self):
+        """Get cache TTL for SMTP attempt history"""
+        try:
+            return self.get_cache_limit('smtp_attempt_history_ttl')
+        except KeyError:
+            return 86400  # 24 hours default
+    
+    def get_smtp_regional_settings_ttl(self):
+        """Get cache TTL for SMTP regional settings"""
+        try:
+            return self.get_cache_limit('smtp_regional_settings_ttl')
+        except KeyError:
+            return 604800  # 7 days default
+
+    def get_auth_security_limit(self, limit_name: str) -> Any:
+        """Get auth/security rate limit"""
+        try:
+            result = sync_db.fetchval(
+                "SELECT value FROM rate_limit WHERE category = 'auth_security' AND name = $1 AND enabled = TRUE",
+                limit_name
+            )
+            return result or 0
+        except Exception as e:
+            logger.warning(f"Failed to get auth/security limit {limit_name}: {e}")
+            return 0
+
+    def get_cache_limit(self, limit_name: str) -> int:
+        """Get cache TTL limit"""
+        try:
+            result = sync_db.fetchval(
+                "SELECT value FROM rate_limit WHERE category = 'cache' AND name = $1 AND enabled = TRUE",
+                limit_name
+            )
+            return int(result) if result else 3600
+        except Exception as e:
+            logger.warning(f"Failed to get cache limit {limit_name}: {e}")
+            return 3600
 
 
 # Create a singleton instance for external use

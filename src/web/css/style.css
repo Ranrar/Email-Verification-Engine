@@ -1029,3 +1029,46 @@ button:hover {
     margin-left: auto;
     padding-right: 15px;
 }
+
+.smtp-results {
+  margin: 15px 0;
+  padding: 10px;
+  border-radius: 5px;
+  background-color: var(--results-background, #f5f5f5);
+  border-left: 3px solid var(--results-container-border, #ddd);
+}
+
+.smtp-results-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.smtp-results-list li {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.smtp-label {
+  font-weight: bold;
+}
+
+.smtp-value {
+  text-align: right;
+}
+
+.smtp-value.success {
+  color: var(--success-color, #4caf50);
+}
+
+.smtp-value.error {
+  color: var(--error-color, #f44336);
+}
+
+.smtp-server-message {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--results-container-border, #ddd);
+  font-size: 0.9em;
+}

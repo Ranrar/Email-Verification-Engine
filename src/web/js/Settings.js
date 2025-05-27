@@ -27,18 +27,20 @@ function formatSettingName(name) {
 
 /**
  * Show a notification to the user
- * @param {string} type - The notification type: 'success', 'error', 'warning', 'info'
+ * @param {string} type_name - The notification type: 'success', 'error', 'warning', 'info'
  * @param {string} message - The message to display
  * @param {boolean} persistent - Whether the notification should persist until clicked
+ * @param {string} details - Optional additional details to show on hover
  */
-function showNotification(type, message, persistent = false) {
+function showNotification(type_name, message, persistent = false, details = null) {
     if (typeof show_message === 'function') {
         // Use the global show_message function exposed by main.js
-        show_message(type, message, persistent);
+        // Parameters match notifier.py: type_name, message, persistent, details
+        show_message(type_name, message, persistent, details);
     } else {
         // Fallback if show_message isn't available
-        console[type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'log'](message);
-        alert(`${type.toUpperCase()}: ${message}`);
+        console[type_name === 'error' ? 'error' : type_name === 'warning' ? 'warn' : 'log'](message);
+        alert(`${type_name.toUpperCase()}: ${message}${details ? '\n' + details : ''}`);
     }
 }
 
@@ -66,7 +68,7 @@ const settingsState = {
 };
 
 /**
- * Initialize the settings menu
+ * Initialize the settings menu and handle panel management
  */
 async function initSettingsMenu() {
     // Only initialize once
@@ -98,7 +100,6 @@ async function initSettingsMenu() {
     const autotuneBtn = document.getElementById('run-autotune-btn');
     if (autotuneBtn) {
         autotuneBtn.addEventListener('click', runExecutorAutotune);
-        // Add hover effect
         autotuneBtn.addEventListener('mouseover', function() {
             this.style.backgroundColor = 'var(--button-hover)';
         });
@@ -352,7 +353,7 @@ function renderRateLimits() {
                 <div style="display: flex; padding: 10px; background-color: var(--results-container-bg); 
                      border-radius: 5px; margin-bottom: 5px;" data-id="${setting.id}" data-type="rate">
                     <div style="flex: 1; padding-right: 15px;">
-                        <label for="rate-setting-${setting.id}" style="font-weight: bold; color: var(--text-color);">
+                        <label for="rate-setting-${setting.id}" style="font-weight: bold; color: var,--text-color);">
                             ${setting.name}
                         </label>
                         <div style="font-size: 0.9em; color: var(--text-muted); margin-top: 5px;">
@@ -1409,6 +1410,40 @@ function formatDate(dateString) {
     return date.toLocaleString();
 }
 
+/**
+ * Open settings panel with specified tab
+ */
+function openSettingsPanel(tabName = 'general') {
+    const settingsPanel = document.getElementById('settingsPanel');
+    if (!settingsPanel) return;
+    
+    settingsPanel.style.display = 'flex';
+    
+    // Initialize settings if needed
+    initSettingsMenu().then(() => {
+        // Switch to the specified tab
+        if (tabName) {
+            switchSettingsTab(tabName);
+        }
+    });
+    
+    // Disable scrolling on the background
+    document.body.style.overflow = 'hidden';
+}
+
+/**
+ * Close settings panel
+ */
+function closeSettingsPanel() {
+    const settingsPanel = document.getElementById('settingsPanel');
+    if (!settingsPanel) return;
+    
+    settingsPanel.style.display = 'none';
+    
+    // Re-enable scrolling
+    document.body.style.overflow = 'auto';
+}
+
 // Execute when page loads
 document.addEventListener('DOMContentLoaded', function() {
     // Test tab button event listeners
@@ -1419,3 +1454,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+
+// Export functions for use in main.js
+window.openSettingsPanel = openSettingsPanel;
+window.closeSettingsPanel = closeSettingsPanel;
+window.initSettingsMenu = initSettingsMenu;
+window.switchSettingsTab = switchSettingsTab;

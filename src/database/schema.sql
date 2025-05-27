@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ NOT NULL,          
     is_active BOOLEAN DEFAULT FALSE,
     suspended_date TIMESTAMPTZ,               
-    signup_location TEXT                  
+    signup_location TEXT,
+    signup_IP TEXT                  
 );
 
 -- audit_log
@@ -51,8 +52,9 @@ CREATE TABLE IF NOT EXISTS email_validation_functions (
 
 -- Populate email_validation_functions table with core validation steps
 INSERT INTO email_validation_functions (function_name, display_name, description, priority, enabled, module_path, function_path) VALUES
+('validate_domain', 'Domain Existence Check', 'Verifies domain existence via DNS before other validations', 5, True, 'src.engine.functions.validate_domain', 'validate_domain'),
 ('email_format_resaults', 'Email Format Check', 'Validates email format syntax and structure', 10, True, 'src.engine.formatcheck', 'email_format_resaults'),
-('blacklist_check', 'Domain Filter Check', 'Checks if domain is whitelisted, blacklisted, or temporarily blocked', 20, true, 'src.engine.functions.bw', 'check_black_white'),
+('blacklist_check', 'Black/White List Check', 'Checks if domain is whitelisted, blacklisted, or temporarily blocked', 20, true, 'src.engine.functions.bw', 'check_black_white'),
 ('mx_records', 'MX Records', 'Checks for valid mail exchanger records', 30, True, 'src.engine.functions.mx', 'fetch_mx_records'),
 ('whois_info', 'WHOIS Information', 'Retrieves domain registration information', 35, true, 'src.engine.functions.mx', 'fetch_whois_info'),
 ('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_email'),
@@ -86,7 +88,12 @@ INSERT INTO email_validation_function_dependencies (function_name, depends_on) V
 ('catch_all_check', 'smtp_validation'),
 ('imap_check', 'mx_records'),
 ('pop3_check', 'mx_records'),
-('disposable_check', 'email_format_resaults')
+('disposable_check', 'email_format_resaults'),
+('validate_domain', 'email_format_resaults'),
+('mx_records', 'validate_domain'),
+('blacklist_check', 'validate_domain'),
+('whois_info', 'validate_domain'),
+('mx_records', 'blacklist_check')
 ON CONFLICT (function_name, depends_on) DO NOTHING;
 
 -- batch_info
@@ -115,6 +122,11 @@ CREATE TABLE IF NOT EXISTS email_validation_records (
     smtp_result TEXT,
     smtp_banner TEXT,
     smtp_vrfy TEXT,
+    smtp_supports_tls BOOLEAN,
+    smtp_supports_auth BOOLEAN,
+    smtp_flow_success BOOLEAN,
+    smtp_error_code INTEGER,
+    smtp_server_message TEXT,
     port TEXT,
     mx_records TEXT,
     mx_ip TEXT,
@@ -138,13 +150,13 @@ CREATE TABLE IF NOT EXISTS email_validation_records (
     disposable TEXT,
     blacklist_info TEXT,
     error_message TEXT,
+    is_valid BOOLEAN DEFAULT FALSE,
     confidence_score INTEGER DEFAULT 0,
     execution_time REAL DEFAULT 0,
     timing_details TEXT,
     check_count INTEGER DEFAULT 1,
     batch_id INTEGER NULL,
     raw_result JSONB,
-    is_valid BOOLEAN DEFAULT FALSE,
     validation_complete BOOLEAN DEFAULT FALSE,
     CONSTRAINT unique_trace_id UNIQUE (trace_id),
     CONSTRAINT fk_batch FOREIGN KEY (batch_id) REFERENCES batch_info(id) ON DELETE SET NULL
@@ -162,11 +174,14 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 
 INSERT INTO app_settings (category, sub_category, name, value, description) VALUES
-('general', 'general', 'user_agent', 'Email Verification Engine (https://github.com/Ranrar/Email-Verification-Engine', 'User-Agent string for HTTP requests'),
-('general', 'general', 'version', '1.0.0', 'EVE version'),
+('general', 'general', 'user_agent_email', 'Email Verification Engine (https://github.com/Ranrar/Email-Verification-Engine', 'User-Agent string for HTTP requests'),
+('general', 'general', 'version', '0.2', 'Email Verification Engine version'),
 ('Settings', 'Cache', 'cache purge', '30', 'Seconds between cache check TTL to purge for L1, L2 and L3 cache'),
 ('Settings', 'Debug', 'Enable', '1', 'Enable Debug menu 1=True 0=False'),
-('Settings', 'Start', 'Enable', '1', 'Enable Auto-benchmark during start 1=True 0=False')
+('Settings', 'Start', 'Enable', '0', 'Enable Auto-benchmark during start 1=True 0=False'),
+('Database', 'Backup', 'Enable', '1', 'Enable database backup 1=True 0=False'),
+('Database', 'Backup', 'Count', '5', 'Number of backups to keep'),
+('Database', 'Backup', 'TimeUTC', '02:00', 'Time (UTC) to run backup (HH:MM)')
 ON CONFLICT (description) DO NOTHING;
 
 -- validation scoring
@@ -282,7 +297,7 @@ INSERT INTO rate_limit (category, name, value, is_time, enabled, description) VA
 ('smtp', 'max_banner_requests_per_minute', 100, FALSE, TRUE, 'Maximum number of banner requests per minute'),
 ('smtp', 'max_reverse_dns_requests_per_minute', 100, FALSE, TRUE, 'Maximum number of reverse DNS (PTR) requests per minute'),
 ('smtp', 'max_whois_requests_per_minute', 15, FALSE, TRUE, 'Maximum number of WHOIS requests per minute'),
-('smtp', 'sender_pattern', 0, FALSE, TRUE, 'Email pattern for SMTP sender address'),
+('smtp', 'sender_pattern', 0, FALSE, TRUE, 'Email pattern for SMTP sender address: verification@{domain}'),
 ('smtp', 'timeout_block_duration', 600, TRUE, TRUE, 'Duration in seconds to block domains after timeout'),
 ('smtp', 'rate_limit_block_duration', 300, TRUE, TRUE, 'Duration in seconds to block domains after rate limit violation'),
 
@@ -329,6 +344,9 @@ INSERT INTO rate_limit (category, name, value, is_time, enabled, description) VA
 ('cache', 'dmarc_cache_ttl', 3600, TRUE, TRUE, 'Cache DMARC results for 1-6 hours based on TTL'),
 ('cache', 'dnssec_cache_ttl', 86400, TRUE, TRUE, 'Cache DNSSEC validity for 24 h'),
 ('cache', 'tls_rpt_cache_ttl', 86400, TRUE, TRUE, 'Cache TLS-RPT TXT for 24 h'),
+('cache', 'smtp_domain_stats_ttl', 3600, TRUE, TRUE, 'Cache TTL for SMTP domain statistics (1 hour)'),
+('cache', 'smtp_attempt_history_ttl', 86400, TRUE, TRUE, 'Cache TTL for SMTP attempt history (24 hours)'),
+('cache', 'smtp_blocked_cache_ttl', 60, TRUE, TRUE, 'Cache TTL for SMTP temporary blocklist checks (60 seconds)'),
 
 -- DNS request rate limits
 ('dns', 'mx_lookup', 120, FALSE, TRUE, 'Maximum MX record lookups per minute'),
@@ -709,6 +727,11 @@ CREATE TABLE IF NOT EXISTS smtp_domain_stats (
     -- Settings and flags
     custom_settings JSONB DEFAULT NULL,
     is_problematic BOOLEAN DEFAULT FALSE,
+
+    --error code stats
+    last_error_code INTEGER,
+    common_error_codes JSONB DEFAULT '{}',
+    
     
     UNIQUE(domain)
 );
@@ -728,64 +751,31 @@ CREATE TABLE IF NOT EXISTS smtp_domain_attempt_history (
     trace_id TEXT
 );
 
--- Region-specific configurations
-CREATE TABLE IF NOT EXISTS smtp_regional_settings (
+-- Temp blocked domains
+CREATE TABLE IF NOT EXISTS smtp_temporary_blocklist (
     id SERIAL PRIMARY KEY,
-    country_code VARCHAR(2) NOT NULL,
-    region VARCHAR(100),
-    provider VARCHAR(100),
-    
-    -- Timing settings
-    connect_timeout_ms INTEGER DEFAULT 10000,
-    read_timeout_ms INTEGER DEFAULT 30000,
-    max_retry_count INTEGER DEFAULT 3,
-    
-    -- Rate limiting settings
-    min_interval_seconds INTEGER DEFAULT 10,
-    max_connections_per_minute INTEGER DEFAULT 5,
-    
-    -- Flag to indicate if this is a default for the country
-    is_country_default BOOLEAN DEFAULT FALSE,
-    
-    -- Additional settings
-    settings_json JSONB DEFAULT NULL,
-    
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    
-    UNIQUE(country_code, region, provider)
+    domain VARCHAR(255) NOT NULL,
+    reason TEXT NOT NULL,
+    blocked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    block_count INTEGER DEFAULT 1,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(domain)
 );
 
 -- =============================================
--- Functions, triggers, and indexes
+-- Functions
 -- =============================================
 
--- Recursive function: get all dependencies for a given function_name
-CREATE OR REPLACE FUNCTION get_all_dependencies(func_name TEXT)
-RETURNS TABLE(depends_on TEXT) AS $$
+-- A cleanup function for expired temporary blocks
+CREATE OR REPLACE FUNCTION clear_expired_temp_blocks()
+RETURNS INTEGER AS $$
+DECLARE
+    deleted_count INTEGER;
 BEGIN
-    RETURN QUERY
-    WITH RECURSIVE dep_chain(func_name, depends_on) AS (
-        SELECT function_name, depends_on
-        FROM email_validation_function_dependencies
-        WHERE function_name = func_name
-
-        UNION
-
-        SELECT d.function_name, d.depends_on
-        FROM email_validation_function_dependencies d
-        INNER JOIN dep_chain dc ON d.function_name = dc.depends_on
-    )
-    SELECT depends_on FROM dep_chain;
-END;
-$$ LANGUAGE plpgsql;
-
--- Function: cleanup_before_insert
-CREATE OR REPLACE FUNCTION cleanup_before_insert()
-RETURNS trigger AS $$
-BEGIN
-    PERFORM clear_expired_temp_blocks();
-    RETURN NEW;
+    DELETE FROM smtp_temporary_blocklist WHERE expires_at <= NOW();
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -830,6 +820,133 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Function to get domain statistics
+CREATE OR REPLACE FUNCTION get_domain_stats(domain_name TEXT)
+RETURNS RECORD AS $$
+DECLARE
+    result RECORD;
+BEGIN
+    SELECT * INTO result
+    FROM smtp_domain_stats 
+    WHERE domain = domain_name;
+    
+    -- If no record exists, create one with defaults
+    IF NOT FOUND THEN
+        INSERT INTO smtp_domain_stats (domain)
+        VALUES (domain_name)
+        ON CONFLICT (domain) DO NOTHING;
+        
+        SELECT * INTO result
+        FROM smtp_domain_stats 
+        WHERE domain = domain_name;
+    END IF;
+    
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to calculate success rates
+CREATE OR REPLACE FUNCTION calculate_domain_success_rate(domain_name TEXT)
+RETURNS NUMERIC AS $$
+DECLARE
+    success_rate NUMERIC;
+BEGIN
+    SELECT 
+        CASE 
+            WHEN total_attempts > 0 THEN 
+                ROUND((successful_attempts::NUMERIC / total_attempts) * 100, 2)
+            ELSE 0
+        END
+    INTO success_rate
+    FROM smtp_domain_stats
+    WHERE domain = domain_name;
+    
+    RETURN COALESCE(success_rate, 0);
+END;
+$$ LANGUAGE plpgsql;
+
+-- geographic update 
+CREATE OR REPLACE FUNCTION update_domain_geographic_info(
+    domain_name TEXT, 
+    p_country_code VARCHAR(2) DEFAULT NULL,
+    p_region VARCHAR(100) DEFAULT NULL,
+    p_provider VARCHAR(100) DEFAULT NULL
+) RETURNS VOID AS $$
+BEGIN
+    UPDATE smtp_domain_stats 
+    SET 
+        country_code = COALESCE(p_country_code, country_code),
+        region = COALESCE(p_region, region),
+        detected_provider = COALESCE(p_provider, detected_provider)
+    WHERE domain = domain_name;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =============================================
+-- Triggers
+-- =============================================
+
+-- Trigger: cleanup_expired_cache
+CREATE TRIGGER cleanup_expired_cache
+AFTER INSERT ON cache_entries
+EXECUTE FUNCTION expire_cache_entries();
+
+-- Trigger: update_email_filter_regex_settings_timestamp
+CREATE TRIGGER update_email_filter_regex_settings_timestamp
+BEFORE UPDATE ON email_filter_regex_settings
+FOR EACH ROW EXECUTE FUNCTION update_timestamp();
+
+-- =============================================
+-- Indexes
+-- =============================================
+
+-- Email validation records indexes
+CREATE INDEX IF NOT EXISTS idx_email_validation_trace_id ON email_validation_records(trace_id);
+CREATE INDEX IF NOT EXISTS idx_email_validation_email ON email_validation_records(email);
+CREATE INDEX IF NOT EXISTS idx_email_validation_domain ON email_validation_records(domain);
+CREATE INDEX IF NOT EXISTS idx_email_validation_timestamp ON email_validation_records(timestamp);
+
+-- MX infrastructure indexes
+CREATE INDEX IF NOT EXISTS idx_mx_infrastructure_trace_id ON mx_infrastructure(trace_id);
+CREATE INDEX IF NOT EXISTS idx_mx_domain ON mx_infrastructure(domain);
+CREATE INDEX IF NOT EXISTS idx_mx_provider_name ON mx_infrastructure(provider_name);
+CREATE INDEX IF NOT EXISTS idx_mx_ip_addresses_provider ON mx_ip_addresses(provider);
+
+-- MX IP addresses indexes
+CREATE INDEX IF NOT EXISTS idx_mx_ip_addresses_trace_id ON mx_ip_addresses(trace_id);
+CREATE INDEX IF NOT EXISTS idx_ip_address ON mx_ip_addresses(ip_address);
+CREATE INDEX IF NOT EXISTS idx_country_code ON mx_ip_addresses(country_code);
+
+-- Validation steps and logs indexes
+CREATE INDEX IF NOT EXISTS idx_validation_steps_trace ON validation_steps(trace_id);
+CREATE INDEX IF NOT EXISTS idx_validation_steps_email ON validation_steps(email);
+CREATE INDEX IF NOT EXISTS idx_validation_logs_trace ON validation_logs(trace_id);
+
+-- Other important indexes
+CREATE INDEX IF NOT EXISTS idx_func_depends ON email_validation_function_dependencies(function_name, depends_on);
+CREATE INDEX IF NOT EXISTS idx_depends_on ON email_validation_function_dependencies(depends_on);
+CREATE INDEX IF NOT EXISTS cache_entries_key_category_idx ON cache_entries(key, category);
+CREATE INDEX IF NOT EXISTS cache_entries_category_idx ON cache_entries(category);
+CREATE INDEX IF NOT EXISTS idx_cache_entries_created_ttl ON cache_entries(created_at, ttl);
+CREATE INDEX IF NOT EXISTS idx_dns_server_stats_nameserver ON dns_server_stats(nameserver);
+CREATE INDEX IF NOT EXISTS idx_dns_server_stats_timestamp ON dns_server_stats(timestamp);
+CREATE INDEX IF NOT EXISTS idx_executor_pool_benchmark_log_run_time ON executor_pool_benchmark_log(run_time DESC);
+
+--SMTP
+CREATE INDEX IF NOT EXISTS idx_smtp_domain_stats_domain ON smtp_domain_stats(domain);
+CREATE INDEX IF NOT EXISTS idx_smtp_attempt_history_domain ON smtp_domain_attempt_history(domain);
+CREATE INDEX IF NOT EXISTS idx_smtp_temp_blocklist_domain ON smtp_temporary_blocklist(domain);
+CREATE INDEX IF NOT EXISTS idx_smtp_temp_blocklist_expires ON smtp_temporary_blocklist(expires_at);
+CREATE INDEX IF NOT EXISTS idx_smtp_domain_stats_retry_after ON smtp_domain_stats(retry_available_after) WHERE retry_available_after IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_smtp_domain_stats_problematic ON smtp_domain_stats(is_problematic) WHERE is_problematic = TRUE;
+CREATE INDEX IF NOT EXISTS idx_smtp_domain_stats_provider ON smtp_domain_stats(detected_provider) WHERE detected_provider IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_smtp_attempt_history_trace ON smtp_domain_attempt_history(trace_id);
+CREATE INDEX IF NOT EXISTS idx_smtp_attempt_history_time ON smtp_domain_attempt_history(attempt_time);
+CREATE INDEX IF NOT EXISTS idx_smtp_attempt_history_success ON smtp_domain_attempt_history(success, attempt_time);
+-- =============================================
+-- View
+-- =============================================
+
 -- Validation Pipeline View
 CREATE OR REPLACE VIEW validation_pipeline AS
 SELECT 
@@ -868,108 +985,6 @@ GROUP BY
     mip.ip_address,
     mip.country_code,
     mip.region;
-
--- Regional performance analysis
-CREATE OR REPLACE VIEW smtp_regional_performance AS
-SELECT 
-    COALESCE(ds.country_code, 'unknown') AS country_code,
-    COALESCE(ds.region, 'unknown') AS region,
-    COALESCE(ds.detected_provider, 'unknown') AS provider,
-    COUNT(DISTINCT ds.domain) AS domains_count,
-    SUM(ds.total_attempts) AS total_attempts,
-    ROUND((SUM(ds.successful_attempts)::numeric / 
-           NULLIF(SUM(ds.total_attempts), 0) * 100), 2) AS success_rate_pct,
-    COUNT(CASE WHEN ds.is_problematic THEN 1 END) AS problematic_domains_count
-FROM 
-    smtp_domain_stats ds
-GROUP BY 
-    ROLLUP(ds.country_code, ds.region, ds.detected_provider)
-ORDER BY 
-    country_code, region, provider;
-
--- Create useful analysis views
-CREATE OR REPLACE VIEW smtp_domain_performance AS
-SELECT 
-    ds.domain,
-    ds.total_attempts,
-    ds.successful_attempts,
-    ds.failed_attempts,
-    ds.timeout_count,
-    ds.success_rate,
-    ds.avg_response_time_ms,
-    ds.country_code,
-    ds.region,
-    ds.detected_provider,
-    ds.is_problematic,
-    CASE 
-        WHEN ds.retry_available_after > NOW() 
-        THEN EXTRACT(EPOCH FROM (ds.retry_available_after - NOW()))::INTEGER 
-        ELSE 0 
-    END AS backoff_seconds_remaining
-FROM 
-    smtp_domain_stats ds
-ORDER BY 
-    ds.total_attempts DESC;    
-
--- =============================================
--- Triggers
--- =============================================
-
--- Trigger: cleanup_expired_cache
-CREATE TRIGGER cleanup_expired_cache
-AFTER INSERT ON cache_entries
-EXECUTE FUNCTION expire_cache_entries();
-
--- Trigger: update_email_filter_regex_settings_timestamp
-CREATE TRIGGER update_email_filter_regex_settings_timestamp
-BEFORE UPDATE ON email_filter_regex_settings
-FOR EACH ROW EXECUTE FUNCTION update_timestamp();
-
--- =============================================
--- Indexes for performance
--- =============================================
-
--- Email validation records indexes
-CREATE INDEX IF NOT EXISTS idx_email_validation_trace_id ON email_validation_records(trace_id);
-CREATE INDEX IF NOT EXISTS idx_email_validation_email ON email_validation_records(email);
-CREATE INDEX IF NOT EXISTS idx_email_validation_domain ON email_validation_records(domain);
-CREATE INDEX IF NOT EXISTS idx_email_validation_timestamp ON email_validation_records(timestamp);
-
--- MX infrastructure indexes
-CREATE INDEX IF NOT EXISTS idx_mx_infrastructure_trace_id ON mx_infrastructure(trace_id);
-CREATE INDEX IF NOT EXISTS idx_mx_domain ON mx_infrastructure(domain);
-CREATE INDEX IF NOT EXISTS idx_mx_provider_name ON mx_infrastructure(provider_name);
-CREATE INDEX IF NOT EXISTS idx_mx_ip_addresses_provider ON mx_ip_addresses(provider);
-
--- MX IP addresses indexes
-CREATE INDEX IF NOT EXISTS idx_mx_ip_addresses_trace_id ON mx_ip_addresses(trace_id);
-CREATE INDEX IF NOT EXISTS idx_ip_address ON mx_ip_addresses(ip_address);
-CREATE INDEX IF NOT EXISTS idx_country_code ON mx_ip_addresses(country_code);
-
--- Validation steps and logs indexes
-CREATE INDEX IF NOT EXISTS idx_validation_steps_trace ON validation_steps(trace_id);
-CREATE INDEX IF NOT EXISTS idx_validation_steps_email ON validation_steps(email);
-CREATE INDEX IF NOT EXISTS idx_validation_logs_trace ON validation_logs(trace_id);
-
--- Other important indexes
-CREATE INDEX IF NOT EXISTS idx_func_depends ON email_validation_function_dependencies(function_name, depends_on);
-CREATE INDEX IF NOT EXISTS idx_depends_on ON email_validation_function_dependencies(depends_on);
-CREATE INDEX IF NOT EXISTS cache_entries_key_category_idx ON cache_entries(key, category);
-CREATE INDEX IF NOT EXISTS cache_entries_category_idx ON cache_entries(category);
-CREATE INDEX IF NOT EXISTS idx_cache_entries_created_ttl ON cache_entries(created_at, ttl);
-CREATE INDEX IF NOT EXISTS idx_dns_server_stats_nameserver ON dns_server_stats(nameserver);
-CREATE INDEX IF NOT EXISTS idx_dns_server_stats_timestamp ON dns_server_stats(timestamp);
-CREATE INDEX IF NOT EXISTS idx_executor_pool_benchmark_log_run_time ON executor_pool_benchmark_log(run_time DESC);
-
---SMTP
-CREATE INDEX IF NOT EXISTS idx_smtp_domain_stats_domain ON smtp_domain_stats(domain);
-CREATE INDEX IF NOT EXISTS idx_smtp_attempt_history_domain ON smtp_domain_attempt_history(domain);
-CREATE INDEX IF NOT EXISTS idx_smtp_regional_settings_country ON smtp_regional_settings(country_code);
-
-
--- =============================================
--- Email Validation Statistics View
--- =============================================
 
 -- An comprehensive email validation statistics
 CREATE OR REPLACE VIEW validation_statistics AS
@@ -1082,7 +1097,7 @@ CROSS JOIN mx_stats mx
 CROSS JOIN geo_stats geo
 CROSS JOIN batch_stats bs;
 
--- Create a view for email provider performance analysis
+-- view for email provider performance analysis
 CREATE OR REPLACE VIEW provider_performance AS
 SELECT
     mip.provider,
@@ -1104,3 +1119,39 @@ WHERE mip.provider IS NOT NULL
 GROUP BY mip.provider
 ORDER BY total_validations DESC;
 
+-- SMTP-specific performance view
+CREATE OR REPLACE VIEW smtp_domain_performance AS
+SELECT 
+    domain,
+    total_attempts,
+    successful_attempts,
+    failed_attempts,
+    success_rate,
+    avg_response_time_ms,
+    timeout_count,
+    consecutive_failures,
+    current_backoff_level,
+    is_problematic,
+    detected_provider,
+    country_code,
+    region,
+    last_success_at,
+    last_failure_at,
+    retry_available_after,
+    CASE 
+        WHEN retry_available_after IS NULL OR retry_available_after <= NOW() THEN 'Available'
+        ELSE 'In Backoff'
+    END AS availability_status,
+    CASE 
+        WHEN retry_available_after IS NOT NULL AND retry_available_after > NOW() THEN
+            EXTRACT(EPOCH FROM (retry_available_after - NOW()))
+        ELSE 0
+    END AS backoff_remaining_seconds
+FROM smtp_domain_stats
+ORDER BY total_attempts DESC;
+
+-- Show user e-mail in user_agent_email from users_email
+CREATE OR REPLACE VIEW user_agent_email_view AS
+SELECT u.email AS user_email, a.value AS user_agent_email
+FROM users u
+JOIN app_settings a ON a.name = 'user_agent_email';

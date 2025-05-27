@@ -27,6 +27,9 @@ from src.managers.log import Axe
 from src.helpers.dbh import sync_db
 from src.managers.cache import cache_manager, CacheKeys
 import dataclasses
+from src.engine.functions.bw import check_black_white
+from src.engine.functions.validate_domain import validate_domain
+from src.engine.functions.smtp import validate_email as smtp_validate_email
 
 
 logger = Axe()
@@ -245,9 +248,15 @@ class EmailValidationResult:
     
     def _prepare_db_fields(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare fields for database insertion with proper sanitization."""
+        import json
+
         mx_infrastructure_dict = data.get('mx_infrastructure', {})
         email_provider_dict = data.get('email_provider', {})
-           
+        smtp_details = data.get("smtp_details", {})
+        blacklist_info = data.get("blacklist_info", {})
+        domain_info = data.get("domain_check", {})
+        infrastructure_info = data.get("infrastructure_info", {})
+
         def to_int_or_none(value):
             if value is None or value == "":
                 return None
@@ -255,93 +264,108 @@ class EmailValidationResult:
                 return int(value)
             except (ValueError, TypeError):
                 return None
-        
+
         return {
             "trace_id": self.trace_id,
             "timestamp": datetime.now(timezone.utc),
             "email": sanitize_value(data.get("email")),
             "domain": sanitize_value(data.get("domain")),
-            "smtp_result": sanitize_value(data.get("smtp_result")),
-            "smtp_banner": sanitize_value(data.get("smtp_details", {}).get("banner", "")),
-            "smtp_vrfy": sanitize_value(data.get("smtp_details", {}).get("vrfy_supported", "")),
-            "port": sanitize_value(data.get("smtp_details", {}).get("port", "")),
+
+            # SMTP fields
+            "smtp_result": str(data.get("smtp_result", False)),
+            "smtp_banner": sanitize_value(smtp_details.get("smtp_banner", smtp_details.get("banner", ""))),
+            "smtp_vrfy": str(smtp_details.get("vrfy_supported", False)),
+            "smtp_supports_tls": smtp_details.get("supports_starttls", False),
+            "smtp_supports_auth": smtp_details.get("supports_auth", False),
+            "smtp_flow_success": smtp_details.get("smtp_flow_success", smtp_details.get("smtp_conversation_success", False)),
+            "smtp_error_code": to_int_or_none(smtp_details.get("smtp_error_code")),
+            "smtp_server_message": sanitize_value(smtp_details.get("server_message", "")),
+            "port": sanitize_value(smtp_details.get("port", "")),
+
+            # MX fields
             "mx_records": sanitize_value(data.get("mx_records")),
             "mx_ip": sanitize_value(data.get("mx_ip")),
             "mx_preferences": sanitize_value(data.get("mx_preferences")),
             "mx_analysis": json.dumps(mx_infrastructure_dict) if mx_infrastructure_dict else None,
+
+            # Email provider
+            "email_provider_id": self._get_provider_id(sync_db) if hasattr(self, '_get_provider_id') else None,
             "email_provider_info": json.dumps(email_provider_dict) if email_provider_dict else None,
-            "reverse_dns": sanitize_value(data.get("infrastructure_info", {}).get("ptr_records")),
-            "whois_info": sanitize_value(data.get("infrastructure_info", {}).get("whois_data")),
-            "catch_all": sanitize_value(data.get("catch_all")),
-            "imap_status": sanitize_value(data.get("imap_status")),
-            "imap_info": sanitize_value(data.get("imap_info")),
-            "imap_security": "",  # Add this field if available
-            "pop3_status": sanitize_value(data.get("pop3_status")),
-            "pop3_info": sanitize_value(data.get("pop3_info")),
-            "pop3_security": "",  # Add this field if available
-            "spf_status": sanitize_value(data.get("spf_status")),
-            "dkim_status": sanitize_value(data.get("dkim_status")),
-            "dmarc_status": sanitize_value(data.get("dmarc_status")),
-            "server_policies": sanitize_value(data.get("server_policies")),
-            "disposable": sanitize_value(data.get("is_disposable")),
-            "blacklist_info": sanitize_value(data.get("blacklist_info")),
-            "error_message": sanitize_value(data.get("error_message")),
-            "confidence_score": data.get("confidence_score", 0),
+
+            # Reverse DNS and WHOIS
+            "reverse_dns": sanitize_value(infrastructure_info.get("ptr_records")),
+            "whois_info": sanitize_value(infrastructure_info.get("whois_data")),
+
+            # Black/White list info
+            "blacklist_info": json.dumps(blacklist_info) if blacklist_info else None,
+
+            # Domain check
+            "catch_all": str(data.get("catch_all", "")) if data.get("catch_all", None) is not None else "",
+            "disposable": str(data.get("is_disposable", "")),
+            "error_message": data.get("error_message", ""),
+
+            # IMAP/POP3 (if available)
+            "imap_status": str(data.get("imap_status", "")),
+            "imap_info": json.dumps(data.get("imap_info", {})) if data.get("imap_info") else None,
+            "imap_security": str(data.get("imap_security", "")),
+            "pop3_status": str(data.get("pop3_status", "")),
+            "pop3_info": json.dumps(data.get("pop3_info", {})) if data.get("pop3_info") else None,
+            "pop3_security": str(data.get("pop3_security", "")),
+
+            # SPF/DKIM/DMARC/server policies
+            "spf_status": data.get("spf_status", ""),
+            "dkim_status": data.get("dkim_status", ""),
+            "dmarc_status": data.get("dmarc_status", ""),
+            "server_policies": json.dumps(data.get("server_policies", {})) if data.get("server_policies") else None,
+
+            # Validation status and scoring
+            "is_valid": data.get("is_valid", False),
+            "confidence_score": to_int_or_none(data.get("confidence_score", 0)),
             "execution_time": data.get("execution_time", 0.0),
-            "timing_details": sanitize_value(data.get("timings")),
-            "check_count": data.get("check_count", 1),
+            "timing_details": json.dumps(data.get("timings", {})) if data.get("timings") else None,
+            "check_count": to_int_or_none(data.get("check_count", 1)),
             "batch_id": to_int_or_none(data.get("batch_id")),
-            "raw_result": json.dumps(data)
+            "raw_result": json.dumps(data) if data else None,
+            "validation_complete": self.validation_complete is not None,
         }
     
     def _insert_validation_record(self, db, values: Dict[str, Any]) -> Optional[int]:
-        """Insert the main validation record and return its ID."""
-        columns = ", ".join(values.keys())
-        placeholders = ", ".join([f"${i+1}" for i in range(len(values))])
-        
-        # Use UPSERT pattern to handle duplicate emails
+        """Insert or upsert the main validation record and return its ID."""
+        columns = [
+            "trace_id", "timestamp", "email", "domain",
+            "smtp_result", "smtp_banner", "smtp_vrfy", "smtp_supports_tls", "smtp_supports_auth",
+            "smtp_flow_success", "smtp_error_code", "smtp_server_message", "port",
+            "mx_records", "mx_ip", "mx_preferences", "mx_analysis",
+            "email_provider_id", "email_provider_info", "reverse_dns", "whois_info",
+            "catch_all", "imap_status", "imap_info", "imap_security",
+            "pop3_status", "pop3_info", "pop3_security",
+            "spf_status", "dkim_status", "dmarc_status", "server_policies",
+            "disposable", "blacklist_info", "error_message",
+            "is_valid", "confidence_score", "execution_time", "timing_details",
+            "check_count", "batch_id", "raw_result", "validation_complete"
+        ]
+        # Prepare the values in the correct order
+        insert_values = [values.get(col) for col in columns]
+        col_str = ", ".join(columns)
+        placeholders = ", ".join([f"${i+1}" for i in range(len(columns))])
+    
+        # Build the ON CONFLICT update string (skip id and trace_id)
+        update_cols = [col for col in columns if col not in ("id", "trace_id")]
+        update_str = ",\n                ".join([f"{col} = EXCLUDED.{col}" for col in update_cols])
+    
         sql = f"""
             INSERT INTO email_validation_records (
-                {columns}
+                {col_str}
             ) VALUES (
                 {placeholders}
             )
             ON CONFLICT (trace_id) 
             DO UPDATE SET 
-                timestamp = EXCLUDED.timestamp,
-                smtp_result = EXCLUDED.smtp_result,
-                smtp_banner = EXCLUDED.smtp_banner,
-                smtp_vrfy = EXCLUDED.smtp_vrfy,
-                port = EXCLUDED.port,
-                mx_records = EXCLUDED.mx_records,
-                mx_ip = EXCLUDED.mx_ip,
-                mx_preferences = EXCLUDED.mx_preferences,
-                reverse_dns = EXCLUDED.reverse_dns,
-                whois_info = EXCLUDED.whois_info,
-                catch_all = EXCLUDED.catch_all,
-                imap_status = EXCLUDED.imap_status,
-                imap_info = EXCLUDED.imap_info,
-                imap_security = EXCLUDED.imap_security,
-                pop3_status = EXCLUDED.pop3_status,
-                pop3_info = EXCLUDED.pop3_info,
-                pop3_security = EXCLUDED.pop3_security,
-                spf_status = EXCLUDED.spf_status,
-                dkim_status = EXCLUDED.dkim_status,
-                dmarc_status = EXCLUDED.dmarc_status,
-                server_policies = EXCLUDED.server_policies,
-                disposable = EXCLUDED.disposable,
-                blacklist_info = EXCLUDED.blacklist_info,
-                error_message = EXCLUDED.error_message,
-                confidence_score = EXCLUDED.confidence_score,
-                execution_time = EXCLUDED.execution_time,
-                timing_details = EXCLUDED.timing_details,
-                check_count = EXCLUDED.check_count,
-                batch_id = EXCLUDED.batch_id,
-                raw_result = EXCLUDED.raw_result
+                {update_str}
             RETURNING id
         """
-
-        result = db.fetchrow(sql, *values.values())
+    
+        result = db.fetchrow(sql, *insert_values)
         return result['id'] if result else None
     
     def _store_mx_infrastructure(self, db, record_id: int) -> None:
@@ -511,46 +535,6 @@ class EmailValidationResult:
                 )
             except Exception as e:
                 logger.warning(f"Failed to store IPv6 address {ip}: {e}")
-    
-    def log_validation_step(self, function_name: str, step_name: str, 
-                          start_time: datetime, end_time: Optional[datetime], 
-                          status: str, result: Any, errors: Optional[str] = None) -> bool:
-        """Log a validation step to the database."""
-        try:
-            db = sync_db
-            
-            duration_ms = (end_time - start_time).total_seconds() * 1000 if end_time and start_time else None
-            
-            # Determine step order (could come from a lookup table or just use timestamp)
-            step_order = int(start_time.timestamp() * 1000) if start_time else 0
-            
-            values = {
-                "trace_id": self.trace_id,
-                "email": self.email,
-                "step_name": step_name,
-                "function_name": function_name,
-                "step_order": step_order,
-                "start_time": start_time,
-                "end_time": end_time,
-                "duration_ms": duration_ms,
-                "status": status,
-                "is_success": status == "success",
-                "result": json.dumps(result) if result else None,
-                "errors": errors
-            }
-            
-            columns = ", ".join(values.keys())
-            placeholders = ", ".join([f"${i+1}" for i in range(len(values))])
-            
-            db.execute(
-                f"INSERT INTO validation_steps ({columns}) VALUES ({placeholders})",
-                *values.values()
-            )
-            
-            return True
-        except Exception as e:
-            logger.error(f"Failed to log validation step: {e}", exc_info=True)
-            return False
 
     @staticmethod
     def log_to_batch_info(batch_id, name=None, source=None, status="processing", settings=None, 
@@ -609,45 +593,6 @@ class EmailValidationResult:
         except Exception as e:
             logger.error(f"Failed to log batch info for {batch_id}: {e}", exc_info=True)
             return None
-
-# Add this function to track validation steps in the database
-def log_validation_step(self, function_name, step_name, start_time, end_time, status, result, errors=None):
-    """Log a validation step to the database."""
-    try:
-        db = sync_db
-        
-        duration_ms = (end_time - start_time).total_seconds() * 1000 if end_time and start_time else None
-        
-        # Determine step order (could come from a lookup table or just use timestamp)
-        step_order = int(start_time.timestamp() * 1000) if start_time else 0
-        
-        values = {
-            "trace_id": self.trace_id,
-            "email": self.email,
-            "step_name": step_name,
-            "function_name": function_name,
-            "step_order": step_order,
-            "start_time": start_time,
-            "end_time": end_time,
-            "duration_ms": duration_ms,
-            "status": status,
-            "is_success": status == "success",
-            "result": json.dumps(result) if result else None,
-            "errors": errors
-        }
-        
-        columns = ", ".join(values.keys())
-        placeholders = ", ".join([f"${i+1}" for i in range(len(values))])
-        
-        db.execute(
-            f"INSERT INTO validation_steps ({columns}) VALUES ({placeholders})",
-            *values.values()
-        )
-        
-        return True
-    except Exception as e:
-        logger.error(f"Failed to log validation step: {e}", exc_info=True)
-        return False
 
 def validate_email(email: str, trace_id: Optional[str] = None, use_cache: bool = True) -> Dict[str, Any]:
     """
@@ -794,6 +739,53 @@ def process_validation_results(result: EmailValidationResult, validation_results
     """Process validation results and update the EmailValidationResult object"""
     logger.debug(f"[{result.trace_id}] Processing validation results: {validation_results.keys()}")
     
+    # Black/White list check processing - NEW CODE
+    if 'black_white_check' in validation_results:
+        bw_check = validation_results.get('black_white_check', {})
+        if bw_check.get('blacklisted', False):
+            # Domain is blacklisted, set error and stop validation
+            result.error_message = f"Domain is blacklisted: {bw_check.get('error', 'Unknown reason')}"
+            result.is_valid = False
+            result.blacklist_info = {
+                'blacklisted': True,
+                'source': bw_check.get('source', 'Unknown'),
+                'whitelisted': False
+            }
+            return
+        elif bw_check.get('whitelisted', False):
+            # Domain is whitelisted, log this information
+            result.blacklist_info = {
+                'blacklisted': False,
+                'whitelisted': True,
+                'source': bw_check.get('source', 'Unknown')
+            }
+            logger.info(f"[{result.trace_id}] Domain is whitelisted by {bw_check.get('source')}")
+        else:
+            # Domain is neither blacklisted nor whitelisted
+            result.blacklist_info = {
+                'blacklisted': False,
+                'whitelisted': False
+            }
+    
+    # Domain check processing - UPDATED CODE
+    if 'domain_check' in validation_results:
+        domain_check = validation_results.get('domain_check', {})
+        # Handle the nested domain_check structure from validate_domain
+        domain_info = domain_check.get('domain_check', domain_check)
+        
+        if not domain_info.get('domain_exists', True):
+            # Domain doesn't exist, set error message
+            result.error_message = domain_check.get('error', 'Domain does not exist')
+            # Set validation status
+            result.is_valid = False
+            # Skip other validations as domain doesn't exist
+            result.mx_records = []
+            return
+        
+        # If domain exists, continue with normal processing
+        if domain_info.get('has_mx_records'):
+            result.mx_records = domain_info.get('mx_records', [])
+    
     # Format check processing - look for both possible key names
     format_result = None
     if 'email_format_results' in validation_results:
@@ -883,76 +875,76 @@ def process_validation_results(result: EmailValidationResult, validation_results
     calculate_validity_and_confidence(result, validation_results)
 
 def calculate_validity_and_confidence(result: EmailValidationResult, validation_results: Dict[str, Any]) -> None:
-    """Calculate overall validity and confidence score"""
+    """Calculate overall validity and confidence score using database-driven scoring rules"""
+    # Check if domain is blacklisted - immediate failure
+    if result.blacklist_info and result.blacklist_info.get('blacklisted', False):
+        result.is_valid = False
+        result.confidence_score = 0
+        result.confidence_level = "Blacklisted"
+        return
+
     # Check if MX fallback was used
     used_fallback = False
     if isinstance(result.mx_infrastructure, MxInfrastructure):
         used_fallback = result.mx_infrastructure.used_fallback
     elif isinstance(result.mx_infrastructure, dict):
         used_fallback = result.mx_infrastructure.get('used_fallback', False)
-    
+
     # Determine overall validity - require real MX records, not fallbacks
     result.is_valid = (
         result.is_format_valid and  # Must have valid format
         bool(result.mx_records) and # Must have MX records
         not used_fallback           # Must not be using fallback A records
     )
-    
-    # Calculate confidence score
+
+    # --- Begin dynamic scoring ---
+    db = sync_db
+    # Fetch all scoring rules
+    scoring_rows = db.fetch("SELECT check_name, score_value, is_penalty FROM validation_scoring")
+    scoring = {row['check_name']: row for row in scoring_rows} if scoring_rows else {}
+
+    # Prepare checks based on result object
+    checks = {
+        'valid_format': result.is_format_valid,
+        'not_disposable': not result.is_disposable,
+        'disposable': result.is_disposable,
+        'blacklisted': result.blacklist_info.get('blacklisted', False) if result.blacklist_info else False,
+        'mx_records': bool(result.mx_records) and not used_fallback,
+        'spf_found': bool(result.spf_status),
+        'dkim_found': bool(result.dkim_status),
+        'smtp_connection': result.smtp_result,
+        'catch_all': result.catch_all is True,
+        'no_catch_all': result.catch_all is False,
+        'vrfy_confirmed': result.smtp_details.get('vrfy_supported', False) if isinstance(result.smtp_details, dict) else False,
+        'imap_available': result.imap_status == "available",
+        'pop3_available': result.pop3_status == "available",
+    }
+
     score = 0
     max_score = 0
-    
-    # Format validity (20%)
-    if result.is_format_valid:
-        score += 20
-    max_score += 20
-    
-    # MX records (15%) - only count real MX records, not fallbacks
-    if result.mx_records and not used_fallback:
-        score += 15
-    max_score += 15
-    
-    # SMTP validation (30%)
-    if result.smtp_result:
-        score += 30
-    max_score += 30
-    
-    # Not disposable (15%)
-    if not result.is_disposable:
-        score += 15
-    max_score += 15
-    
-    # Not catch-all (10%)
-    if result.catch_all is False:  # Explicitly False, not None
-        score += 10
-    max_score += 10
-    
-    # DNS security (10%)
-    security_score = 0
-    if result.spf_status:
-        security_score += 1
-    if result.dkim_status:
-        security_score += 1
-    if result.dmarc_status:
-        security_score += 1
-    
-    score += (security_score / 3) * 10
-    max_score += 10
-    
-    # Calculate final percentage
+
+    for check_name, rule in scoring.items():
+        value = checks.get(check_name, False)
+        if value and not rule['is_penalty']:
+            score += rule['score_value']
+        if not value and rule['is_penalty']:
+            # Penalty applies only if the negative condition is met
+            score -= rule['score_value']
+        if not rule['is_penalty']:
+            max_score += rule['score_value']
+
+    # Clamp score to [0, max_score]
+    score = max(0, min(score, max_score)) if max_score > 0 else 0
     result.confidence_score = int((score / max_score * 100) if max_score > 0 else 0)
-    
-    # Set confidence level
-    if result.confidence_score >= 90:
-        result.confidence_level = "Very High"
-    elif result.confidence_score >= 70:
-        result.confidence_level = "High"
-    elif result.confidence_score >= 50:
-        result.confidence_level = "Medium"
-    elif result.confidence_score >= 30:
-        result.confidence_level = "Low"
-    else:
-        result.confidence_level = "Very Low"
+
+    # Fetch confidence levels from DB and set confidence_level
+    levels = db.fetch("SELECT level_name, min_threshold, max_threshold FROM confidence_levels")
+    level_name = "Unknown"
+    for level in levels or []:
+        if level['min_threshold'] <= result.confidence_score <= level['max_threshold']:
+            level_name = level['level_name']
+            break
+    result.confidence_level = level_name
 
 # Global engine instance
 _engine_instance = None
@@ -1092,3 +1084,48 @@ def sanitize_value(val):
     if val is None:
         return ""
     return str(val).replace("\n", " ").replace("\r", " ").replace(",", ";").replace('"', "'")
+
+# Replace the incomplete @staticmethod line with this complete method
+@staticmethod
+def log_validation_operation(trace_id: str, operation: str, category: Optional[str] = None, 
+                           status: str = "info", duration_ms: Optional[float] = None, 
+                           details: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    Log a validation operation to the validation_logs table.
+    
+    Args:
+        trace_id: The trace ID of the validation
+        operation: Name of the operation being performed
+        category: Category of the operation (e.g., 'smtp', 'dns', 'format')
+        status: Status of the operation (e.g., 'success', 'failure', 'info')
+        duration_ms: Duration of the operation in milliseconds
+        details: Additional details as a dictionary
+        
+    Returns:
+        bool: Whether logging was successful
+    """
+    try:
+        db = sync_db
+        
+        values = {
+            "trace_id": trace_id,
+            "timestamp": datetime.now(timezone.utc),
+            "operation": operation,
+            "category": category,
+            "status": status,
+            "duration_ms": duration_ms,
+            "details": json.dumps(details) if details else None
+        }
+        
+        columns = ", ".join(values.keys())
+        placeholders = ", ".join([f"${i+1}" for i in range(len(values))])
+        
+        db.execute(
+            f"INSERT INTO validation_logs ({columns}) VALUES ({placeholders})",
+            *values.values()
+        )
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to log validation operation: {e}", exc_info=True)
+        return False
