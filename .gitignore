@@ -1,5 +1,6 @@
 # .gitignore
 /.cache
+/.venv
 /logs
 /__pycache__
 /other/pg_tools.7z

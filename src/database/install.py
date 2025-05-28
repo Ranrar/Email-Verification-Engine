@@ -8,43 +8,44 @@ PostgreSQL Populate Module
 import os
 import psycopg2
 import re
+import sys
 from dotenv import load_dotenv
 from pathlib import Path
-from pathlib import Path
 import platform
-# Enhanced prompt_toolkit imports
-from prompt_toolkit import prompt
-from prompt_toolkit.validation import Validator, ValidationError
-from prompt_toolkit.styles import Style as PromptStyle
-from prompt_toolkit import print_formatted_text, HTML
-from backup import backup_database, restore_database
 
-# Define a style dictionary for prompt_toolkit
-style = PromptStyle.from_dict({
-    'success': '#00AA00',  # Green
-    'error': '#AA0000',    # Red
-    'info': '#0000AA',     # Blue
-    'highlight': '#AAAA00', # Yellow
-    'prompt': '#00AAAA',    # Cyan
-})
+current_dir = str(Path(__file__).parent)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
+# backup functions
+from backup import backup_database as perform_backup
+from backup import restore_database as perform_restore
+
+class Colors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    BLUE = '\033[94m'
+    YELLOW = '\033[93m'
+    CYAN = '\033[96m'
+    RESET = '\033[0m'
+
+# Helper functions for formatted output
+def print_success(text):
+    print(f"{Colors.GREEN}{text}{Colors.RESET}")
+
+def print_error(text):
+    print(f"{Colors.RED}{text}{Colors.RESET}")
+
+def print_info(text):
+    print(f"{Colors.BLUE}{text}{Colors.RESET}")
+
+def print_highlight(text):
+    print(f"{Colors.YELLOW}{text}{Colors.RESET}")
 
 # IPv4 regex patterns
 IPV4_OCTET = r'(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)'
 IPV4_REGEX = rf'({IPV4_OCTET}\.{IPV4_OCTET}\.{IPV4_OCTET}\.{IPV4_OCTET})'
 PORT_REGEX = r'^(6553[0-5]|655[0-2]\d|65[0-4]\d{2}|6[0-4]\d{3}|[1-5]?\d{1,4})$'
-
-# Helper functions for formatted output
-def print_success(text):
-    print_formatted_text(HTML(f"<success>{text}</success>"), style=style)
-
-def print_error(text):
-    print_formatted_text(HTML(f"<error>{text}</error>"), style=style)
-
-def print_info(text):
-    print_formatted_text(HTML(f"<info>{text}</info>"), style=style)
-
-def print_highlight(text):
-    print_formatted_text(HTML(f"<highlight>{text}</highlight>"), style=style)
 
 def clear_screen():
     """Clear the terminal screen in a cross-platform way."""
@@ -55,44 +56,54 @@ def clear_screen():
         # For Unix/Linux/MacOS
         os.system("clear")
 
-class IPValidator(Validator):
-    def validate(self, document):
-        text = document.text
-        if not text:  # Allow empty for now, we'll check later
-            return
-            
-        # Only accept valid IP addresses
-        if re.fullmatch(IPV4_REGEX, text):
-            return
-            
-        raise ValidationError(
-            message="Invalid IP address format.",
-            cursor_position=len(text)
-        )
-
-class PortValidator(Validator):
-    def validate(self, document):
-        text = document.text
-        if not text:  # Default will be applied later
-            return
-            
-        if not re.match(PORT_REGEX, text):
-            raise ValidationError(
-                message="Port must be between 1 and 65535",
-                cursor_position=len(text)
-            )
-
-class NotEmptyValidator(Validator):
-    def __init__(self, message="This field cannot be empty"):
-        self.message = message
+# Simple input functions with validation
+def get_input(message, validator=None, default=None, is_password=False):
+    """Get input from user with optional validation"""
+    while True:
+        # Handle password input
+        if is_password:
+            import getpass
+            value = getpass.getpass(message)
+        else:
+            value = input(message)
         
-    def validate(self, document):
-        text = document.text
-        if not text.strip():
-            raise ValidationError(
-                message=self.message,
-                cursor_position=0
-            )
+        # Apply default value if input is empty and default is provided
+        if not value and default is not None:
+            value = default
+            
+        # Validate input if validator is provided
+        if validator and not validator(value):
+            continue
+            
+        return value
+
+# Validation functions
+def validate_ip(value):
+    """Validate IP address"""
+    if not value:  # Allow empty for default
+        return True
+        
+    if not re.fullmatch(IPV4_REGEX, value):
+        print_error("Invalid IP address format.")
+        return False
+    return True
+
+def validate_port(value):
+    """Validate port number"""
+    if not value:  # Allow empty for default
+        return True
+        
+    if not re.match(PORT_REGEX, value):
+        print_error("Port must be between 1 and 65535")
+        return False
+    return True
+
+def validate_not_empty(value, message="This field cannot be empty"):
+    """Validate that input is not empty"""
+    if not value.strip():
+        print_error(message)
+        return False
+    return True
 
 def prompt_for_db_config():
     """Prompt user for database configuration and return credentials"""
@@ -100,57 +111,44 @@ def prompt_for_db_config():
     print_highlight("\n=== Database Configuration Setup ===")
     print_info("Please provide the following information to connect to your database:")
     
-    # Get host with real-time validation
-    host = prompt(
-        message=HTML("<prompt>Database host (IP or domain name): </prompt>"),
-        style=style,
-        validator=IPValidator(),
-        validate_while_typing=True
+    # Get host with validation
+    host = get_input(
+        f"{Colors.CYAN}Database host (IP or domain name): {Colors.RESET}",
+        validator=validate_ip
     )
     
     # Get port with validation (default to 5432 if empty)
-    port = prompt(
-        message=HTML("<prompt>Database port [5432]: </prompt>"),
-        style=style,
-        validator=PortValidator(),
-        validate_while_typing=True,
+    port = get_input(
+        f"{Colors.CYAN}Database port [5432]: {Colors.RESET}",
+        validator=validate_port,
         default="5432"
-    ) or "5432"
+    )
     
     # Get database name (required)
-    database = prompt(
-        message=HTML("<prompt>Database name: </prompt>"),
-        style=style,
-        validator=NotEmptyValidator("Database name cannot be empty"),
-        validate_while_typing=False
+    database = get_input(
+        f"{Colors.CYAN}Database name: {Colors.RESET}",
+        validator=lambda x: validate_not_empty(x, "Database name cannot be empty")
     )
     
     # Get username (required)
-    user = prompt(
-        message=HTML("<prompt>Database username: </prompt>"),
-        style=style,
-        validator=NotEmptyValidator("Username cannot be empty"),
-        validate_while_typing=False
+    user = get_input(
+        f"{Colors.CYAN}Database username: {Colors.RESET}",
+        validator=lambda x: validate_not_empty(x, "Username cannot be empty")
     )
     
-    # For password, use prompt with password masking
-    password = prompt(
-        message=HTML("<prompt>Database password: </prompt>"),
-        style=style,
-        is_password=True,  # This enables the password masking with asterisks
-        validator=NotEmptyValidator("Password cannot be empty"),
-        validate_while_typing=False
+    # For password, use getpass for masking
+    password = get_input(
+        f"{Colors.CYAN}Database password: {Colors.RESET}",
+        validator=lambda x: validate_not_empty(x, "Password cannot be empty"),
+        is_password=True
     )
     
-    # Use prompt_toolkit for confirmation too
-    confirm = prompt(
-        message=HTML("<prompt>Is this information correct? (y/n): </prompt>"),
-        style=style
-    ).lower().strip()
+    # Confirm information
+    confirm = get_input(f"{Colors.CYAN}Is this information correct? (y/n): {Colors.RESET}")
     
     # More lenient check - accept anything starting with 'y'
     if not confirm or not confirm.startswith('y'):
-        print_info("install cancelled. Please try again.")
+        print_info("Install cancelled. Please try again.")
         return None
     
     # Return the credentials as a dictionary
@@ -232,12 +230,9 @@ def connect_to_postgres(retry=True):
             return save_credentials_to_file(credentials, env_file)
         else:
             print_highlight("\nConnection test failed. Would you like to try again?")
-            retry_input = prompt(
-                message=HTML("<prompt>Enter 'y' to try again, any other key to exit: </prompt>"),
-                style=style
-            ).lower().strip()
+            retry_input = get_input("Enter 'y' to try again, any other key to exit: ")
             
-            if retry_input == 'y':
+            if retry_input.lower().strip() == 'y':
                 return setup_config()  # Recursive call to restart config
             return False
     
@@ -257,12 +252,9 @@ def connect_to_postgres(retry=True):
         
         if retry:
             print_highlight("\nWould you like to delete the existing configuration and create a new one?")
-            confirm = prompt(
-                message=HTML("<prompt>Enter 'y' to recreate configuration, any other key to exit: </prompt>"),
-                style=style
-            ).lower().strip()
+            confirm = get_input("Enter 'y' to recreate configuration, any other key to exit: ")
             
-            if confirm == 'y':
+            if confirm.lower().strip() == 'y':
                 try:
                     os.remove(env_file)
                     print_success(f"Deleted invalid configuration file: {env_file}")
@@ -309,12 +301,9 @@ def connect_to_postgres(retry=True):
         if retry:
             print_highlight("\nDatabase connection failed. The configuration may be incorrect.")
             print_highlight("Would you like to delete the existing configuration and create a new one?")
-            confirm = prompt(
-                message=HTML("<prompt>Enter 'y' to recreate configuration, any other key to exit: </prompt>"),
-                style=style
-            ).lower().strip()
+            confirm = get_input("Enter 'y' to recreate configuration, any other key to exit: ")
             
-            if confirm == 'y':
+            if confirm.lower().strip() == 'y':
                 try:
                     os.remove(env_file)
                     print_success(f"Deleted invalid configuration file: {env_file}")
@@ -393,6 +382,14 @@ def execute_sql_file(conn, sql_file_path):
         print_error(f"Error details: {str(e)}")
         return False
 
+def backup_database():
+    """Create a database backup using the backup module."""
+    return perform_backup()
+
+def restore_database(backup_file):
+    """Restore database from a backup file using the backup module."""
+    return perform_restore(backup_file)
+
 def check_database_and_handle_options():
     """Check if database exists, get its size and handle user options."""
     conn = connect_to_postgres(retry=False)
@@ -452,14 +449,11 @@ def check_database_and_handle_options():
         else:
             # Existing database with tables - different menu
             print_info("\nExisting database detected. Please choose an option:")
-            print_formatted_text(HTML("<highlight>1.</highlight> Backup current database"), style=style)
-            print_formatted_text(HTML("<highlight>2.</highlight> Restore database from backup"), style=style)
-            print_formatted_text(HTML("<highlight>3.</highlight> Exit (keep current database)"), style=style)
+            print(f"{Colors.YELLOW}1.{Colors.RESET} Backup current database")
+            print(f"{Colors.YELLOW}2.{Colors.RESET} Restore database from backup")
+            print(f"{Colors.YELLOW}3.{Colors.RESET} Exit (keep current database)")
             
-            choice = prompt(
-                message=HTML("<prompt>Enter your choice (1-3): </prompt>"),
-                style=style
-            ).strip()
+            choice = get_input(f"{Colors.CYAN}Enter your choice (1-3): {Colors.RESET}")
             
             if choice == "1":
                 # Handle backup
@@ -487,21 +481,15 @@ def check_database_and_handle_options():
                     date_str = datetime.fromtimestamp(mtime).strftime('%m-%d-%Y')
                     print_info(f"{idx}. Backup from {date_str} ({size_mb:.2f} MB) - {file.name}")
 
-                file_choice = prompt(
-                    message=HTML("<prompt>Select a backup file by number (or leave empty to cancel): </prompt>"),
-                    style=style
-                ).strip()
+                file_choice = get_input(f"{Colors.CYAN}Select a backup file by number (or leave empty to cancel): {Colors.RESET}")
                 if not file_choice.isdigit() or int(file_choice) < 1 or int(file_choice) > len(dump_files):
                     print_info("Restore cancelled.")
                     return True
 
                 selected_file = dump_files[int(file_choice) - 1]
-                confirm = prompt(
-                    message=HTML(f"<prompt>This will overwrite your current database with '{selected_file.name}'. Continue? (y/n): </prompt>"),
-                    style=style
-                ).lower().strip()
+                confirm = get_input(f"{Colors.CYAN}This will overwrite your current database with '{selected_file.name}'. Continue? (y/n): {Colors.RESET}")
 
-                if confirm.startswith('y'):
+                if confirm.lower().strip().startswith('y'):
                     clear_screen()
                     print_info(f"Restoring database from {selected_file.name} ...")
                     restore_database(str(selected_file))
@@ -552,10 +540,7 @@ def update_database_tables():
     print_info(f"Tables to create: {', '.join(to_create) if to_create else 'None'}")
     print_info(f"Tables to drop: {', '.join(to_drop) if to_drop else 'None'}")
 
-    confirm = prompt(
-        message=HTML("<prompt>This will modify your database schema. Continue? (y/n): </prompt>"),
-        style=style
-    ).lower().strip()
+    confirm = get_input(f"{Colors.CYAN}This will modify your database schema. Continue? (y/n): {Colors.RESET}")
     if not confirm.startswith('y'):
         print_info("Update cancelled.")
         return False
@@ -643,30 +628,24 @@ def display_welcome_message():
     """Display a welcome message when the program starts"""
     clear_screen()
     print("\n" + "="*65)
-    print_formatted_text(HTML("<highlight>Email Verification Engine Database installer</highlight>"), style=style)
+    print_highlight("Email Verification Engine Database installer")
     print("="*65)
     print_info("This utility helps you install, backup, or reinstall the database.")
     print("="*65 + "\n")
 
 if __name__ == "__main__":
     display_welcome_message()
-    print_formatted_text(HTML("<highlight>1.</highlight> Install/Backup database"), style=style)
-    print_formatted_text(HTML("<highlight>2.</highlight> Update database tables (drop &amp; recreate)"), style=style)
-    print_formatted_text(HTML("<highlight>3.</highlight> Exit"), style=style)
-    choice = prompt(
-        message=HTML("<prompt>Enter your choice (1-3): </prompt>"),
-        style=style
-    ).strip()
+    print(f"{Colors.YELLOW}1.{Colors.RESET} Install/Backup database")
+    print(f"{Colors.YELLOW}2.{Colors.RESET} Update database tables (drop & recreate)")
+    print(f"{Colors.YELLOW}3.{Colors.RESET} Exit")
+    choice = get_input(f"{Colors.CYAN}Enter your choice (1-3): {Colors.RESET}")
     if choice == "1":
         check_database_and_handle_options()
     elif choice == "2":
         clear_screen()
         print_highlight("You are about to DROP ALL TABLES, VIEWS, FUNCTIONS, etc. and recreate the schema.")
-        confirm = prompt(
-            message=HTML("<prompt>This will ERASE ALL DATA. Are you sure? (y/n): </prompt>"),
-            style=style
-        ).lower().strip()
-        if not confirm.startswith('y'):
+        confirm = get_input(f"{Colors.CYAN}This will ERASE ALL DATA. Are you sure? (y/n): {Colors.RESET}")
+        if not confirm.lower().strip().startswith('y'):
             print_info("Update cancelled.")
         else:
             conn = connect_to_postgres()

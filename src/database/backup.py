@@ -11,30 +11,32 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-from prompt_toolkit.styles import Style as PromptStyle
-from prompt_toolkit import prompt, print_formatted_text, HTML
 
-# Define styles for formatted output
-style = PromptStyle.from_dict({
-    'success': '#00AA00',  # Green
-    'error': '#AA0000',    # Red
-    'info': '#0000AA',     # Blue
-    'highlight': '#AAAA00', # Yellow
-    'prompt': '#00AAAA',    # Cyan
-})
+# Define ANSI color codes
+COLORS = {
+    'GREEN': '\033[92m',    # Success
+    'RED': '\033[91m',      # Error
+    'BLUE': '\033[94m',     # Info
+    'YELLOW': '\033[93m',   # Highlight
+    'CYAN': '\033[96m',     # Prompt
+    'RESET': '\033[0m',     # Reset to default
+}
 
 # Helper functions for formatted output
 def print_success(text):
-    print_formatted_text(HTML(f"<success>{text}</success>"), style=style)
+    print(f"{COLORS['GREEN']}{text}{COLORS['RESET']}")
 
 def print_error(text):
-    print_formatted_text(HTML(f"<error>{text}</error>"), style=style)
+    print(f"{COLORS['RED']}{text}{COLORS['RESET']}")
 
 def print_info(text):
-    print_formatted_text(HTML(f"<info>{text}</info>"), style=style)
+    print(f"{COLORS['BLUE']}{text}{COLORS['RESET']}")
 
 def print_highlight(text):
-    print_formatted_text(HTML(f"<highlight>{text}</highlight>"), style=style)
+    print(f"{COLORS['YELLOW']}{text}{COLORS['RESET']}")
+
+def print_prompt(text):
+    return input(f"{COLORS['CYAN']}{text}{COLORS['RESET']}")
 
 def load_db_config():
     """Load database configuration from environment variables"""
@@ -106,7 +108,7 @@ def suggest_pg_installation():
         print_info("3. During installation, make sure to select 'Command Line Tools'")
         print_info("4. Ensure the bin directory is added to your PATH")
         
-        prompt(message=HTML("<prompt>Press Enter after you've installed the tools...</prompt>"), style=style)
+        input(f"{COLORS['CYAN']}Press Enter after you've installed the tools...{COLORS['RESET']}")
     
     elif "linux" in os_name:
         print_highlight("\nInstall PostgreSQL client tools:")
@@ -219,12 +221,9 @@ def restore_database(backup_file=None):
         print_highlight("\nAvailable backups:")
         for i, file in enumerate(backup_files, 1):
             mod_time = datetime.fromtimestamp(file.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-            print_formatted_text(HTML(f"<highlight>{i}.</highlight> {file.name} ({mod_time})"), style=style)
+            print(f"{COLORS['YELLOW']}{i}.{COLORS['RESET']} {file.name} ({mod_time})")
         
-        choice = prompt(
-            message=HTML("<prompt>Enter backup number to restore: </prompt>"),
-            style=style
-        ).strip()
+        choice = print_prompt("Enter backup number to restore: ")
         
         try:
             idx = int(choice) - 1

@@ -617,17 +617,17 @@ def fetch_mx_records(context):
                     try:
                         # Try python-whois first
                         whois_info = {}
-                        w = whois.whois(domain)
+                        w = whois.query(domain)
                         
                         # Extract key information
                         if w:
                             whois_info = {
-                                "registrar": w.registrar,
-                                "creation_date": w.creation_date,
-                                "expiration_date": w.expiration_date,
-                                "organization": w.org,
-                                "country": w.country,
-                                "emails": w.emails
+                                "registrar": getattr(w, "registrar", ""),
+                                "creation_date": getattr(w, "creation_date", ""),
+                                "expiration_date": getattr(w, "expiration_date", ""),
+                                "organization": getattr(w, "org", ""),
+                                "country": getattr(w, "country", ""),
+                                "emails": getattr(w, "emails", "")
                             }
                             
                             # Clean up None values and convert dates to strings
@@ -857,7 +857,7 @@ def fetch_whois_info(context):
             whois_info = {}
             
             try:
-                w = whois.whois(domain)
+                w = whois.query(domain)
                 
                 # Extract key information
                 if w:
