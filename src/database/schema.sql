@@ -57,15 +57,15 @@ INSERT INTO email_validation_functions (function_name, display_name, description
 ('blacklist_check', 'Black/White List Check', 'Checks if domain is whitelisted, blacklisted, or temporarily blocked', 20, true, 'src.engine.functions.bw', 'check_black_white'),
 ('mx_records', 'MX Records', 'Checks for valid mail exchanger records', 30, True, 'src.engine.functions.mx', 'fetch_mx_records'),
 ('whois_info', 'WHOIS Information', 'Retrieves domain registration information', 35, true, 'src.engine.functions.mx', 'fetch_whois_info'),
-('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_email'),
--- missing functions below
-('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.authentication_and_security', 'check_spf'),
-('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.authentication_and_security', 'check_dkim'),
-('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.authentication_and_security', 'check_dmarc'),
-('catch_all_check', 'Catch-All Detection', 'Checks if domain accepts all emails', 80, true, 'src.engine.functions.additional_protocols_and_testing', 'check_catch_all'),
-('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.additional_protocols_and_testing', 'check_imap'),
-('pop3_check', 'POP3 Verification', 'Checks if domain has POP3 service', 100, true, 'src.engine.functions.additional_protocols_and_testing', 'check_pop3'),
-('disposable_check', 'Disposable Email', 'Checks if email is from disposable email service', 110, true, 'src.engine.engine', 'check_disposable_domain')
+('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_smtp'),
+-- not implementet yet
+('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.1', '1'),
+('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.2', '2'),
+('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.3', '3'),
+('catch_all_check', 'Catch-All Detection', 'Checks if domain accepts all emails', 80, true, 'src.engine.functions.4', '4'),
+('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.5', '5'),
+('pop3_check', 'POP3 Verification', 'Checks if domain has POP3 service', 100, true, 'src.engine.functions.6', '6'),
+('disposable_check', 'Disposable Email', 'Checks if email is from disposable email service', 110, true, 'src.engine.engine.7', '7')
 ON CONFLICT (function_name) DO NOTHING;
 
 -- Dependency table: email_validation_function_dependencies
@@ -174,8 +174,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 
 INSERT INTO app_settings (category, sub_category, name, value, description) VALUES
-('general', 'general', 'user_agent_email', 'Email Verification Engine (https://github.com/Ranrar/Email-Verification-Engine', 'User-Agent string for HTTP requests'),
-('general', 'general', 'version', '0.2', 'Email Verification Engine version'),
+('http', 'user_agent', 'name', 'EmailVerificationEngine', 'Name for User-Agent'),
+('http', 'user_agent', 'version', '0.2', 'Version for User-Agent'),
+('http', 'user_agent', 'url', 'https://github.com/Ranrar/Email-Verification-Engine', 'URL for User-Agent contact'),
+-- ('http', 'user_agent', 'email', 'verification@example.com', 'email for User-Agent contact'),
+('email', 'defaults', 'sender email', 'EmailVerificationEngine@example.com', 'Default sender email address for SMTP verification'),
 ('Settings', 'Cache', 'cache purge', '30', 'Seconds between cache check TTL to purge for L1, L2 and L3 cache'),
 ('Settings', 'Debug', 'Enable', '1', 'Enable Debug menu 1=True 0=False'),
 ('Settings', 'Start', 'Enable', '0', 'Enable Auto-benchmark during start 1=True 0=False'),
@@ -183,6 +186,32 @@ INSERT INTO app_settings (category, sub_category, name, value, description) VALU
 ('Database', 'Backup', 'Count', '5', 'Number of backups to keep'),
 ('Database', 'Backup', 'TimeUTC', '02:00', 'Time (UTC) to run backup (HH:MM)')
 ON CONFLICT (description) DO NOTHING;
+
+-- Create a function that prevents modifications to user agent settings
+CREATE OR REPLACE FUNCTION protect_user_agent_settings()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Check if we're trying to modify user agent settings
+    IF (OLD.category = 'http' AND OLD.sub_category = 'user_agent' AND 
+        OLD.name IN ('name', 'version', 'url')) THEN
+        RAISE EXCEPTION 'User Agent settings (name, version, url) are read-only and cannot be modified';
+    END IF;
+    
+    -- For all other rows, allow the operation
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create triggers to protect against updates and deletes
+CREATE TRIGGER prevent_user_agent_updates
+BEFORE UPDATE ON app_settings
+FOR EACH ROW
+EXECUTE FUNCTION protect_user_agent_settings();
+
+CREATE TRIGGER prevent_user_agent_deletes
+BEFORE DELETE ON app_settings
+FOR EACH ROW
+EXECUTE FUNCTION protect_user_agent_settings();
 
 -- validation scoring
 CREATE TABLE IF NOT EXISTS validation_scoring (
@@ -297,7 +326,6 @@ INSERT INTO rate_limit (category, name, value, is_time, enabled, description) VA
 ('smtp', 'max_banner_requests_per_minute', 100, FALSE, TRUE, 'Maximum number of banner requests per minute'),
 ('smtp', 'max_reverse_dns_requests_per_minute', 100, FALSE, TRUE, 'Maximum number of reverse DNS (PTR) requests per minute'),
 ('smtp', 'max_whois_requests_per_minute', 15, FALSE, TRUE, 'Maximum number of WHOIS requests per minute'),
-('smtp', 'sender_pattern', 0, FALSE, TRUE, 'Email pattern for SMTP sender address: verification@{domain}'),
 ('smtp', 'timeout_block_duration', 600, TRUE, TRUE, 'Duration in seconds to block domains after timeout'),
 ('smtp', 'rate_limit_block_duration', 300, TRUE, TRUE, 'Duration in seconds to block domains after rate limit violation'),
 

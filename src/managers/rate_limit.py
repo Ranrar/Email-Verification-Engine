@@ -6,12 +6,19 @@ This module handles all rate limiting settings for different EVE components.
 It uses the consolidated rate_limit table in the PostgreSQL database.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from src.helpers.dbh import sync_db
 from src.managers.log import Axe
 import threading
+import time
 
 logger = Axe()
+
+# Global lock for domain rate limiting
+_rate_limiter_lock = threading.Lock()
+
+# Global dictionary to track last connection times per domain
+_domain_last_connection = {}
 
 class RateLimitManager:
     """
@@ -42,6 +49,9 @@ class RateLimitManager:
         self.additional_limits = None
         self.cache_limits = None
         self.dns_limits = None
+
+        # Add test_mode attribute (default: False)
+        self.test_mode = False
 
         # No initial loading - will load on demand
         logger.info("Rate limit manager initialized with lazy loading")
@@ -481,48 +491,88 @@ class RateLimitManager:
         return count
     
     def check_rate_limit(self, category, resource_id, limit_name):
-        """Check if a rate limit has been reached"""
+        """
+        Check if a rate limit has been reached
+        
+        Args:
+            category: The rate limit category (e.g., 'smtp', 'dom_mx')
+            resource_id: The resource being limited (e.g., domain name)
+            limit_name: The specific limit to check
+            
+        Returns:
+            Tuple of (is_limit_exceeded, limit_info_dict)
+        """
         current_count = self.get_usage_count(category, resource_id)
         limit_value = None
+        period = "60 seconds"  # Default period assumption
         
         try:
             if category == 'smtp':
                 limit_value = self.get_smtp_limit(limit_name)
                 
-                # FIXED: Validate limit value for max_connections_per_domain
+                # Set appropriate period description based on limit name
+                if limit_name == 'max_connections_per_minute':
+                    period = "minute"
+                elif limit_name == 'max_connections_per_domain':
+                    period = "minute per domain"
+                elif 'timeout' in limit_name:
+                    period = "connection"
+                    
+                # Validate limit value for critical settings
                 if limit_name == 'max_connections_per_domain' and (limit_value is None or limit_value <= 0):
                     logger.warning(f"Invalid {limit_name} value: {limit_value}, using default of 5")
                     limit_value = 5  # Use a sensible default
-                
+            
             elif category == 'dom_mx':
                 limit_value = self.get_domain_mx_limit(limit_name)
+                period = "domain operation"
             elif category == 'auth_security':
                 limit_value = self.get_auth_security_limit(limit_name)
+                period = "security check"
             elif category == 'additional':
                 limit_value = self.get_additional_protocol_limit(limit_name)
+                period = "protocol check"
             elif category == 'cache':
                 limit_value = self.get_cache_limit(limit_name)
-            elif category == 'dns':  # Add this case
+                period = "cache operation"
+            elif category == 'dns':
                 limit_value = self.get_dns_limit(limit_name)
+                period = "DNS lookup"
             else:
                 logger.error(f"Unknown rate limit category: {category}")
-                return False, current_count
+                return False, {'limit': 'unknown', 'current': current_count, 'period': 'unknown category'}
         except Exception as e:
             logger.error(f"Failed to get rate limit {category}.{limit_name}: {e}")
             if limit_name == 'max_connections_per_domain':
                 # For this critical setting, use a default instead of failing
                 limit_value = 5
                 logger.warning(f"Using default value of {limit_value} for {limit_name}")
-                return current_count >= limit_value, {'limit': limit_value, 'current': current_count}
+                return current_count >= limit_value, {'limit': limit_value, 'current': current_count, 'period': period}
             else:
-                return False, current_count
-        
-        # FIXED: Ensure we have a valid limit value before comparison
-        if limit_value is None or limit_value <= 0:
+                return False, {'limit': 'error', 'current': current_count, 'period': 'error condition', 'error': str(e)}
+    
+        # Ensure we have a valid limit value before comparison
+        if limit_value is None or not isinstance(limit_value, (int, float)) or limit_value <= 0:
             logger.warning(f"Invalid limit value for {category}.{limit_name}: {limit_value}, allowing operation")
-            return False, {'limit': 'invalid', 'current': current_count}
+            return False, {'limit': 'unlimited', 'current': current_count, 'period': period}
         
-        return current_count >= limit_value, {'limit': limit_value, 'current': current_count}
+        try:
+            # Ensure integer comparison since rate_limit.value is INTEGER NOT NULL in database
+            limit_value = int(limit_value)
+            is_exceeded = int(current_count) >= limit_value
+        except (ValueError, TypeError):
+            logger.error(f"Type error comparing {current_count} with {limit_value}")
+            is_exceeded = False
+        
+        # Always return a consistent dictionary format with all required keys
+        limit_info = {
+            'limit': limit_value,
+            'current': current_count,
+            'period': period,
+            'name': limit_name
+        }
+        
+        return is_exceeded, limit_info
     
     def is_near_limit(self, category, resource_id, limit_name, threshold_percent=80):
         """
@@ -614,6 +664,74 @@ class RateLimitManager:
             logger.warning(f"Failed to get cache limit {limit_name}: {e}")
             return 3600
 
+    def _check_domain_rate_limit(self, domain: str, port: int, trace_id: Optional[str] = None) -> bool:
+        """Check if we can connect to this domain based on rate limits"""
+        # Bypass rate limiting in test mode
+        if self.test_mode:
+            return True
+        
+        global _domain_last_connection
+    
+        with _rate_limiter_lock:
+            current_time = time.time()
+            
+            # Check if domain has a recent connection
+            if domain in _domain_last_connection:
+                last_time = _domain_last_connection[domain]
+                time_diff = current_time - last_time
+                
+                # Get the minimum interval between connections to the same domain
+                if port == 25:
+                    min_interval = self.get_smtp_port25_conn_interval()
+                elif port in (587, 465):
+                    min_interval = self.get_smtp_port587_conn_interval()
+                else:
+                    min_interval = self.get_smtp_port25_conn_interval()  # Default
+                
+                if time_diff < min_interval:
+                    logger.warning(f"[{trace_id}] Rate limit exceeded for {domain}. "
+                                 f"Min interval: {min_interval}s, Time since last: {time_diff:.2f}s, "
+                                 f"Need to wait: {min_interval - time_diff:.2f}s more")
+                    return False
+            
+            # Update last connection time
+            _domain_last_connection[domain] = current_time
+            
+            # Use the rate limit manager's check_rate_limit method
+            try:
+                is_exceeded, limit_info = self.check_rate_limit(
+                    'smtp', domain, 'max_connections_per_domain')
+            except Exception as e:
+                logger.warning(f"[{trace_id}] Error checking rate limit for {domain}: {e}")
+                return True  # Be conservative and allow the connection on error
+            
+            if is_exceeded:
+                # Extract info from the limit_info dictionary with appropriate defaults
+                limit_value = limit_info.get('limit', 'unknown')
+                period = limit_info.get('period', 'unknown period')
+                current_count = limit_info.get('current', 0)
+                
+                logger.warning(f"[{trace_id}] Global rate limit exceeded for {domain}. "
+                             f"Current: {current_count}/{limit_value} connections per {period}")
+                
+                # Add domain to temporary blocklist when rate limited
+                self._add_to_temporary_blocklist(
+                    domain, 
+                    f"Rate limit exceeded: {current_count}/{limit_value} per {period}", 
+                    trace_id
+                )
+                return False
+            
+            return True
+
+    def _add_to_temporary_blocklist(self, domain: str, reason: str, trace_id: Optional[str] = None):
+        """
+        Add a domain to a temporary blocklist due to rate limiting.
+        This is a stub implementation; you may want to integrate with your cache or blocklist system.
+        """
+        logger.warning(f"[{trace_id}] Domain '{domain}' temporarily blocklisted. Reason: {reason}")
+        # Example: store in memory or cache for a period, or integrate with a real blocklist system.
+        # For now, this is just a log.
 
 # Create a singleton instance for external use
 rate_limit_manager = RateLimitManager()

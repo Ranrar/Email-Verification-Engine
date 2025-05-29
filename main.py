@@ -141,11 +141,41 @@ def verify_email(email):
             "details": {
                 "confidence_score": 0,
                 "confidence_level": "Error",
-                "smtp_verified": False,
-                "is_disposable": False,
+                "is_deliverable": False,
+                "is_format_valid": False,
+                "execution_time": 0,
+                "execution_time_formatted": "",
+                "domain": email.rsplit("@", 1)[1] if "@" in email else "",
+                "trace_id": "",
                 "mx_records": [],
-                "domain": email.split("@")[1] if "@" in email else "",
-                "trace_id": ""
+                "mx_preferences": [],
+                "is_disposable": False,
+                "catch_all": False,
+                "dns_security": {
+                    "spf": "",
+                    "dkim": "",
+                    "dmarc": ""
+                },
+                "smtp": {  # Add this nested structure
+                    "verified": False,
+                    "error_code": None,
+                    "server_message": str(e),
+                    "connection_success": False,
+                    "supports_tls": False,
+                    "supports_auth": False
+                },
+                "infrastructure": {
+                    "provider": "Unknown",
+                    "self_hosted": False,
+                    "countries": []
+                },
+                "list_status": {
+                    "blacklisted": False,
+                    "whitelisted": False,
+                    "source": ""
+                },
+                "cache_info": {},
+                "error_message": str(e)
             }
         }
 

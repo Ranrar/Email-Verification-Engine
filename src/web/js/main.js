@@ -44,7 +44,8 @@ function initializeModules() {
         const resultsDisplay = new ResultsDisplay();
         if (resultsDisplay.init()) {
             console.log('ResultsDisplay initialized successfully');
-            window.ResultsDisplay = resultsDisplay;
+            // Store the instance (lowercase r)
+            window.resultsDisplay = resultsDisplay;
         } else {
             console.error('Failed to initialize ResultsDisplay');
         }
@@ -298,8 +299,6 @@ function showAboutDialog() {
     
     showAboutDialogWithLogo('About', asciiLogo, 'Email Verification Engine\nCopyright © 2025 Kim Skov Rasmussen');
 }
-
-// ...existing code... (dialog functions remain the same)
 
 /**
  * Create and show dialogs

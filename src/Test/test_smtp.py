@@ -40,7 +40,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)
 
 # Now import from the project structure
-from src.engine.functions.smtp import validate_email, SMTPValidator
+from src.engine.functions.smtp import validate_smtp, SMTPValidator
 from src.managers.log import Axe
 from src.helpers.dbh import sync_db
 
@@ -83,7 +83,7 @@ def test_smtp(email, show_stats=False, sender_pattern=None):
     
     try:
         # Call the validation function
-        result = validate_email(context)
+        result = validate_smtp(context)
         
         # Calculate elapsed time if not included in result
         if 'execution_time' not in result:
@@ -379,7 +379,7 @@ def test_rate_limiting():
         }
         
         start = time.time()
-        result = validate_email(context)
+        result = validate_smtp(context)
         duration = (time.time() - start) * 1000
         
         print(f"Result: {'✓' if result.get('valid') else '✗'}")
@@ -447,7 +447,7 @@ def test_temporary_blocklist():
         "test_mode": False
     }
     
-    result = validate_email(context)
+    result = validate_smtp(context)
     print(f"   Validation result: {'✓' if result.get('valid') else '✗'}")
     print(f"   Error: {result.get('error', 'None')}")
     if result.get('details', {}).get('temporarily_blocked'):
@@ -488,7 +488,7 @@ def test_batch_validation():
     print("Emails:", test_emails)
     
     start_time = time.time()
-    results = validator.validate_emails_batch(test_emails, delay_between_domains=0.5)
+    results = validator.validate_smtp_batch(test_emails, delay_between_domains=0.5)
     total_time = time.time() - start_time
     
     print(f"\nBatch validation completed in {total_time:.2f} seconds")
@@ -575,7 +575,7 @@ def test_operation_timeout():
     }
     
     start_time = time.time()
-    result = validate_email(context)
+    result = validate_smtp(context)
     elapsed = time.time() - start_time
     
     print(f"Operation completed in {elapsed:.2f}s")

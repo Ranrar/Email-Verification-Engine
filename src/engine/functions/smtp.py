@@ -19,6 +19,8 @@ import re
 import threading
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime, timezone, timedelta
+import traceback
+import logging
 
 # Import managers from the Email Verification Engine
 from src.managers.cache import cache_manager, CacheKeys
@@ -28,6 +30,10 @@ from src.managers.rate_limit import RateLimitManager
 from src.managers.port import PortManager, port_manager
 from src.managers.log import Axe
 from src.helpers.dbh import sync_db
+
+# Import our refactored modules
+from src.engine.functions.statistics import DomainStats
+from src.engine.functions.whois import DomainInfoExtractor
 
 # Initialize logging
 logger = Axe()
@@ -59,6 +65,10 @@ class SMTPValidator:
         # SMTP ports to try, in order of priority
         self.smtp_ports = self._get_smtp_ports()
         
+        # Create instances of our refactored classes
+        self.stats_manager = DomainStats()
+        self.domain_info = DomainInfoExtractor()
+        
         logger.debug(f"SMTPValidator initialized with connect_timeout={self.connect_timeout}s, "
                     f"read_timeout={self.read_timeout}s, max_retries={self.max_retries}")
 
@@ -72,15 +82,12 @@ class SMTPValidator:
                 return ports
             
             logger.warning("No SMTP ports found in port manager, using defaults")
+            # Fall back to empty list or raise an error if no ports found
+            return []
         except Exception as e:
-            logger.warning(f"Failed to get SMTP ports from port manager: {e}")
-    
-        # Use hardcoded defaults as a last resort
-        return [
-            {"port": 587, "description": "Encryption with STARTTLS, client-to-server (recommended)", "priority": 1, "enabled": True},
-            {"port": 465, "description": "Encryption with SSL/TLS, client-to-server (legacy support)", "priority": 2, "enabled": True},
-            {"port": 25, "description": "No encryption, None/TLS, server-to-server (relay)", "priority": 3, "enabled": True}
-        ]
+            error_msg = f"Database error: Failed to get SMTP ports from port manager: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
     
     def verify_email(self, email: str, domain: str, mx_servers: List[Dict[str, Any]], 
                     sender_email: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
@@ -145,9 +152,17 @@ class SMTPValidator:
                 "details": {"rate_limited": True}
             }
         
-        # Set default sender address if not provided
+        # Set default sender address if not provided or is None
         if not sender_email:
-            sender_email = f"verification@example.com"
+            try:
+                if hasattr(self.rate_limit_manager, 'get_smtp_limit'):
+                    sender_email = self.rate_limit_manager.get_smtp_limit('default_sender_email')
+                else:
+                    sender_email = None
+            except Exception:
+                sender_email = "verification@example.com"  # Fallback only if database fails
+        if sender_email is None:
+            sender_email = "verification@example.com"
         
         # Track overall result - SIMPLIFIED validation criteria
         result = {
@@ -307,7 +322,7 @@ class SMTPValidator:
                 
                 # Record success
                 details["connection_success"] = True
-                logger.debug(f"[{trace_id}] Connected to {mx_host}:{port} with timeouts (c:{connect_timeout:.1f}s, r:{read_timeout:.1f}s)")
+                logger.debug(f"[{trace_id}] Connected to {mx_host}:{port} with timeouts (c:{connect_timeout:.1f}s, r:{read_timeout:.1f}s) using {'SSL/TLS' if use_ssl else 'plain'} connection")
         
             # Receive banner
             banner = self._receive_response(sock)
@@ -317,31 +332,36 @@ class SMTPValidator:
             # Send EHLO first (modern standard), fallback to HELO if needed
             ehlo_response = None
             try:
-                self._send_command(sock, f"EHLO {domain}")
-                ehlo_response = self._receive_response(sock)
+                logger.debug(f"[{trace_id}] Attempting EHLO with domain {domain}")
+                self._send_command(sock, f"EHLO {domain}", trace_id)
+                ehlo_response = self._receive_response(sock, trace_id)
                 
                 if not ehlo_response.startswith("250"):
                     # EHLO failed, try HELO
                     logger.debug(f"[{trace_id}] EHLO failed, trying HELO for {mx_host}")
-                    self._send_command(sock, f"HELO {domain}")
-                    helo_response = self._receive_response(sock)
+                    self._send_command(sock, f"HELO {domain}", trace_id)
+                    helo_response = self._receive_response(sock, trace_id)
                     
                     if not helo_response.startswith("250"):
                         details["errors"].append(f"Both EHLO and HELO failed: EHLO={ehlo_response}, HELO={helo_response}")
                         return False, details
                     else:
                         # HELO succeeded, but no extended capabilities
+                        logger.debug(f"[{trace_id}] HELO succeeded for {mx_host}")
                         details["supports_starttls"] = False
                         details["supports_auth"] = False
                         details["vrfy_supported"] = False
                 else:
                     # EHLO succeeded, check capabilities
+                    logger.debug(f"[{trace_id}] EHLO succeeded for {mx_host}, analyzing capabilities")
                     details["supports_starttls"] = "STARTTLS" in ehlo_response
                     details["supports_auth"] = "AUTH" in ehlo_response
                     details["vrfy_supported"] = "VRFY" in ehlo_response
                     
             except Exception as e:
-                details["errors"].append(f"EHLO/HELO error: {str(e)}")
+                error_msg = f"EHLO/HELO error: {str(e)}, type: {type(e).__name__}"
+                logger.warning(f"[{trace_id}] {error_msg}")
+                details["errors"].append(error_msg)
                 return False, details
             
             # Try STARTTLS if supported and not already using SSL
@@ -359,20 +379,47 @@ class SMTPValidator:
             
             # Mail from
             from_cmd = f"MAIL FROM:<{sender_email}>"
-            self._send_command(sock, from_cmd)
-            mail_from_response = self._receive_response(sock)
-            
+            logger.debug(f"[{trace_id}] Sending MAIL FROM command")
+            self._send_command(sock, from_cmd, trace_id)
+            mail_from_response = self._receive_response(sock, trace_id)
+
             if not mail_from_response.startswith("250"):
-                details["errors"].append(f"MAIL FROM error: {mail_from_response}")
+                error_msg = f"MAIL FROM rejected: {mail_from_response}"
+                logger.warning(f"[{trace_id}] {error_msg}")
+                details["errors"].append(error_msg)
+                details["smtp_flow_success"] = False
+                details["failure_stage"] = "MAIL FROM"
                 return False, details
-            
+            else:
+                logger.debug(f"[{trace_id}] MAIL FROM accepted")
+
             # RCPT TO
             rcpt_cmd = f"RCPT TO:<{email}>"
-            self._send_command(sock, rcpt_cmd)
-            rcpt_response = self._receive_response(sock)
-            
-            # Save the full message for analysis
-            details["server_message"] = rcpt_response
+            logger.debug(f"[{trace_id}] Sending RCPT TO command - this is the critical validation step")
+            self._send_command(sock, rcpt_cmd, trace_id)
+
+            # Record time when RCPT TO was sent for timeout analysis
+            rcpt_to_sent_time = time.time()
+            try:
+                rcpt_response = self._receive_response(sock, trace_id)
+                
+                # Calculate response time for RCPT TO specifically
+                rcpt_response_time = int((time.time() - rcpt_to_sent_time) * 1000)
+                logger.debug(f"[{trace_id}] RCPT TO response received in {rcpt_response_time}ms")
+                
+                # Save the full message for analysis
+                details["server_message"] = rcpt_response
+                details["rcpt_to_response_time_ms"] = rcpt_response_time
+                
+            except socket.timeout as e:
+                elapsed_time = int((time.time() - start_time) * 1000)
+                error_msg = f"Timeout during SMTP connection to {mx_host}:{port} after {elapsed_time}ms: {str(e)}"
+                logger.info(f"[{trace_id}] {error_msg}")
+                details["errors"].append(error_msg)
+                details["timeout_detected"] = True
+                details["timeout_stage"] = traceback.extract_stack()[-2].name  # Get calling function name
+                details["failure_stage"] = "RCPT TO response"
+                return False, details
             
             # Extract SMTP code
             smtp_code_match = re.match(r"^(\d+)", rcpt_response)
@@ -408,14 +455,30 @@ class SMTPValidator:
                 port=port         
             )
             
+            # Log connection summary
+            if success:
+                logger.info(f"[{trace_id}] SMTP verification succeeded for {email} on {mx_host}:{port} in {response_time_ms}ms")
+            else:
+                # Determine failure reason
+                failure_reason = "Unknown error"
+                if "smtp_error_code" in details:
+                    failure_reason = f"Error code {details['smtp_error_code']}"
+                elif details.get("timeout_detected"):
+                    failure_reason = "Timeout"
+                elif details.get("errors"):
+                    failure_reason = details["errors"][-1]  # Get the last error
+                
+                logger.info(f"[{trace_id}] SMTP verification failed for {email} on {mx_host}:{port}: {failure_reason}")
+
             return success, details
             
         except socket.timeout as e:
-            error_msg = f"Timeout during SMTP connection to {mx_host}:{port}: {str(e)}"
-            # Change from warning to info since this is expected behavior
+            elapsed_time = int((time.time() - start_time) * 1000)
+            error_msg = f"Timeout during SMTP connection to {mx_host}:{port} after {elapsed_time}ms: {str(e)}"
             logger.info(f"[{trace_id}] {error_msg}")
             details["errors"].append(error_msg)
             details["timeout_detected"] = True
+            details["timeout_stage"] = traceback.extract_stack()[-2].name  # Get calling function name
             
             # Update statistics specifically for timeout
             self._update_domain_stats(
@@ -433,8 +496,22 @@ class SMTPValidator:
             
             return False, details
         
-        except (socket.gaierror, socket.error, ssl.SSLError) as e:
-            error_msg = f"SMTP connection error to {mx_host}:{port}: {str(e)}"
+        except socket.gaierror as e:
+            error_code = e.args[0] if e.args else "unknown"
+            error_msg = f"DNS resolution failed for {mx_host}:{port}: Error {error_code} - {str(e)}"
+            logger.debug(f"[{trace_id}] {error_msg}")
+            details["errors"].append(error_msg)
+            return False, details
+    
+        except ssl.SSLError as e:
+            error_msg = f"SSL error with {mx_host}:{port}: {str(e)}"
+            logger.debug(f"[{trace_id}] {error_msg}")
+            details["errors"].append(error_msg)
+            return False, details
+
+        except socket.error as e:
+            error_code = e.args[0] if e.args else "unknown"
+            error_msg = f"Socket error connecting to {mx_host}:{port}: Error {error_code} - {str(e)}"
             logger.debug(f"[{trace_id}] {error_msg}")
             details["errors"].append(error_msg)
             return False, details
@@ -453,30 +530,57 @@ class SMTPValidator:
                 except Exception:
                     pass
     
-    def _send_command(self, sock: socket.socket, command: str) -> None:
+    def _send_command(self, sock: socket.socket, command: str, trace_id: Optional[str] = None) -> None:
         """Send an SMTP command to the server"""
+        # Mask sensitive data in logs
+        log_command = command
+        if command.startswith("MAIL FROM:") or command.startswith("RCPT TO:"):
+            log_command = re.sub(r'<(.+?)>', '<***@***>', command)
+            
+        logger.debug(f"[{trace_id}] SMTP >> {log_command} ({datetime.now(timezone.utc).strftime('%H:%M:%S.%f')[:-3]})")
         sock.sendall(f"{command}\r\n".encode())
-    
-    def _receive_response(self, sock: socket.socket) -> str:
+
+    def _receive_response(self, sock: socket.socket, trace_id: Optional[str] = None) -> str:
         """Receive and return SMTP server response"""
+        start_time = time.time()
         response = []
-        while True:
-            line = sock.recv(1024).decode('utf-8', errors='ignore')
-            if not line:
-                break
-            response.append(line)
-            # If the 4th character is a space, we've reached the last line
-            if len(line) > 3 and line[3] == ' ':
-                break
         
-        return ''.join(response)
+        try:
+            while True:
+                line = sock.recv(1024).decode('utf-8', errors='ignore')
+                if not line:
+                    break
+                    
+                response.append(line)
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                
+                # If the 4th character is a space, we've reached the last line
+                if len(line) > 3 and line[3] == ' ':
+                    # Extract the SMTP code from the response
+                    code = line[:3] if len(line) >= 3 and line[:3].isdigit() else "???"
+                    logger.debug(f"[{trace_id}] SMTP << {code} response received in {elapsed_ms}ms " +
+                               f"({datetime.now(timezone.utc).strftime('%H:%M:%S.%f')[:-3]})")
+                    break
+        except socket.timeout:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            logger.debug(f"[{trace_id}] SMTP << TIMEOUT after {elapsed_ms}ms waiting for response")
+            raise
+        
+        response_text = ''.join(response)
+        # Log full response but truncate if too long
+        if len(response_text) > 100:
+            logger.debug(f"[{trace_id}] SMTP response: {response_text[:100]}...")
+        else:
+            logger.debug(f"[{trace_id}] SMTP response: {response_text}")
+    
+        return response_text
     
     def _check_domain_rate_limit(self, domain: str, port: int, trace_id: Optional[str] = None) -> bool:
         """Check if we can connect to this domain based on rate limits"""
         # Bypass rate limiting in test mode
         if self.test_mode:
             return True
-            
+        
         global _domain_last_connection
         
         with _rate_limiter_lock:
@@ -496,84 +600,43 @@ class SMTPValidator:
                     min_interval = self.rate_limit_manager.get_smtp_port25_conn_interval()  # Default
                 
                 if time_diff < min_interval:
-                    # Enhanced logging to show actual limits
                     logger.warning(f"[{trace_id}] Rate limit exceeded for {domain}. "
-                                 f"Min interval: {min_interval}s, Time since last: {time_diff:.2f}s, "
-                                 f"Need to wait: {min_interval - time_diff:.2f}s more")
-                    
-                    # Add to temporary blocklist with rate limit reason when repeatedly hit
-                    # But only if this is not the first rate limit hit
-                    if hasattr(self, '_rate_limit_hits') and domain in self._rate_limit_hits:
-                        self._rate_limit_hits[domain] += 1
-                        logger.info(f"[{trace_id}] Rate limit hit count for {domain}: {self._rate_limit_hits[domain]}")
-                        # If hit rate limits multiple times, add to temporary blocklist
-                        if self._rate_limit_hits[domain] >= 3:  # After 3 hits
-                            self._add_to_temporary_blocklist(
-                                domain, 
-                                f"Rate limit exceeded ({self._rate_limit_hits[domain]} attempts)", 
-                                trace_id
-                            )
-                            # Reset counter
-                            self._rate_limit_hits[domain] = 0
-                    else:
-                        # Initialize rate limit hits tracking
-                        if not hasattr(self, '_rate_limit_hits'):
-                            self._rate_limit_hits = {}
-                        self._rate_limit_hits[domain] = 1
-                        logger.info(f"[{trace_id}] First rate limit hit for {domain}")
-                    
+                                  f"Min interval: {min_interval}s, Time since last: {time_diff:.2f}s, "
+                                  f"Need to wait: {min_interval - time_diff:.2f}s more")
                     return False
-    
-        # Update last connection time - MOVE THIS BEFORE THE GLOBAL CHECK
-        _domain_last_connection[domain] = current_time
         
-        # Use the rate limit manager's check_rate_limit method
+        # Use the rate limit manager's check_rate_limit method BEFORE updating last connection time
         try:
-            allowed, limit_info = self.rate_limit_manager.check_rate_limit(
+            # First record this attempt in the counter (important!)
+            self.rate_limit_manager.record_usage('smtp', domain)
+            
+            # Then check if we've hit the limit
+            is_exceeded, limit_info = self.rate_limit_manager.check_rate_limit(
                 'smtp', domain, 'max_connections_per_domain')
         except Exception as e:
             logger.warning(f"[{trace_id}] Error checking rate limit for {domain}: {e}")
-            # In case of error, be conservative and allow the connection
-            return True
+            return True  # Be conservative and allow the connection on error
         
-        if not allowed:
-            # Enhanced logging for global rate limits with better error handling
-            limit_value = "unknown"
-            period_value = "unknown period"
+        if is_exceeded:
+            # Extract info from the limit_info dictionary with appropriate defaults
+            limit_value = limit_info.get('limit', 'unknown')
+            period = limit_info.get('period', 'unknown period')
+            current_count = limit_info.get('current', 0)
             
-            if isinstance(limit_info, dict):
-                limit_value = limit_info.get('limit', limit_value)
-                period_value = limit_info.get('period', period_value)
-                reset_time = limit_info.get('reset_time')
-                current_count = limit_info.get('current_count', 'unknown')
-                
-                logger.warning(f"[{trace_id}] Global rate limit exceeded for {domain}. "
-                             f"Current: {current_count}/{limit_value} connections per {period_value}")
-                
-                if reset_time:
-                    logger.info(f"[{trace_id}] Rate limit resets at: {reset_time}")
-            else:
-                logger.warning(f"[{trace_id}] Global rate limit exceeded for {domain}. "
-                             f"Limit info: {limit_info}")
+            logger.warning(f"[{trace_id}] Global rate limit exceeded for {domain}. "
+                         f"Current: {current_count}/{limit_value} connections per {period}")
             
             # Add domain to temporary blocklist when rate limited
             self._add_to_temporary_blocklist(
                 domain, 
-                f"Global rate limit exceeded: {limit_value} per {period_value}", 
+                f"Rate limit exceeded: {current_count}/{limit_value} per {period}", 
                 trace_id
             )
-            
-            # If rate limited by global settings, notify
-            try:
-                from src.utils.notifier import Notifier
-                notify = Notifier()
-                notify.warning(
-                    f"Rate limit exceeded for {domain}",
-                    f"Maximum connection limit reached: {limit_value} per {period_value}")
-            except Exception as e:
-                logger.debug(f"[{trace_id}] Failed to send rate limit notification: {e}")
+            return False
         
-        return allowed
+        # Only update last connection time if we're actually allowing the connection
+        _domain_last_connection[domain] = current_time
+        return True
     
     def _is_domain_temporarily_blocked(self, domain: str, trace_id: Optional[str] = None) -> bool:
         """Check if domain is in temporary blocklist"""
@@ -603,8 +666,9 @@ class SMTPValidator:
             cache_manager.set(cache_key, is_blocked, ttl=60)
             
             if is_blocked:
-                logger.debug(f"[{trace_id}] Domain {domain} is temporarily blocked: {blocked_entry['reason']}")
-            
+                block_reason = blocked_entry['reason'] if blocked_entry else "Unknown reason"
+                logger.debug(f"[{trace_id}] Domain {domain} is temporarily blocked: {block_reason}")
+                    
             return is_blocked
             
         except Exception as e:
@@ -620,8 +684,8 @@ class SMTPValidator:
             elif "rate limit" in reason.lower():
                 block_seconds = self.rate_limit_manager.get_rate_limit_block_duration()
             else:
-                block_seconds = 180  # Keep a reasonable default
-            
+                block_seconds = self.rate_limit_manager.get_smtp_limit('default_block_duration')
+        
             current_time = datetime.now(timezone.utc)
             expires_at = current_time + timedelta(seconds=block_seconds)
             
@@ -648,218 +712,26 @@ class SMTPValidator:
         except Exception as e:
             logger.error(f"[{trace_id}] Failed to add {domain} to temporary blocklist: {e}")
 
+    def _check_retry_availability(self, domain: str) -> Tuple[bool, Optional[datetime]]:
+        """Check if domain is available for retry based on backoff settings"""
+        return self.stats_manager.check_retry_availability(domain)
+    
     def _get_domain_stats(self, domain: str) -> Dict[str, Any]:
         """Get domain statistics and settings from database using UPSERT pattern"""
-        try:
-            # Use a single query with INSERT ... ON CONFLICT DO NOTHING
-            sync_db.execute(
-                """
-                INSERT INTO smtp_domain_stats (domain)
-                VALUES ($1)
-                ON CONFLICT (domain) DO NOTHING
-                """,
-                domain
-            )
-            
-            # Now get the record which will definitely exist
-            result = sync_db.fetchrow(
-                """
-                SELECT * FROM smtp_domain_stats 
-                WHERE domain = $1
-                """, 
-                domain
-            )
-            
-            return result or {}
-        except Exception as e:
-            logger.warning(f"Failed to get domain stats for {domain}: {e}")
-            return {}
-
+        return self.stats_manager.get_domain_stats(domain)
+    
     def _update_domain_stats(self, domain: str, success: bool, 
                           response_time_ms: int = 0, error_code: Optional[int] = None,
                           error_type: Optional[str] = None, trace_id: Optional[str] = None,
                           mx_host: Optional[str] = None, port: Optional[int] = None):
         """Update domain statistics after an attempt"""
-        try:
-            current_time = datetime.now(timezone.utc)
-            
-            if success:
-                # Update stats for successful attempt
-                sync_db.execute(
-                    """
-                    UPDATE smtp_domain_stats 
-                    SET 
-                        total_attempts = total_attempts + 1,
-                        successful_attempts = successful_attempts + 1,
-                        success_rate = (successful_attempts + 1)::numeric / (total_attempts + 1),
-                        avg_response_time_ms = CASE 
-                            WHEN successful_attempts > 0 
-                            THEN ((avg_response_time_ms * successful_attempts) + $1) / (successful_attempts + 1)
-                            ELSE $2
-                        END,
-                        min_response_time_ms = CASE 
-                            WHEN min_response_time_ms = 0 OR $3 < min_response_time_ms THEN $4
-                            ELSE min_response_time_ms 
-                        END,
-                        max_response_time_ms = CASE 
-                            WHEN max_response_time_ms < $5 THEN $6
-                            ELSE max_response_time_ms 
-                        END,
-                        consecutive_failures = 0,
-                        current_backoff_level = 0,
-                        last_updated_at = $7,
-                        last_success_at = $8
-                    WHERE domain = $9
-                    """,
-                    response_time_ms, response_time_ms, response_time_ms, response_time_ms, 
-                    response_time_ms, response_time_ms, current_time, current_time, domain
-                )
-            else:
-                # Get current stats
-                stats = self._get_domain_stats(domain)
-                consecutive_failures = (stats.get('consecutive_failures', 0) or 0) + 1
-                current_backoff_level = stats.get('current_backoff_level', 0) or 0
-                
-                # Implement exponential backoff for temporary failures
-                if error_type == 'timeout' or (error_code and error_code in (421, 450, 451, 452)):
-                    # Increase backoff level for temporary errors (max level 10)
-                    new_backoff_level = min(current_backoff_level + 1, 10)
-                    # Calculate backoff time using exponential formula (2^level seconds), max 24h
-                    backoff_seconds = min(2 ** new_backoff_level, 86400)
-                    retry_available_after = current_time + timedelta(seconds=backoff_seconds)
-                    
-                    # Update timeout adjustment factor (for adaptive timing)
-                    timeout_adjustment = min(stats.get('timeout_adjustment_factor', 1.0) or 1.0 * 1.2, 3.0)
-                else:
-                    new_backoff_level = current_backoff_level
-                    retry_available_after = None
-                    timeout_adjustment = stats.get('timeout_adjustment_factor', 1.0) or 1.0
-                
-                # Mark domain as problematic if it fails consistently
-                is_problematic = consecutive_failures >= 5
-                
-                # Update stats for failed attempt
-                # Split into two separate SQL commands based on error_code
-                if error_code is not None:
-                    # With error code updating
-                    sync_db.execute(
-                        """
-                        UPDATE smtp_domain_stats 
-                        SET 
-                            total_attempts = total_attempts + 1,
-                            failed_attempts = failed_attempts + 1,
-                            timeout_count = CASE WHEN $1 = 'timeout' THEN timeout_count + 1 ELSE timeout_count END,
-                            success_rate = successful_attempts::numeric / (total_attempts + 1),
-                            consecutive_failures = $2,
-                            current_backoff_level = $3,
-                            retry_available_after = $4,
-                            timeout_adjustment_factor = $5,
-                            last_updated_at = $6,
-                            last_failure_at = $7,
-                            is_problematic = $8,
-                            last_error_code = $9,
-                            common_error_codes = COALESCE(common_error_codes, '{}'::jsonb) || 
-                                jsonb_build_object($10::text, COALESCE((common_error_codes->>$11::text)::int, 0) + 1)
-                        WHERE domain = $12
-                        """,
-                        error_type, consecutive_failures, new_backoff_level, retry_available_after, 
-                        timeout_adjustment, current_time, current_time, is_problematic, 
-                        error_code, str(error_code), str(error_code), domain
-                    )
-                else:
-                    # Without error code updating
-                    sync_db.execute(
-                        """
-                        UPDATE smtp_domain_stats 
-                        SET 
-                            total_attempts = total_attempts + 1,
-                            failed_attempts = failed_attempts + 1,
-                            timeout_count = CASE WHEN $1 = 'timeout' THEN timeout_count + 1 ELSE timeout_count END,
-                            success_rate = successful_attempts::numeric / (total_attempts + 1),
-                            consecutive_failures = $2,
-                            current_backoff_level = $3,
-                            retry_available_after = $4,
-                            timeout_adjustment_factor = $5,
-                            last_updated_at = $6,
-                            last_failure_at = $7,
-                            is_problematic = $8
-                        WHERE domain = $9
-                        """,
-                        error_type, consecutive_failures, new_backoff_level, retry_available_after, 
-                        timeout_adjustment, current_time, current_time, is_problematic, domain
-                    )
-            
-            # Record attempt history
-            sync_db.execute(
-                """
-                INSERT INTO smtp_domain_attempt_history
-                (domain, email, mx_host, port, attempt_time, response_time_ms, success, 
-                error_code, error_type, trace_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                """,
-                domain, '', mx_host or '', port or 0, current_time, response_time_ms, 
-                success, error_code, error_type, trace_id
-            )
-            
-        except Exception as e:
-            logger.warning(f"Failed to update domain stats for {domain}: {e}")
-
-    def _check_retry_availability(self, domain: str) -> Tuple[bool, Optional[datetime]]:
-        """Check if domain is available for retry based on backoff settings"""
-        try:
-            stats = self._get_domain_stats(domain)
-            retry_after = stats.get('retry_available_after')
-            
-            if not retry_after:
-                return True, None
-                
-            now = datetime.now(timezone.utc)
-            if now < retry_after:
-                return False, retry_after
-                
-            return True, None
-            
-        except Exception as e:
-            logger.warning(f"Error checking retry availability for {domain}: {e}")
-            return True, None
-
+        self.stats_manager.update_domain_stats(
+            domain, success, response_time_ms, error_code, error_type, trace_id, mx_host, port
+        )
+    
     def _update_geographic_info(self, domain: str, country_code=None, region=None, provider=None):
         """Update geographic information for a domain"""
-        if not (country_code or region or provider):
-            return
-        
-        try:
-            updates = []
-            params = []
-            param_index = 1  # Start with $1
-            
-            if country_code:
-                updates.append(f"country_code = ${param_index}")
-                params.append(country_code)
-                param_index += 1
-                
-            if region:
-                updates.append(f"region = ${param_index}")
-                params.append(region)
-                param_index += 1
-                
-            if provider:
-                updates.append(f"detected_provider = ${param_index}")
-                params.append(provider)
-                param_index += 1
-                
-            if updates:
-                params.append(domain)
-                sync_db.execute(
-                    f"""
-                    UPDATE smtp_domain_stats 
-                    SET {", ".join(updates)}
-                    WHERE domain = ${param_index}
-                    """,
-                    *params  # Unpack the params with * operator
-                )
-        except Exception as e:
-            logger.warning(f"Failed to update geographic info for {domain}: {e}")
+        self.domain_info.update_geographic_info(domain, country_code, region, provider)
 
     def can_validate_domain(self, domain: str, trace_id: Optional[str] = None) -> Tuple[bool, str]:
         """Check if we can validate a domain without actually attempting connection"""
@@ -875,7 +747,7 @@ class SMTPValidator:
             
         return True, "OK"
     
-    def validate_emails_batch(self, emails: List[str], delay_between_domains: float = 1.0) -> List[Dict[str, Any]]:
+    def validate_smtp_batch(self, emails: List[str], delay_between_domains: float = 1.0) -> List[Dict[str, Any]]:
         """Validate multiple emails with automatic delays to prevent rate limiting"""
         results = []
         last_domain = None
@@ -914,7 +786,8 @@ class SMTPValidator:
         """Get max connections per domain from rate limit manager"""
         try:
             return self.rate_limit_manager.get_smtp_limit('max_connections_per_domain')
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to get max_connections_per_domain: {e}, using default")
             return 5  # Default fallback
 
     def get_smtp_port25_conn_interval(self) -> float:
@@ -943,7 +816,7 @@ def check_global_rate_limit(self, category: str) -> bool:
     max_allowed = self.get_smtp_limit('max_connections_per_minute')
     return current < max_allowed
 
-def validate_email(context: Dict[str, Any]) -> Dict[str, Any]:
+def validate_smtp(context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Validates an email address by checking SMTP server responses.
     
@@ -960,161 +833,253 @@ def validate_email(context: Dict[str, Any]) -> Dict[str, Any]:
             - is_deliverable: Whether email appears deliverable
             - details: Dictionary with detailed information
     """
+    # Extract key fields from context with defaults
     email = context.get('email', '')
     trace_id = context.get('trace_id', '')
     test_mode = context.get('test_mode', False)
     
     logger.debug(f"[{trace_id}] Starting SMTP validation for {email}")
     
-    # Parse email to get domain
-    try:
-        if '@' not in email:
-            return {
-                'valid': False,
-                'error': 'Invalid email format',
-                'is_deliverable': False,
-                'details': {}
-            }
-        local_part, domain = email.rsplit('@', 1)
-    except ValueError:
-        return {
-            'valid': False,
-            'error': 'Invalid email format',
-            'is_deliverable': False,
-            'details': {}
-        }
+    # Parse and validate email format
+    parsing_result = _parse_and_validate_email(email)
+    if not parsing_result["valid"]:
+        return parsing_result
     
-    # Create cache key
-    cache_key = f"{CacheKeys.SMTP_RESULT}:{email}"  # Use SMTP_RESULT instead of SMTP_CHECK
+    local_part, domain = parsing_result["parts"]
     
-    # Check cache
+    # Check cache first
+    cache_key = f"{CacheKeys.SMTP_RESULT}:{email}"
     cached_result = cache_manager.get(cache_key)
     if cached_result:
         logger.debug(f"[{trace_id}] Using cached SMTP validation result for {email}")
         return cached_result
     
-    # Get MX records if not already in context
-    mx_records = context.get('mx_records')
-    if not mx_records:
-        # Try to get from the context's validation results
-        mx_result = context.get('mx_records_result')
-        if mx_result and isinstance(mx_result, dict):
-            mx_records = mx_result.get('records')
+    # Get or fetch MX records
+    mx_result = _get_mx_records(context, domain, trace_id)
+    if not mx_result["valid"]:
+        return mx_result["result"]
     
-    # If still no MX records, we need to fetch them
-    if not mx_records:
-        logger.debug(f"[{trace_id}] No MX records in context for {domain}, fetching...")
-        
-        # Import here to avoid circular imports
-        try:
-            from src.engine.functions.mx import fetch_mx_records
-            mx_result = fetch_mx_records(context)
-            mx_records = mx_result.get('records', [])
-            # Store the complete result in context for later geographic extraction
-            context['mx_records_result'] = mx_result
-        except Exception as e:
-            logger.warning(f"[{trace_id}] Failed to fetch MX records for {domain}: {e}")
-            return {
-                'valid': False,
-                'error': f"Failed to retrieve MX records: {str(e)}",
-                'is_deliverable': False,
-                'details': {}
-            }
+    mx_records = mx_result["records"]
     
-    # No MX records found
-    if not mx_records:
-        logger.info(f"[{trace_id}] No MX records found for {domain}")
-        # Add to early return paths
-        return {
-            'valid': False,
-            'error': 'No MX records found for domain',
-            'is_deliverable': False,
-            'details': {
-                "smtp_banner": "",
-                "port": None,
-                "server_message": "",
-                "connection_success": False,
-                "smtp_flow_success": False,
-                "errors": [],
-                "ports_tried": 0,
-                "mx_servers_tried": 0
-            }
-        }
+    # Get sender email from configuration
+    sender_email = _get_sender_email(trace_id)
     
-    # Use configurable sender pattern instead of hardcoded domain
-    try:
-        sender_pattern = context.get('sender_pattern')
-        if not sender_pattern:
-            # Try to get from rate limit manager using smtp category
-            sender_pattern = RateLimitManager().get_smtp_limit('sender_pattern')
-    except Exception:
-        sender_pattern = None
-        
-    # If no configured pattern, fall back to a generic pattern
-    if not sender_pattern:
-        sender_pattern = "verification@{domain}"
-        
-    # Format the sender email with the appropriate domain
-    sender_email = sender_pattern.format(
-        domain=domain,
-        local=local_part,
-        random=f"verify{int(time.time())}"  # Include timestamp for uniqueness
-    )
-    
-    # Initialize SMTP validator
+    # Initialize SMTP validator and extract geographic info
     validator = SMTPValidator(test_mode=test_mode)
+
     
-    # Extract and update geographic information from MX records
-    if 'mx_records_result' in context and isinstance(context['mx_records_result'], dict):
-        mx_result = context['mx_records_result']
-        
-        # Try to extract geographic data from MX infrastructure
-        infra_info = mx_result.get('infrastructure_info', {})
-        if infra_info:
-            country_code = None
-            region = None
-            provider = None
-            
-            # Get primary country code
-            if infra_info.get('countries') and len(infra_info['countries']) > 0:
-                country_code = infra_info['countries'][0]
-                
-            # Get provider info
-            if infra_info.get('providers') and len(infra_info['providers']) > 0:
-                provider = infra_info['providers'][0]
-            
-            # Get region if available
-            email_provider = mx_result.get('email_provider', {})
-            if email_provider and email_provider.get('provider_name'):
-                provider = email_provider.get('provider_name')
-            
-            # Update domain stats with this geographic info
-            validator._update_geographic_info(domain, country_code, region, provider)
-    
-    # Perform validation
+    # Perform validation with timing
     with EnhancedOperationTimer("smtp_validation", {"email": email}) as timer:
         result = validator.verify_email(email, domain, mx_records, sender_email, trace_id)
     
     # Add execution time
     result['execution_time'] = timer.elapsed_ms
     
-    # Ensure critical fields are always present in details
-    if "details" not in result:
+    # Normalize and standardize the result structure
+    normalized_result = _normalize_validation_result(result, email, trace_id)
+    
+    # Cache the normalized result
+    cache_manager.set(cache_key, normalized_result, ttl=validator.cache_ttl)
+    
+    return normalized_result
+
+def _parse_and_validate_email(email: str) -> Dict[str, Any]:
+    """Parse and perform basic validation on email format"""
+    if not email or '@' not in email:
+        return {
+            'valid': False,
+            'error': 'Invalid email format',
+            'is_deliverable': False,
+            'details': {
+                'error_message': 'Invalid email format',
+                'connection_success': False,
+                'smtp_flow_success': False
+            }
+        }
+    
+    try:
+        local_part, domain = email.rsplit('@', 1)
+        return {
+            "valid": True,
+            "parts": (local_part, domain)
+        }
+    except ValueError:
+        return {
+            'valid': False,
+            'error': 'Invalid email format',
+            'is_deliverable': False,
+            'details': {
+                'error_message': 'Invalid email format',
+                'connection_success': False,
+                'smtp_flow_success': False
+            }
+        }
+
+def _get_mx_records(context: Dict[str, Any], domain: str, trace_id: str) -> Dict[str, Any]:
+    """Extract MX records from context or fetch them if not present"""
+    # Get MX records if already in context
+    mx_records = context.get('mx_records')
+    if not mx_records:
+        mx_result = context.get('mx_records_result')
+        if mx_result and isinstance(mx_result, dict):
+            mx_records = mx_result.get('records')
+    
+    # If still no MX records, fetch them
+    if not mx_records:
+        logger.debug(f"[{trace_id}] No MX records in context for {domain}, fetching...")
+        
+        try:
+            from src.engine.functions.mx import fetch_mx_records
+            mx_result = fetch_mx_records(context)
+            mx_records = mx_result.get('records', [])
+            # Store the complete result in context
+            context['mx_records_result'] = mx_result
+        except Exception as e:
+            logger.warning(f"[{trace_id}] Failed to fetch MX records for {domain}: {e}")
+            return {
+                "valid": False,
+                "result": {
+                    'valid': False,
+                    'error': f"Failed to retrieve MX records: {str(e)}",
+                    'is_deliverable': False,
+                    'details': {
+                        'error_message': f"Failed to retrieve MX records: {str(e)}",
+                        'connection_success': False,
+                        'smtp_flow_success': False
+                    }
+                }
+            }
+    
+    # No MX records found
+    if not mx_records:
+        logger.info(f"[{trace_id}] No MX records found for {domain}")
+        return {
+            "valid": False,
+            "result": {
+                'valid': False,
+                'error': 'No MX records found for domain',
+                'is_deliverable': False,
+                'details': {
+                    'error_message': 'No MX records found for domain',
+                    'smtp_banner': "",
+                    'port': None,
+                    'server_message': "",
+                    'connection_success': False,
+                    'smtp_flow_success': False,
+                    'errors': [],
+                    'ports_tried': 0,
+                    'mx_servers_tried': 0
+                }
+            }
+        }
+    
+    return {
+        "valid": True,
+        "records": mx_records
+    }
+
+def _get_sender_email(trace_id: str) -> str:
+    """Get sender email from configuration with fallback"""
+    try:
+        # Attempt to get from configuration
+        result = sync_db.fetchrow("""
+            SELECT value FROM app_settings
+            WHERE category = 'email' AND sub_category = 'defaults' AND name = 'sender email'
+        """)
+        
+        if result and result['value']:
+            sender_email = result['value']
+            logger.debug(f"[{trace_id}] Using sender email: {sender_email}")
+            return sender_email
+    except Exception as e:
+        logger.warning(f"[{trace_id}] Failed to get sender email from config: {e}")
+    
+    # Fallback
+    default_sender = "verification@example.com"
+    logger.debug(f"[{trace_id}] Using default sender email: {default_sender}")
+    return default_sender
+
+
+
+def _normalize_validation_result(result: Dict[str, Any], email: str, trace_id: str) -> Dict[str, Any]:
+    """Ensure consistent result structure with all required fields"""
+    # Initialize details dict if missing
+    if "details" not in result or not isinstance(result["details"], dict):
         result["details"] = {}
     
-    # Ensure fields expected by engine.py exist
+    # Always ensure these basic fields exist with correct database column names
     result["details"]["smtp_banner"] = result["details"].get("smtp_banner", "")
+    result["details"]["smtp_vrfy"] = result["details"].get("vrfy_supported", False)  # Map from vrfy_supported
+    result["details"]["smtp_supports_tls"] = result["details"].get("supports_starttls", False)  # Map from supports_starttls
+    result["details"]["smtp_supports_auth"] = result["details"].get("supports_auth", False)  # Map from supports_auth
+    result["details"]["smtp_flow_success"] = result["details"].get("smtp_flow_success", False)
+    result["details"]["smtp_error_code"] = result["details"].get("smtp_error_code")
+    result["details"]["smtp_server_message"] = result["details"].get("server_message", "")  # Map from server_message
+    
+    # Overall SMTP result as text (success/failure reason)
+    if result.get("valid"):
+        result["details"]["smtp_result"] = "success"
+    else:
+        error_reason = result.get("error", "unknown error")
+        result["details"]["smtp_result"] = f"failed: {error_reason}"
+    
+    # Also keep legacy field names for backward compatibility
     result["details"]["port"] = result["details"].get("port")
     result["details"]["server_message"] = result["details"].get("server_message", "")
-    result["details"]["smtp_flow_success"] = result["details"].get("smtp_flow_success", False)
     result["details"]["connection_success"] = result["details"].get("connection_success", False)
     
-    # Cache result
-    cache_manager.set(cache_key, result, ttl=validator.cache_ttl)
+    # Standardize error reporting
+    if not result["valid"]:
+        # Set primary error field from most specific source available
+        if result.get("error"):
+            result["details"]["error_message"] = result["error"]
+        elif result.get("errors") and result["errors"]:
+            result["details"]["error_message"] = result["errors"][0]
+        elif result["details"].get("errors") and result["details"]["errors"]:
+            result["details"]["error_message"] = result["details"]["errors"][0]
+        else:
+            # Last resort - create a generic error message
+            execution_time = result.get('execution_time', 0)
+            if execution_time > 30000:
+                error_message = "SMTP validation timeout"
+                result["details"]["timeout_detected"] = True
+                result["details"]["timeout_stage"] = "validation"
+            else:
+                error_message = "SMTP validation failed"
+            result["details"]["error_message"] = error_message
+        
+        # Ensure errors list exists
+        if "errors" not in result["details"]:
+            result["details"]["errors"] = []
+            if result.get("errors"):
+                result["details"]["errors"] = result["errors"]
+        
+        # Handle timeout information consistently
+        if result.get("timeout_detected") or result["details"].get("timeout_detected"):
+            result["timeout_detected"] = True
+            result["details"]["timeout_detected"] = True
+            result["timeout_stage"] = result.get("timeout_stage") or result["details"].get("timeout_stage", "unknown")
+            result["details"]["timeout_stage"] = result["timeout_stage"]
+            result["failure_stage"] = result.get("failure_stage") or result["details"].get("failure_stage", "unknown")
+            result["details"]["failure_stage"] = result["failure_stage"]
+        
+        # Include port attempts details
+        result["ports_tried"] = result["details"].get("ports_tried", 0)
+        result["mx_servers_tried"] = result["details"].get("mx_servers_tried", 0)
     
+    # Log result summary
     logger.info(f"[{trace_id}] SMTP validation for {email}: {'✓ Valid' if result['valid'] else '✗ Invalid'}")
     
-    # Log the details for debugging
-    logger.debug(f"[{trace_id}] SMTP validation details: banner={result.get('details', {}).get('smtp_banner')}, port={result.get('details', {}).get('port')}")
+    # Debug logging
+    if logger.isEnabledFor(logging.DEBUG):
+        port_detail = f", port={result['details'].get('port')}" if result['details'].get('port') else ""
+        error_detail = ""
+        if not result["valid"] and result.get("errors"):
+            error_detail = f", error={result['errors'][0][:50]}..." if result.get("errors") else ""
+        
+        logger.debug(f"[{trace_id}] SMTP validation details: banner={bool(result['details'].get('smtp_banner'))}{port_detail}{error_detail}")
+        logger.debug(f"[{trace_id}] SMTP validation result structure:")
+        logger.debug(f"  - result.valid: {result.get('valid')}")
+        logger.debug(f"  - result.details keys: {list(result.get('details', {}).keys())}")
     
     return result

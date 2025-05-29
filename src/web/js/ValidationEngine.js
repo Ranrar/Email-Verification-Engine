@@ -119,6 +119,7 @@ class ValidationEngine {
             
             // Call the Python validation function
             const response = await eel.verify_email(email)();
+            console.log("Validation response:", response);  // Debug output
             
             // Process the response
             this.handleValidationResponse(response);
@@ -198,6 +199,11 @@ class ValidationEngine {
         this.resultDiv.innerText = response.message;
         this.resultDiv.className = response.valid ? 'message success' : 'message error';
         
+        // Add error message if available
+        if (!response.valid && response.details && response.details.error_message) {
+            this.resultDiv.innerText += "\n" + response.details.error_message;
+        }
+        
         // Extract SMTP details if available
         const smtpDetails = response.details.smtp_details || {};
         
@@ -260,7 +266,8 @@ class ValidationEngine {
         
         // Use ResultsDisplay to handle detailed results
         if (window.ResultsDisplay) {
-            window.ResultsDisplay.displayResults(response.details);
+            // Change from using window.ResultsDisplay directly to using the instance
+            window.resultsDisplay.displayResults(response.details);
         }
         
         // Show detailed results container
@@ -274,6 +281,22 @@ class ValidationEngine {
         
         // Change button to "New Validation"
         this.verifyButton.textContent = "New Validation";
+        
+        // Add this code to show blacklist/disposable warnings
+        if (response.details && response.details.blacklist_info && response.details.blacklist_info.blacklisted) {
+             const blacklistWarning = document.createElement('div');
+             blacklistWarning.className = 'blacklist-warning';
+             blacklistWarning.textContent = '⚠️ Domain is blacklisted: ' + 
+                 (response.details.blacklist_info.source || 'Unknown source');
+             this.resultDiv.appendChild(blacklistWarning);
+         }
+         
+        if (response.details && response.details.is_disposable) {
+             const disposableWarning = document.createElement('div');
+             disposableWarning.className = 'disposable-warning';
+             disposableWarning.textContent = '⚠️ Disposable email address detected';
+             this.resultDiv.appendChild(disposableWarning);
+         }
     }
 
     /**

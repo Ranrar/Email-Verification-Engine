@@ -1,14 +1,9 @@
 """
-Email Verification Engine - MX Record Cache Script
+Email Verification Engine - fetch MX Record
 =====================
-Efficiently caches MX records for domains using the 3-level cache system.
-Uses DNS rotation, respects rate limits, and provides detailed logging.
-
-Single domain:
-python scripts/mx_cache.py -d example.com
-
-Process multiple domains from a file:
-python scripts/mx_cache.py -f domains.txt
+Efficiently fetch MX records for domains
+Uses DNS rotation, respects rate limits, 
+and provides detailed logging.
 """
 
 import dns.resolver
@@ -31,6 +26,7 @@ from src.managers.dns import DNSManager
 from src.managers.rate_limit import RateLimitManager
 from src.managers.time import TimeManager, now_utc, EnhancedOperationTimer
 from src.managers.log import Axe
+from src.utils.http_utils import make_request
 
 # Initialize logging
 logger = Axe()
@@ -81,14 +77,15 @@ class MXCacher:
             }
         
         # Check rate limits before proceeding
-        if not self.rate_limit_manager.check_rate_limit('dns', domain, 'mx_lookup'):
+        is_exceeded, _ = self.rate_limit_manager.check_rate_limit('dns', domain, 'mx_lookup')
+        if is_exceeded:
             logger.warning(f"Rate limit exceeded for {domain} MX lookup")
             return {
                 "domain": domain,
                 "mx_records": None,
                 "error": "Rate limit exceeded",
                 "timestamp": now_utc()
-            }
+    }
         
         # Use enhanced timer to measure operation duration
         with EnhancedOperationTimer("mx_lookup", metadata={"domain": domain}) as timer:
@@ -354,14 +351,23 @@ def fetch_mx_records(context):
     }
     mx_ip_mapping = []
 
+    # Ensure infra_info is always defined before any use
+    infra_info = {
+        "providers": [],
+        "countries": [],
+        "ptr_records": [],
+        "whois_data": {}
+    }
+
     if exchanges:
         dns_manager = DNSManager()
         rate_limit_manager = RateLimitManager()
         
         for mx_host in exchanges:
             # Check rate limits
-            if not rate_limit_manager.check_rate_limit('dns', mx_host, 'ip_lookup'):
-                logger.warning(f"[{trace_id}] Rate limit exceeded for {mx_host} IP lookup")
+            is_exceeded, _ = rate_limit_manager.check_rate_limit('dns', mx_host, 'ip_lookup')
+            if is_exceeded:
+                logger.warning(f"Rate limit exceeded for {mx_host} IP lookup")
                 continue
                 
             # Special handling for fallback case
@@ -433,14 +439,6 @@ def fetch_mx_records(context):
         # Get geolocation data for the first few IPs
         geo_processed = set()  # Track which IPs we've already processed
 
-        # Ensure infra_info is defined before use in geolocation
-        infra_info = {
-            "providers": [],
-            "countries": [],
-            "ptr_records": [],
-            "whois_data": {}
-        }
-        
         # Process IPv4 addresses
         for ip in ip_data["ipv4"][:5]:  # Limit to first 5 IPs
             if ip in geo_processed:
@@ -456,7 +454,7 @@ def fetch_mx_records(context):
                 try:
                     with EnhancedOperationTimer("geo_lookup", metadata={"ip": ip}) as timer:
                         # Try to determine country from IP
-                        geo_info = get_ip_geolocation(ip, trace_id)
+                        geo_info = _get_ip_geolocation(ip, trace_id)  # Changed from get_ip_geolocation
                         
                         if geo_info:
                             cache_manager.set(geo_cache_key, geo_info, ttl=86400*7)  # 7 day TTL
@@ -486,7 +484,7 @@ def fetch_mx_records(context):
                 try:
                     with EnhancedOperationTimer("geo_lookup", metadata={"ip": ip}) as timer:
                         # Try to determine country from IP
-                        geo_info = get_ip_geolocation(ip, trace_id)
+                        geo_info = _get_ip_geolocation(ip, trace_id)
                         
                         if geo_info:
                             cache_manager.set(geo_cache_key, geo_info, ttl=86400*7)
@@ -500,15 +498,7 @@ def fetch_mx_records(context):
                     logger.debug(f"[{trace_id}] Failed to get geolocation for {ip}: {e}")
             
             geo_processed.add(ip)
-    
-    # After IP resolution, enhance with additional infrastructure info
-    infra_info = {
-        "providers": [],
-        "countries": [],
-        "ptr_records": [],
-        "whois_data": {}
-    }
-    
+        
     # Process IP addresses and MX hosts for infrastructure information
     if exchanges and ip_data["ipv4"]:
         # 1. Detect hosting providers from domains and subdomains
@@ -603,90 +593,24 @@ def fetch_mx_records(context):
                 continue
         
         # 4. WHOIS information for the primary domain
-        # Note: Use a library that respects rate limits and has proper caching
         try:
-            whois_info = {}
-            whois_cache_key = CacheKeys.whois_info(domain)
-            cached_whois = cache_manager.get(whois_cache_key)
-            
-            if cached_whois:
-                whois_info = cached_whois
-                logger.debug(f"[{trace_id}] Cache hit for WHOIS info of {domain}")
-            else:
-                with EnhancedOperationTimer("whois_lookup", metadata={"domain": domain}) as timer:
-                    try:
-                        # Try python-whois first
-                        whois_info = {}
-                        w = whois.query(domain)
-                        
-                        # Extract key information
-                        if w:
-                            whois_info = {
-                                "registrar": getattr(w, "registrar", ""),
-                                "creation_date": getattr(w, "creation_date", ""),
-                                "expiration_date": getattr(w, "expiration_date", ""),
-                                "organization": getattr(w, "org", ""),
-                                "country": getattr(w, "country", ""),
-                                "emails": getattr(w, "emails", "")
-                            }
-                            
-                            # Clean up None values and convert dates to strings
-                            for key, value in whois_info.items():
-                                if isinstance(value, (list, tuple)) and value and isinstance(value[0], datetime):
-                                    whois_info[key] = str(value[0])
-                                elif isinstance(value, datetime):
-                                    whois_info[key] = str(value)
-                                elif value is None:
-                                    whois_info[key] = ""
+
+            whois_result = fetch_whois_info({"email": f"any@{domain}", "trace_id": trace_id})
+            if whois_result.get("valid") and whois_result.get("whois_info"):
+                infra_info["whois_data"] = whois_result["whois_info"]
+                
+                # Extract country information
+                country = whois_result["whois_info"].get("country", "")
+                if country and country not in infra_info["countries"]:
+                    infra_info["countries"].append(country)
                     
-                    except Exception as e:
-                        # Fallback to command line whois for more reliable results
-                        # Note: This requires 'whois' to be installed on the system
-                        try:
-                            result = subprocess.run(['whois', domain], 
-                                                  capture_output=True, 
-                                                  text=True, 
-                                                  timeout=5)
-                            if result.returncode == 0:
-                                raw_data = result.stdout
-                                # Simple parsing of whois output
-                                whois_info = {
-                                    "raw": raw_data[:500]  # Limit size for storage
-                                }
-                                
-                                # Extract key fields
-                                patterns = {
-                                    "registrar": r"Registrar:\s*(.+)",
-                                    "organization": r"Registrant Organization:\s*(.+)",
-                                    "country": r"Registrant Country:\s*(.+)",
-                                    "creation_date": r"Creation Date:\s*(.+)",
-                                    "expiration_date": r"Registry Expiry Date:\s*(.+)"
-                                }
-                                
-                                for key, pattern in patterns.items():
-                                    match = re.search(pattern, raw_data)
-                                    if match:
-                                        whois_info[key] = match.group(1).strip()
-                        except Exception:
-                            whois_info = {"error": "WHOIS lookup failed"}
-                
-                if whois_info:
-                    cache_manager.set(whois_cache_key, whois_info, ttl=86400 * 7)  # 7-day TTL
-            
-            infra_info["whois_data"] = whois_info
-            
-            # Extract country information
-            country = whois_info.get("country", "")
-            if country and country not in infra_info["countries"]:
-                infra_info["countries"].append(country)
-                
         except Exception as e:
             logger.warning(f"[{trace_id}] WHOIS lookup failed for {domain}: {str(e)}")
     
     # Detect email provider from MX records
     email_provider_info = None
     if exchanges:
-        email_provider_info = get_email_provider_info(exchanges, domain, trace_id)
+        email_provider_info = _get_email_provider_info(exchanges, domain, trace_id)  # Changed from get_email_provider_info
 
     # Update the result dictionary
     result_dict = {
@@ -716,9 +640,9 @@ def fetch_mx_records(context):
     
     return result_dict
 
-def get_ip_geolocation(ip, trace_id=None):
+def _get_ip_geolocation(ip, trace_id=None):
     """
-    Get geolocation information for an IP address.
+    Internal helper: Get geolocation information for an IP address.
     
     Args:
         ip: IP address to look up
@@ -773,11 +697,13 @@ def get_ip_geolocation(ip, trace_id=None):
         # If nothing matched in our basic checks, try ip-api (free tier)
         if not geo["country"]:
             try:
-                import requests
-                response = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,countryCode,regionName,isp", 
-                                      timeout=2)
-                if response.status_code == 200:
-                    data = response.json()
+                response = make_request(
+                    url=f"http://ip-api.com/json/{ip}",
+                    params={"fields": "status,country,countryCode,regionName,isp"},
+                    timeout=2
+                )
+                if response["success"]:
+                    data = response["data"]
                     if data.get("status") == "success":
                         geo = {
                             "provider": data.get("isp", "Unknown"),
@@ -793,9 +719,9 @@ def get_ip_geolocation(ip, trace_id=None):
         logger.debug(f"[{trace_id}] Geolocation error for {ip}: {e}")
         return None
 
-def get_email_provider_info(mx_exchanges, domain, trace_id=None):
+def _get_email_provider_info(mx_exchanges, domain, trace_id=None):
     """
-    Simple placeholder for provider info - actual data comes from email_provider_mapping view.
+    Internal helper: Determine email provider information from MX records.
     
     Args:
         mx_exchanges: List of MX exchange hostnames
@@ -819,24 +745,37 @@ def fetch_whois_info(context):
     """
     Retrieve WHOIS information for the domain of an email address.
     
+    This function is part of the public API and can be called directly
+    or used internally by the fetch_mx_records function.
+    
     Args:
-        context: Dictionary containing email address and trace_id
+        context: Dictionary containing:
+            - email: Email address to extract domain from, OR
+            - domain: Direct domain name input
+            - trace_id: Optional trace ID for logging
         
     Returns:
-        Dict with WHOIS information for the domain
+        Dict with WHOIS information for the domain including:
+            - valid: Boolean indicating success
+            - domain: The domain that was queried
+            - whois_info: Dictionary of WHOIS data or None if failed
+            - domain_age_days: Age of domain in days (if available)
+            - source: "cache" or "lookup" depending on where data came from
+            - execution_time: Time taken for lookup (if not from cache)
     """
-    email = context.get("email", "")
     trace_id = context.get("trace_id", "")
     
-    if not email or '@' not in email:
+    # Handle both direct domain input and email extraction
+    if "domain" in context:
+        domain = context["domain"]
+    elif "email" in context and '@' in context["email"]:
+        domain = context["email"].split('@')[1].strip().lower()
+    else:
         return {
             "valid": False, 
-            "error": "Invalid email format, cannot extract domain",
+            "error": "Invalid input, cannot extract domain",
             "whois_info": None
         }
-    
-    # Extract domain from email
-    domain = email.split('@')[1].strip().lower()
     
     # Check cache for WHOIS info
     whois_cache_key = CacheKeys.whois_info(domain)
@@ -862,12 +801,12 @@ def fetch_whois_info(context):
                 # Extract key information
                 if w:
                     whois_info = {
-                        "registrar": w.registrar,
-                        "creation_date": w.creation_date,
-                        "expiration_date": w.expiration_date,
-                        "organization": w.org,
-                        "country": w.country,
-                        "emails": w.emails
+                        "registrar": getattr(w, "registrar", ""),
+                        "creation_date": getattr(w, "creation_date", None),
+                        "expiration_date": getattr(w, "expiration_date", None),
+                        "organization": getattr(w, "organization", ""),
+                        "country": getattr(w, "country", ""), 
+                        "emails": getattr(w, "emails", [])
                     }
                     
                     # Clean up None values and convert dates to strings
@@ -880,38 +819,77 @@ def fetch_whois_info(context):
                             whois_info[key] = ""
             
             except Exception as e:
-                # Fallback to command line whois for more reliable results
-                # Note: This requires 'whois' to be installed on the system
-                logger.debug(f"[{trace_id}] Python-whois failed for {domain}: {str(e)}. Falling back to command line.")
+                logger.debug(f"[{trace_id}] Python-whois failed for {domain}: {str(e)}. Using RDAP fallback.")
+                
+                # Use RDAP API which is free and doesn't require API key
                 try:
-                    import subprocess
-                    result = subprocess.run(['whois', domain], 
-                                          capture_output=True, 
-                                          text=True, 
-                                          timeout=5)
-                    if result.returncode == 0:
-                        raw_data = result.stdout
-                        # Simple parsing of whois output
+                    # Public RDAP API - doesn't need authentication
+                    rdap_response = make_request(
+                        url=f"https://rdap.org/domain/{domain}",
+                        timeout=3
+                    )
+                    
+                    if rdap_response.get("success"):
+                        rdap_data = rdap_response.get("data", {})
                         whois_info = {
-                            "raw": raw_data[:500]  # Limit size for storage
+                            "registrar": rdap_data.get("entities", [{}])[0].get("handle", ""),
+                            "creation_date": rdap_data.get("events", [{}])[0].get("eventDate", ""),
+                            "source": "rdap.org"
                         }
                         
-                        # Extract key fields
-                        patterns = {
-                            "registrar": r"Registrar:\s*(.+)",
-                            "organization": r"Registrant Organization:\s*(.+)",
-                            "country": r"Registrant Country:\s*(.+)",
-                            "creation_date": r"Creation Date:\s*(.+)",
-                            "expiration_date": r"Registry Expiry Date:\s*(.+)"
-                        }
+                        # Try to extract more information if available
+                        if "entities" in rdap_data:
+                            for entity in rdap_data.get("entities", []):
+                                if entity.get("roles") and "registrar" in entity.get("roles", []):
+                                    whois_info["registrar"] = entity.get("handle", "")
+                                # Look for organization info
+                                if "vcardArray" in entity:
+                                    vcard = entity["vcardArray"][1] if len(entity["vcardArray"]) > 1 else []
+                                    for field in vcard:
+                                        if field[0] == "org":
+                                            whois_info["organization"] = field[3]
+                                        elif field[0] == "country":
+                                            whois_info["country"] = field[3]
+                    else:
+                        # RDAP request failed
+                        error_msg = rdap_response.get("error", "Unknown RDAP API error")
+                        logger.warning(f"[{trace_id}] RDAP API request failed: {error_msg}")
+                        whois_info = {"error": "RDAP lookup failed", "domain_exists": True}
                         
-                        for key, pattern in patterns.items():
-                            match = re.search(pattern, raw_data)
-                            if match:
-                                whois_info[key] = match.group(1).strip()
-                except Exception as sub_e:
-                    logger.warning(f"[{trace_id}] Command-line whois also failed for {domain}: {str(sub_e)}")
-                    whois_info = {"error": "WHOIS lookup failed with all methods"}
+                except Exception as rdap_e:
+                    logger.debug(f"[{trace_id}] RDAP fallback failed: {str(rdap_e)}")
+                    
+                    # As last resort, try command-line whois (if available on system)
+                    try:
+                        # Attempt to use system whois command
+                        result = subprocess.run(
+                            ["whois", domain], 
+                            capture_output=True, 
+                            text=True, 
+                            timeout=5
+                        )
+                        if result.returncode == 0:
+                            whois_text = result.stdout
+                            # Extract basic info from output text
+                            whois_info = {
+                                "source": "system_whois",
+                                "raw": whois_text[:500]  # Store first 500 chars only
+                            }
+                            
+                            # Try to extract creation date with regex
+                            date_match = re.search(r"Creation Date: (.+?)($|\n)", whois_text)
+                            if date_match:
+                                whois_info["creation_date"] = date_match.group(1).strip()
+                            
+                            # Try to extract registrar with regex
+                            reg_match = re.search(r"Registrar: (.+?)($|\n)", whois_text)
+                            if reg_match:
+                                whois_info["registrar"] = reg_match.group(1).strip()
+                        else:
+                            whois_info = {"error": "All WHOIS methods failed", "domain_exists": True}
+                    except Exception as cmd_e:
+                        logger.debug(f"[{trace_id}] Command-line whois failed: {str(cmd_e)}")
+                        whois_info = {"error": "All WHOIS methods failed", "domain_exists": True}
             
             # Cache the result with appropriate TTL from rate limit manager
             if whois_info:
