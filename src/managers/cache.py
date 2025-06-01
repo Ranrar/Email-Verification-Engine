@@ -76,6 +76,8 @@ class CacheKeys:
     IP_ADDRESS = "ip_address:{host}:{ip_type}"
     GEO_INFO = "geo_info:{ip}"
     PTR_RECORD = "ptr_record:{ip}"
+    VALIDATION_RESULT = "validation_result:{email}"
+    SMTP_BLOCKED = "smtp_blocked:{domain}"
     
     # ...add more as needed...
 
@@ -103,10 +105,6 @@ class CacheKeys:
     def dns_records_key(record_type, domain):
         """Generate cache key for DNS records by type and domain"""
         return CacheKeys.DNS_RECORDS.format(record_type=record_type, domain=domain)
-    @staticmethod
-    def mx_records_key(domain):
-        """Alias for mx_records for compatibility with dns.py"""
-        return CacheKeys.mx_records(domain)
     @staticmethod
     def rate_limit_state_key(category, resource_id):
         """Generate cache key for rate limit state tracking"""
@@ -162,6 +160,17 @@ class CacheKeys:
     
     @staticmethod
     def ptr_record(ip): return CacheKeys.PTR_RECORD.format(ip=ip)
+    
+    @staticmethod
+    def validation_result(email): return CacheKeys.VALIDATION_RESULT.format(email=email)
+    
+    @staticmethod
+    def smtp_blocked(domain): return CacheKeys.SMTP_BLOCKED.format(domain=domain)
+
+    @staticmethod
+    def format_validation(email):
+        """Generate cache key for format validation by email"""
+        return CacheKeys.FORMAT_VALIDATION.format(email=email)
 
 class CacheManager:
     """
@@ -184,6 +193,10 @@ class CacheManager:
         self.db_conn = db_conn
         self.lock = threading.Lock()
         self.time_offset = timedelta(seconds=0)  # Time offset between local and DB
+        
+        # Add processing items tracking
+        self.processing_items = {}
+        self.processing_lock = threading.Lock()
         
         # Transaction management
         self.transaction_active = False
@@ -590,69 +603,72 @@ class CacheManager:
             dict: Counts of items removed from each cache level
         """
         now = int(time.time())
-        results = {"disk": 0, "postgres": 0}
+        results = {"disk": 0, "postgres": 0, "skipped": 0}
         
         try:
             with self.lock:
-                # Check if disk connection is available, reconnect if needed
-                if not hasattr(self, 'disk_conn') or self.disk_conn is None:
-                    logger.warning("Disk connection not available, attempting to reconnect")
-                    try:
-                        disk_cache_dir = self.settings.get("DISK_CACHE_DIR", "./.cache")
-                        os.makedirs(disk_cache_dir, exist_ok=True)
-                        self.disk_cache_path = os.path.join(disk_cache_dir, "cache.db")
-                        self.disk_conn = sqlite3.connect(self.disk_cache_path, check_same_thread=False)
-                        self._init_disk_cache()
-                        logger.info("Reconnected to disk cache")
-                    except Exception as e:
-                        logger.error(f"Failed to reconnect to disk cache: {e}")
-                        return {"error": "Disk connection unavailable"}
-                
                 # Level 2: DISKCACHE (SQLITE3) - Disk Cache
                 with self.disk_conn:
-                    deleted = self.disk_conn.execute("DELETE FROM cache WHERE expires_at < ?", (now,)).rowcount
-                    results["disk"] = deleted
-                    if deleted > 0:
-                        logger.debug(f"Removed {deleted} expired entries from disk cache")
+                    # Get expired keys first
+                    cursor = self.disk_conn.execute(
+                        "SELECT key, expires_at FROM cache WHERE expires_at < ?", (now,)
+                    )
+                    keys_to_delete = []
+                    skipped_keys = []
+                    
+                    # Check each key against processing status
+                    for key, _ in cursor.fetchall():
+                        if self.is_processing(key):
+                            skipped_keys.append(key)
+                            results["skipped"] += 1
+                        else:
+                            keys_to_delete.append(key)
+                    
+                    # Delete the non-processing expired keys
+                    for key in keys_to_delete:
+                        self.disk_conn.execute("DELETE FROM cache WHERE key = ?", (key,))
+                        results["disk"] += 1
+                    
+                    if keys_to_delete:
+                        logger.debug(f"Removed {len(keys_to_delete)} expired entries from disk cache")
+                    if skipped_keys:
+                        logger.debug(f"Skipped cleanup of {len(skipped_keys)} items that are being processed")
                 
-                # Memory expiry tracking cleanup
-                expired_keys = []
-                for key, expiry_data in list(self.mem_expiry.items()):
-                    if expiry_data.get('expires_at', 0) < now:
-                        expired_keys.append(key)
-                
-                # Remove expired items from memory expiry tracking
-                for key in expired_keys:
-                    self.mem_expiry.pop(key, None)
-                
-                if expired_keys:
-                    logger.debug(f"Cleaned up {len(expired_keys)} expired tracking entries from memory")
-                
-                # Level 3: POSTGRESQL - Network Database
-                # (Schema has trigger to auto-cleanup expired entries)
+                # Level 3: PostgreSQL cleanup (with protection)
                 if self.db_conn:
                     try:
-                        # Run cleanup by executing a dummy operation to trigger the cleanup function
-                        # defined in schema.sql
-                        self.db_conn.execute("""
-                            INSERT INTO cache_entries (key, category, value, ttl)
-                            VALUES ('_cleanup_trigger', '_system', '{"_action":"cleanup"}', 0)
-                            ON CONFLICT (key, category) DO NOTHING
-                        """)
-                        
-                        # Get the count of rows deleted by the trigger
-                        postgres_deleted = self.db_conn.fetchval("""
-                            SELECT COUNT(*) FROM cache_entries 
+                        # Get keys that would be cleaned up
+                        pg_keys = self.db_conn.fetch("""
+                            SELECT key FROM cache_entries 
                             WHERE ttl > 0 AND created_at + (ttl * interval '1 second') < NOW()
                         """)
                         
-                        if postgres_deleted:
-                            results["postgres"] = postgres_deleted
-                            logger.debug(f"Identified {postgres_deleted} expired entries in PostgreSQL cache")
+                        # Filter out processing keys
+                        keys_to_delete = []
+                        skipped_pg_keys = []
                         
+                        for row in pg_keys:
+                            key = row['key']
+                            if self.is_processing(key):
+                                skipped_pg_keys.append(key)
+                                results["skipped"] += 1
+                            else:
+                                keys_to_delete.append(key)
+                        
+                        # Delete non-processing expired keys
+                        if keys_to_delete:
+                            placeholders = ', '.join([f"${i+1}" for i in range(len(keys_to_delete))])
+                            query = f"DELETE FROM cache_entries WHERE key IN ({placeholders})"
+                            self.db_conn.execute(query, *keys_to_delete)
+                            results["postgres"] = len(keys_to_delete)
+                            logger.debug(f"Removed {len(keys_to_delete)} expired entries from PostgreSQL cache")
+                        
+                        if skipped_pg_keys:
+                            logger.debug(f"Skipped cleanup of {len(skipped_pg_keys)} items in PostgreSQL that are being processed")
+                            
                     except Exception as e:
-                        logger.debug(f"PostgreSQL cache cleanup trigger: {e}")
-        
+                        logger.debug(f"PostgreSQL cache cleanup error: {e}")
+            
         except Exception as e:
             logger.warning(f"Error during cache cleanup: {e}")
             return {"error": str(e)}
@@ -1057,6 +1073,101 @@ class CacheManager:
         self._cleanup_timer = threading.Timer(purge_interval, _cleanup_and_reschedule)
         self._cleanup_timer.daemon = True
         self._cleanup_timer.start()
+
+    def mark_processing(self, key, timeout=300):
+        """
+        Mark an item as being processed to prevent cleanup.
+        
+        Args:
+            key: Cache key to protect
+            timeout: Maximum time in seconds to protect this item (default: 5 minutes)
+            
+        Returns:
+            bool: True if successfully marked
+        """
+        with self.processing_lock:
+            # Set expiration time
+            self.processing_items[key] = time.time() + timeout
+            logger.debug(f"Marked {key} as processing (protected for {timeout}s)")
+            return True
+        
+    def unmark_processing(self, key):
+        """
+        Remove processing mark when done.
+        
+        Args:
+            key: Cache key to unprotect
+            
+        Returns:
+            bool: True if key was protected and now removed, False if not found
+        """
+        with self.processing_lock:
+            if key in self.processing_items:
+                del self.processing_items[key]
+                logger.debug(f"Unmarked {key} from processing")
+                return True
+            return False
+        
+    def is_processing(self, key):
+        """
+        Check if a key is currently being processed.
+        
+        Args:
+            key: Cache key to check
+            
+        Returns:
+            bool: True if key is currently being processed
+        """
+        with self.processing_lock:
+            if key in self.processing_items:
+                # Check if the lock has expired
+                if time.time() > self.processing_items[key]:
+                    # Auto-cleanup expired processing marks
+                    del self.processing_items[key]
+                    return False
+                return True
+            return False
+
+    def protect_validation_keys(self, email, timeout=300):
+        """
+        Mark all cache keys related to an email validation as being processed to prevent cleanup.
+        """
+        if '@' not in email:
+            logger.warning(f"Invalid email format: {email}")
+            return []
+            
+        domain = email.split('@')[1]
+        
+        # List all possible cache keys used during validation - add all relevant keys
+        keys_to_protect = [
+            CacheKeys.validation_result(email),  # Use proper method
+            CacheKeys.smtp_result(email),
+            CacheKeys.smtp_banner(domain),
+            CacheKeys.mx_records(domain),
+            CacheKeys.format_validation(email),
+            CacheKeys.disposable(domain),
+            CacheKeys.blacklist(domain),
+            CacheKeys.dns_records_key("MX", domain),
+            CacheKeys.dns_records_key("A", domain),
+            CacheKeys.spf(domain),
+            CacheKeys.dkim(domain),
+            CacheKeys.dmarc(domain),
+            CacheKeys.a_records(domain),
+            CacheKeys.ptr_record(domain) if domain.replace('.', '').isdigit() else None,
+            CacheKeys.geo_info(domain) if domain.replace('.', '').isdigit() else None
+        ]
+        
+        # Filter out None values (for conditional keys)
+        keys_to_protect = [k for k in keys_to_protect if k is not None]
+        
+        # Mark all keys as being processed
+        with self.processing_lock:
+            protection_time = time.time() + timeout
+            for key in keys_to_protect:
+                self.processing_items[key] = protection_time
+    
+        logger.debug(f"Protected {len(keys_to_protect)} cache keys for {email} validation")
+        return keys_to_protect
 
 # Default settings
 DEFAULT_CACHE_SETTINGS = {

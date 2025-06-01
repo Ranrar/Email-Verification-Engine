@@ -425,7 +425,7 @@ def initialize_dynamic_queue():
 
 def initialize_engine_components():
     """Initialize all engine components without fallbacks"""
-    from src.engine.engine import validate_email
+    from src.engine.engine import get_engine  # Import the correct function
     from src.managers.executor import thread_pool
     
     logger.info("Initializing engine components...")
@@ -435,6 +435,10 @@ def initialize_engine_components():
     port_manager = _components.get('managers', {}).get('port')
     rate_manager = _components.get('managers', {}).get('rate')
     time_manager = _components.get('managers', {}).get('time')
+    
+    # Initialize the engine instance 
+    engine = get_engine()
+    logger.info("Email validation engine initialized")
     
     logger.info("Engine components initialized")
 

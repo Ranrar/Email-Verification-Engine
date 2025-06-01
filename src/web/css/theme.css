@@ -1,0 +1,160 @@
+:root {
+    /* Light theme variables */
+    --bg-color: #f4f4f4;
+    --text-color: #333;
+    --menu-bg: #aaaaaa;
+    --menu-text: #000000;
+    --dropdown-bg: #888888;
+    --dropdown-text: #ffffff;
+    --container-bg: #fff;
+    --button-bg: #5cb85c;
+    --button-hover: #4cae4c;
+    --button-text: #fff;
+    
+    /* Toggle switch colors for light theme */
+    --toggle-bg: #ccc;
+    --toggle-active-bg: #5cb85c;
+    --toggle-button: white;
+    --toggle-active-button: white;
+    
+    /* ASCII Logo color for light theme */
+    --logo-color: #5cb85c;
+    --logo-shadow: rgba(0, 0, 0, 0.3);
+    
+    /* Results container */
+    --results-container-bg: #f9f9f9;
+    --results-container-border: #ddd;
+    --results-heading-color: #333;
+    --results-row-border: #eee;
+    --valid-result-color: #2e7d32;
+    --invalid-result-color: #c62828;
+    
+    /* Message colors */
+    --message-error-bg: #ffebee;
+    --message-error-color: #c62828;
+    --message-error-border: #ffcdd2;
+    --message-success-bg: #e8f5e9;
+    --message-success-color: #2e7d32;
+    --message-success-border: #c8e6c9;
+    --message-info-bg: #e3f2fd;
+    --message-info-color: #1565c0;
+    --message-info-border: #bbdefb;
+    
+    /* Theme switch specific variables for light mode */
+    --theme-switch-bg: #4cae4c;
+    --theme-switch-active-bg: #4cae4c;
+}
+
+[data-theme="dark"] {
+    /* Dark theme variables */
+    --bg-color: #222;
+    --text-color: #eee;
+    --menu-bg: #444;
+    --menu-text: #ffffff;
+    --dropdown-bg: #555;
+    --dropdown-text: #ffffff;
+    --container-bg: #333;
+    --button-bg: #cc0000;
+    --button-hover: #990000;
+    --button-text: #fff;
+    
+    /* Toggle switch colors for dark theme */
+    --toggle-bg: #555;
+    --toggle-active-bg: #990000;
+    --toggle-button: #ddd;
+    --toggle-active-button: white;
+    
+    /* ASCII Logo color for dark theme */
+    --logo-color: #cc0000;
+    --logo-shadow: #990000(255, 255, 255, 0.1);
+    
+    /* Results container in dark mode */
+    --results-container-bg: #2a2a2a;
+    --results-container-border: #444;
+    --results-heading-color: #eee;
+    --results-row-border: #444;
+    --valid-result-color: #4caf50;
+    --invalid-result-color: #ef5350;
+    
+    /* Message colors for dark mode */
+    --message-error-bg: #311b1b;
+    --message-error-color: #ef5350;
+    --message-error-border: #842029;
+    --message-success-bg: #1b311d;
+    --message-success-color: #4caf50;
+    --message-success-border: #2a5834;
+    --message-info-bg: #1a2733;
+    --message-info-color: #64b5f6;
+    --message-info-border: #0d47a1;
+    
+    /* Theme switch specific variables for dark mode */
+    --theme-switch-bg: #990000;
+    --theme-switch-active-bg: #990000;
+}
+
+/* Theme Switch - completely rebuilt to match toggle switch */
+.theme-switch-wrapper {
+    display: flex;
+    align-items: center;
+    padding: 0 16px 0 0;
+    justify-content: center;
+    gap: 8px;
+}
+
+.theme-switch-wrapper span {
+    color: var(--menu-text);
+    font-size: 14px;
+    padding: 0;
+    margin: 0;
+}
+
+/* Make theme-switch exactly match toggle-switch */
+.theme-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    margin: 0;
+}
+
+.theme-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
+}
+
+/* Update the theme switch slider to use the custom variables */
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--theme-switch-bg);
+    transition: .4s;
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--toggle-button);
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: var(--theme-switch-active-bg);
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
+    background-color: var(--toggle-active-button);
+}

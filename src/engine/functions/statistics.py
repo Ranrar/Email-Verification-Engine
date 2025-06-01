@@ -11,7 +11,7 @@ This module handles the collection, updating and retrieval of SMTP domain statis
 """
 
 import time
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 from datetime import datetime, timezone, timedelta
 import decimal
 
@@ -202,3 +202,178 @@ class DomainStats:
         except Exception as e:
             logger.warning(f"Error checking retry availability for {domain}: {e}")
             return True, None
+
+class DNSServerStats:
+    """Manages DNS server statistics for performance monitoring and resolver selection"""
+    
+    def record_query_stats(self, nameserver: str, query_type: str, status: str, 
+                         response_time_ms: Optional[float] = None, error_message: Optional[str] = None):
+        """
+        Record individual DNS query statistics
+        
+        Args:
+            nameserver: The IP address of the nameserver used
+            query_type: Type of DNS record queried (A, MX, TXT, etc.)
+            status: 'success' or 'failure'
+            response_time_ms: Query response time in milliseconds (for successful queries)
+            error_message: Error message (for failed queries)
+        """
+        try:
+            # Get current timestamp
+            current_time = datetime.now(timezone.utc)
+            
+            # Insert individual query stat record
+            sync_db.execute(
+                """
+                INSERT INTO dns_server_stats 
+                (nameserver, query_type, status, response_time_ms, error_message, timestamp)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                nameserver, query_type, status, response_time_ms, error_message, current_time
+            )
+            
+            # Update aggregate statistics
+            if status == 'success':
+                self._update_aggregate_stats(nameserver, query_type, True, response_time_ms)
+            else:
+                self._update_aggregate_stats(nameserver, query_type, False, None, error_message)
+                
+        except Exception as e:
+            logger.warning(f"Failed to record DNS query stats for {nameserver}: {e}")
+    
+    def _update_aggregate_stats(self, nameserver: str, query_type: str, success: bool, 
+                          response_time_ms: Optional[float] = None, error_message: Optional[str] = None):
+        """
+        Update aggregate statistics for a nameserver
+        
+        Args:
+            nameserver: The IP address of the nameserver
+            query_type: Type of DNS record queried
+            success: Whether the query was successful
+            response_time_ms: Query response time in milliseconds
+            error_message: Error message (for failed queries)
+        """
+        try:
+            current_time = datetime.now(timezone.utc)
+            
+            # Upsert the nameserver stats record
+            if success:
+                # For successful queries
+                sync_db.execute(
+                    """
+                    INSERT INTO dns_server_stats 
+                    (nameserver, query_type, queries, hits, 
+                     avg_latency_ms, max_latency_ms, min_latency_ms, since, last_updated) 
+                    VALUES 
+                    ($1, $2, 1, 1, $3, $3, $3, $4, $4)
+                    ON CONFLICT (nameserver, query_type) DO UPDATE SET
+                        queries = dns_server_stats.queries + 1,
+                        hits = dns_server_stats.hits + 1,
+                        avg_latency_ms = (dns_server_stats.avg_latency_ms * 
+                                         dns_server_stats.hits + $3) / 
+                                         (dns_server_stats.hits + 1),
+                        max_latency_ms = GREATEST(dns_server_stats.max_latency_ms, $3),
+                        min_latency_ms = LEAST(
+                            CASE WHEN dns_server_stats.min_latency_ms = 0 
+                                 THEN $3 
+                                 ELSE dns_server_stats.min_latency_ms END, 
+                            $3),
+                        last_updated = $4
+                    """,
+                    nameserver, query_type, response_time_ms, current_time
+                )
+            else:
+                # For failed queries
+                sync_db.execute(
+                    """
+                    INSERT INTO dns_server_stats 
+                    (nameserver, query_type, queries, misses, errors, since, last_updated) 
+                    VALUES 
+                    ($1, $2, 1, 1, 1, $3, $3)
+                    ON CONFLICT (nameserver, query_type) DO UPDATE SET
+                        queries = dns_server_stats.queries + 1,
+                        misses = dns_server_stats.misses + 1,
+                        errors = dns_server_stats.errors + 1,
+                        last_updated = $3
+                    """,
+                    nameserver, query_type, current_time
+                )
+                
+        except Exception as e:
+            logger.warning(f"Failed to update aggregate DNS stats for {nameserver}: {e}")
+    
+    def get_best_nameservers(self, count: int = 2, for_query_type: Optional[str] = None) -> List[str]:
+        """
+        Get the best performing nameservers based on response time and success rate
+        
+        Args:
+            count: Number of nameservers to return
+            for_query_type: If specified, get best nameservers for this query type
+            
+        Returns:
+            List of nameserver IP addresses
+        """
+        try:
+            query_condition = ""
+            params: List[Any] = [count]
+            
+            if for_query_type:
+                query_condition = "AND query_type = $2"
+                params.append(for_query_type)
+            
+            # Get nameservers with highest success rate and lowest latency
+            query = f"""
+                SELECT 
+                    nameserver,
+                    SUM(hits) as success_count,
+                    SUM(queries) as total_queries,
+                    AVG(avg_latency_ms) as avg_latency
+                FROM dns_server_stats
+                WHERE last_updated > NOW() - INTERVAL '24 hours'
+                {query_condition}
+                GROUP BY nameserver
+                HAVING SUM(queries) >= 5  -- Require minimum sample size
+                ORDER BY 
+                    (SUM(hits)::float / NULLIF(SUM(queries), 0)) DESC,
+                    AVG(avg_latency_ms) ASC
+                LIMIT $1
+            """
+            
+            nameservers = sync_db.fetch(query, *params)
+            
+            # Extract just the IP addresses
+            return [ns['nameserver'] for ns in nameservers]
+            
+        except Exception as e:
+            logger.error(f"Failed to get best nameservers: {e}")
+            return []
+    
+    def clean_up_old_stats(self, days: int = 30) -> int:
+        """
+        Clean up old DNS statistics records
+        
+        Args:
+            days: Number of days of data to keep
+            
+        Returns:
+            Number of records deleted
+        """
+        try:
+            result = sync_db.execute(
+                """
+                DELETE FROM dns_server_stats
+                WHERE timestamp < NOW() - INTERVAL '1 day' * $1
+                RETURNING id
+                """,
+                days
+            )
+            
+            count = len(result) if result else 0
+            if count > 0:
+                logger.info(f"Cleaned up {count} old DNS statistics records")
+            
+            return count
+            
+        except Exception as e:
+            logger.error(f"Failed to clean up DNS statistics: {e}")
+            return 0

@@ -417,7 +417,8 @@ class EnhancedOperationTimer:
     Example:
         with EnhancedOperationTimer("validate_email") as timer:
             # code to time
-            result = validate_email("user@example.com")
+            from src.engine.engine import get_engine
+            result = get_engine().validate("user@example.com")
             
         # Access the timing information
         elapsed_ms = timer.elapsed_ms

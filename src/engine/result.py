@@ -131,6 +131,7 @@ class EmailValidationResult:
         self.smtp_flow_success = False # SMTP flow completed successfully
         self.smtp_error_code = None   # SMTP error code if any
         self.smtp_server_message = '' # SMTP server message
+        self.connection_success = False
         
         # Other validation results
         self.is_disposable = []

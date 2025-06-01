@@ -128,62 +128,22 @@ def process_validation_results(result: EmailValidationResult, validation_results
             if result.email_provider and result.email_provider.get('provider_detected'):
                 logger.debug(f"[{result.trace_id}] Email provider: {result.email_provider.get('provider_name')}")
     
-    if 'smtp_check' in validation_results:
-        smtp_result = validation_results.get('smtp_check', {})
+    # SMTP check processing
+    if 'smtp_validation' in validation_results:
+        smtp_result = validation_results.get('smtp_validation', {})
         
-        # Set the overall SMTP validation result
-        result.smtp_result = smtp_result.get('valid', False)
+        # Make sure the banner is explicitly assigned to the result object
+        result.smtp_banner = smtp_result.get('smtp_banner', '')
+        result.smtp_result = smtp_result.get('smtp_result', False)
+        result.smtp_vrfy = smtp_result.get('smtp_vrfy', False)
+        result.smtp_supports_tls = smtp_result.get('smtp_supports_tls', False)
+        result.smtp_supports_auth = smtp_result.get('smtp_supports_auth', False)
+        result.smtp_flow_success = smtp_result.get('smtp_flow_success', False)
+        result.smtp_error_code = smtp_result.get('smtp_error_code')
+        result.smtp_server_message = smtp_result.get('smtp_server_message', '')
         
-        # Process all SMTP fields directly on the result object (not in smtp_details)
-        result.smtp_banner = smtp_result.get('banner', '')
-        result.smtp_vrfy = smtp_result.get('vrfy_supported', False)
-        result.smtp_supports_tls = smtp_result.get('tls_supported', False)
-        result.smtp_supports_auth = smtp_result.get('auth_supported', False)
-        result.smtp_flow_success = smtp_result.get('flow_completed', False)
-        result.smtp_error_code = smtp_result.get('error_code')
-        result.smtp_server_message = smtp_result.get('server_message', '')
-        
-        # Also look for these fields in the details subdictionary if they exist
-        if 'details' in smtp_result and isinstance(smtp_result['details'], dict):
-            details = smtp_result['details']
-            # Only set values if they're not already set from the top-level
-            if not result.smtp_banner and 'banner' in details:
-                result.smtp_banner = details.get('banner', '')
-            if not result.smtp_vrfy and 'vrfy_supported' in details:
-                result.smtp_vrfy = details.get('vrfy_supported', False)
-            if not result.smtp_supports_tls and 'tls_supported' in details:
-                result.smtp_supports_tls = details.get('tls_supported', False)
-            if not result.smtp_supports_auth and 'auth_supported' in details:
-                result.smtp_supports_auth = details.get('auth_supported', False)
-            if not result.smtp_flow_success and 'flow_completed' in details:
-                result.smtp_flow_success = details.get('flow_completed', False)
-            if not result.smtp_error_code and 'error_code' in details:
-                result.smtp_error_code = details.get('error_code')
-            if not result.smtp_server_message and 'server_message' in details:
-                result.smtp_server_message = details.get('server_message', '')
-        
-        # Handle error message for SMTP failures
-        if not result.smtp_result:
-            error_sources = [
-                smtp_result.get('error'),
-                smtp_result.get('errors', []),
-                smtp_result.get('details', {}).get('error_message'),
-                smtp_result.get('details', {}).get('errors', [])
-            ]
-            
-            # Find the first non-empty error
-            main_error = None
-            for source in error_sources:
-                if source:
-                    if isinstance(source, list) and source:
-                        main_error = source[0]
-                        break
-                    elif isinstance(source, str):
-                        main_error = source
-                        break
-            
-            if main_error:
-                result.error_message = main_error
+        # Additional fields
+        result.connection_success = smtp_result.get('connection_success', False)
     
     if 'disposable_check' in validation_results:
         disposable_check = validation_results.get('disposable_check', {})
@@ -269,13 +229,3 @@ def calculate_validity_and_confidence(result: EmailValidationResult, validation_
 
     # Clamp score to [0, max_score]
     score = max(0, min(score, max_score)) if max_score > 0 else 0
-    result.confidence_score = int((score / max_score * 100) if max_score > 0 else 0)
-
-    # Fetch confidence levels from DB and set confidence_level
-    levels = db.fetch("SELECT level_name, min_threshold, max_threshold FROM confidence_levels")
-    level_name = "Unknown"
-    for level in levels or []:
-        if level['min_threshold'] <= result.confidence_score <= level['max_threshold']:
-            level_name = level['level_name']
-            break
-    result.confidence_level = level_name

@@ -125,6 +125,10 @@ def get_domain_status(domain: str) -> Dict[str, Any]:
         domain: Domain to check
         
     Returns:
-        dict: Domain status information
+        dict: Domain status information with keys:
+            - valid: Whether the check succeeded
+            - whitelisted: Whether domain is whitelisted
+            - blacklisted: Whether domain is blacklisted
+            - source: Source of the blacklist/whitelist (if applicable)
     """
     return _check_database_for_domain_status(domain)

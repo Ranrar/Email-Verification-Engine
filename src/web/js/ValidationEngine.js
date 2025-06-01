@@ -10,19 +10,7 @@ class ValidationEngine {
         this.emailInput = null;
         this.resultDiv = null;
         this.detailedResults = null;
-        this.progressBar = null;
-        this.progressFill = null;
-        this.percentText = null;
-        this.stepText = null;
-        
-        this.validationSteps = [
-            "Checking email format...",
-            "Validating domain...",
-            "Checking MX records...",
-            "Looking for disposable patterns...",
-            "Performing SMTP validation...",
-            "Calculating confidence score..."
-        ];
+        this.animationElement = null; // New reference for our animation element
     }
 
     /**
@@ -70,10 +58,15 @@ class ValidationEngine {
             return;
         }
         
-        if (this.validateEmailFormat(email)) {
-            this.startValidation(email);
+        // Basic client-side validation - check for @ and . characters
+        if (email.trim() !== '') {
+            if (email.includes('@') && email.includes('.')) {
+                this.startValidation(email);
+            } else {
+                this.showError('Please enter a valid email address.');
+            }
         } else {
-            this.showError('Please enter a valid email address.');
+            this.showError('Please enter an email address.');
         }
     }
 
@@ -138,47 +131,44 @@ class ValidationEngine {
      * Show validation progress animation
      */
     async showValidationProgress() {
-        if (!this.progressBar) return;
-        
-        this.progressBar.style.display = 'block';
-        
-        const stepDuration = 400; // milliseconds per step
-        const intervalTime = 50;
-        let progress = 0;
-        let currentStep = 0;
-        
-        if (this.stepText) {
-            this.stepText.textContent = this.validationSteps[0];
+        // Create or get the animation container
+        let animContainer = document.getElementById('validationAnimation');
+        if (!animContainer) {
+            animContainer = document.createElement('div');
+            animContainer.id = 'validationAnimation';
+            animContainer.className = 'validation-animation';
+            
+            // Insert after the verify button instead of email input
+            this.verifyButton.parentNode.insertBefore(animContainer, this.verifyButton.nextSibling);
         }
         
-        return new Promise((resolve) => {
-            const progressInterval = setInterval(() => {
-                const expectedProgress = Math.min(100, Math.floor((progress / (this.validationSteps.length * stepDuration)) * 100));
-                
-                // Update visual elements
-                if (this.progressFill) {
-                    this.progressFill.style.width = `${expectedProgress}%`;
-                }
-                if (this.percentText) {
-                    this.percentText.textContent = `${expectedProgress}%`;
-                }
-                
-                // Move to next step if needed
-                if (progress > 0 && progress % stepDuration === 0 && currentStep < this.validationSteps.length - 1) {
-                    currentStep++;
-                    if (this.stepText) {
-                        this.stepText.textContent = this.validationSteps[currentStep];
-                    }
-                }
-                
-                progress += intervalTime;
-                
-                // Complete when reaching 100%
-                if (expectedProgress >= 100) {
-                    clearInterval(progressInterval);
-                    resolve();
-                }
-            }, intervalTime);
+        // Show the animation container
+        animContainer.style.display = 'block';
+        
+        // Create the text element and dots container
+        animContainer.innerHTML = `
+            <span class="validation-text">Validating please wait</span>
+            <span class="dots">
+                <span class="dot dot1">.</span>
+                <span class="dot dot2">.</span>
+                <span class="dot dot3">.</span>
+            </span>
+        `;
+        
+        // Hide the old progress bar if it exists
+        if (this.progressBar) {
+            this.progressBar.style.display = 'none';
+        }
+        
+        // Return a promise that resolves when validation is complete
+        return new Promise(resolve => {
+            // Store the animation element so we can hide it later
+            this.animationElement = animContainer;
+            
+            // Set a minimum display time to ensure animation is visible
+            setTimeout(() => {
+                resolve();
+            }, 1500);
         });
     }
 
@@ -188,6 +178,11 @@ class ValidationEngine {
     hideValidationProgress() {
         if (this.progressBar) {
             this.progressBar.style.display = 'none';
+        }
+        
+        // Also hide our new animation
+        if (this.animationElement) {
+            this.animationElement.style.display = 'none';
         }
     }
 
@@ -204,69 +199,24 @@ class ValidationEngine {
             this.resultDiv.innerText += "\n" + response.details.error_message;
         }
         
-        // Extract SMTP details if available
-        const smtpDetails = response.details.smtp_details || {};
+        // Extract SMTP details - look for them at the root level of response or in details
+        const smtpDetails = {
+            smtp_result: response.smtp_result || (response.details && response.details.smtp_result) || false,
+            smtp_banner: response.smtp_banner || (response.details && response.details.smtp_banner) || '',
+            smtp_vrfy: response.smtp_vrfy || (response.details && response.details.smtp_vrfy) || false,
+            supports_tls: response.smtp_supports_tls || (response.details && response.details.smtp_supports_tls) || false,
+            supports_auth: response.smtp_supports_auth || (response.details && response.details.smtp_supports_auth) || false,
+            smtp_flow_success: response.smtp_flow_success || (response.details && response.details.smtp_flow_success) || false,
+            smtp_error_code: response.smtp_error_code || (response.details && response.details.smtp_error_code) || null,
+            server_message: response.smtp_server_message || (response.details && response.details.smtp_server_message) || '',
+            connection_success: response.connection_success || (response.details && response.details.connection_success) || false
+        };
         
-        // Display SMTP results if the div exists
-        if (this.smtpResultsDiv) {
-            // Clear previous SMTP results
-            this.smtpResultsDiv.innerHTML = '';
-            
-            // Only show the SMTP results section if we have details to display
-            if (Object.keys(smtpDetails).length > 0) {
-                this.smtpResultsDiv.style.display = 'block';
-                
-                // Create and append SMTP results
-                const smtpItems = [
-                    { label: 'SMTP Connection:', value: smtpDetails.connection_success ? '✓ Connected' : '✗ Failed', 
-                      class: smtpDetails.connection_success ? 'success' : 'error' },
-                    { label: 'Server Response:', value: smtpDetails.smtp_flow_success ? '✓ Accepted' : '✗ Rejected', 
-                      class: smtpDetails.smtp_flow_success ? 'success' : 'error' },
-                    { label: 'SMTP Code:', value: smtpDetails.smtp_error_code || 'N/A', 
-                      class: (smtpDetails.smtp_error_code && smtpDetails.smtp_error_code >= 200 && smtpDetails.smtp_error_code < 300) ? 'success' : 
-                             (smtpDetails.smtp_error_code && smtpDetails.smtp_error_code >= 500) ? 'error' : '' }
-                ];
-                
-                // Create SMTP details list
-                const smtpList = document.createElement('ul');
-                smtpList.className = 'smtp-results-list';
-                
-                smtpItems.forEach(item => {
-                    const li = document.createElement('li');
-                    
-                    const label = document.createElement('span');
-                    label.className = 'smtp-label';
-                    label.textContent = item.label;
-                    li.appendChild(label);
-                    
-                    const value = document.createElement('span');
-                    value.className = `smtp-value ${item.class}`;
-                    value.textContent = item.value;
-                    li.appendChild(value);
-                    
-                    smtpList.appendChild(li);
-                });
-                
-                this.smtpResultsDiv.appendChild(smtpList);
-                
-                // Add server message if available
-                if (smtpDetails.server_message) {
-                    const serverMessage = document.createElement('div');
-                    serverMessage.className = 'smtp-server-message';
-                    serverMessage.innerHTML = `<strong>Server Message:</strong> <span>${smtpDetails.server_message.replace(/\n/g, '<br>')}</span>`;
-                    this.smtpResultsDiv.appendChild(serverMessage);
-                }
-                
-                // Remove references to static SMTP result items
-                // No longer needed as we removed these elements from the HTML
-            } else {
-                this.smtpResultsDiv.style.display = 'none';
-            }
-        }
+        // IMPORTANT: Make sure detailedResults is displayed BEFORE ResultsDisplay
+        this.detailedResults.style.display = 'block';
         
         // Use ResultsDisplay to handle detailed results
         if (window.ResultsDisplay) {
-            // Change from using window.ResultsDisplay directly to using the instance
             window.resultsDisplay.displayResults(response.details);
         }
         
@@ -327,18 +277,26 @@ class ValidationEngine {
             this.smtpResultsDiv.style.display = 'none';
         }
         
-        // Remove references to static SMTP result items
-        // No longer needed as we removed these elements from the HTML
-        
-        // Hide buttons and expanded details
+        // Reset Show More button - both hide and reset its state
         const showMoreButton = document.getElementById('showMoreButton');
         if (showMoreButton) {
             showMoreButton.style.display = 'none';
+            // Reset button text in case it was toggled to "Show Less"
+            showMoreButton.textContent = "Show More";
+            // Remove any active/expanded classes
+            showMoreButton.classList.remove('expanded');
         }
         
+        // Hide expanded details
         const expandedDetails = document.getElementById('expandedDetails');
         if (expandedDetails) {
             expandedDetails.style.display = 'none';
+        }
+        
+        // Reset any other expanded sections that might be controlled by the Show More button
+        const traceSection = document.getElementById('traceSection');
+        if (traceSection) {
+            traceSection.style.display = 'none';
         }
         
         // Reset the button
@@ -346,14 +304,6 @@ class ValidationEngine {
         
         // Set focus to the input field
         this.emailInput.focus();
-    }
-
-    /**
-     * Validate email format
-     */
-    validateEmailFormat(email) {
-        const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return re.test(String(email).toLowerCase());
     }
 }
 

@@ -56,16 +56,16 @@ INSERT INTO email_validation_functions (function_name, display_name, description
 ('email_format_resaults', 'Email Format Check', 'Validates email format syntax and structure', 10, True, 'src.engine.formatcheck', 'email_format_resaults'),
 ('blacklist_check', 'Black/White List Check', 'Checks if domain is whitelisted, blacklisted, or temporarily blocked', 20, true, 'src.engine.functions.bw', 'check_black_white'),
 ('mx_records', 'MX Records', 'Checks for valid mail exchanger records', 30, True, 'src.engine.functions.mx', 'fetch_mx_records'),
-('whois_info', 'WHOIS Information', 'Retrieves domain registration information', 35, true, 'src.engine.functions.mx', 'fetch_whois_info'),
-('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_smtp'),
+('whois_info', 'WHOIS Information', 'Retrieves domain registration information', 35, true, 'src.engine.functions.mx', 'fetch_whois_info'), -- wrong whois..
+('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_smtp')
 -- not implementet yet
-('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.1', '1'),
-('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.2', '2'),
-('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.3', '3'),
-('catch_all_check', 'Catch-All Detection', 'Checks if domain accepts all emails', 80, true, 'src.engine.functions.4', '4'),
-('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.5', '5'),
-('pop3_check', 'POP3 Verification', 'Checks if domain has POP3 service', 100, true, 'src.engine.functions.6', '6'),
-('disposable_check', 'Disposable Email', 'Checks if email is from disposable email service', 110, true, 'src.engine.engine.7', '7')
+-- ('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.1', '1'),
+-- ('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.2', '2'),
+-- ('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.3', '3'),
+-- ('catch_all_check', 'Catch-All Detection', 'Checks if domain accepts all emails', 80, true, 'src.engine.functions.4', '4'),
+-- ('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.5', '5'),
+-- ('pop3_check', 'POP3 Verification', 'Checks if domain has POP3 service', 100, true, 'src.engine.functions.6', '6'),
+-- ('disposable_check', 'Disposable Email', 'Checks if email is from disposable email service', 110, true, 'src.engine.engine.7', '7')
 ON CONFLICT (function_name) DO NOTHING;
 
 -- Dependency table: email_validation_function_dependencies
@@ -82,13 +82,13 @@ INSERT INTO email_validation_function_dependencies (function_name, depends_on) V
 ('mx_records', 'email_format_resaults'),
 ('whois_info', 'email_format_resaults'),
 ('smtp_validation', 'mx_records'),
-('spf_check', 'mx_records'),
-('dkim_check', 'mx_records'),
-('dmarc_check', 'mx_records'),
-('catch_all_check', 'smtp_validation'),
-('imap_check', 'mx_records'),
-('pop3_check', 'mx_records'),
-('disposable_check', 'email_format_resaults'),
+-- ('spf_check', 'mx_records'),
+-- ('dkim_check', 'mx_records'),
+-- ('dmarc_check', 'mx_records'),
+-- ('catch_all_check', 'smtp_validation'),
+-- ('imap_check', 'mx_records'),
+-- ('pop3_check', 'mx_records'),
+-- ('disposable_check', 'email_format_resaults'),
 ('validate_domain', 'email_format_resaults'),
 ('mx_records', 'validate_domain'),
 ('blacklist_check', 'validate_domain'),
@@ -119,21 +119,21 @@ CREATE TABLE IF NOT EXISTS email_validation_records (
     timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,           
     email TEXT NOT NULL,
     domain TEXT NOT NULL,
-    smtp_result TEXT,
+    smtp_result TEXT, -- maby
     smtp_banner TEXT,
-    smtp_vrfy TEXT,
+    smtp_vrfy TEXT, -- maby
     smtp_supports_tls BOOLEAN,
     smtp_supports_auth BOOLEAN,
     smtp_flow_success BOOLEAN,
     smtp_error_code INTEGER,
     smtp_server_message TEXT,
-    port TEXT,
+    port TEXT, -- What port?
     mx_records TEXT,
     mx_ip TEXT,
     mx_preferences TEXT,
-    mx_analysis JSONB,
-    email_provider_id INTEGER,
-    email_provider_info JSONB,
+    mx_analysis JSONB, -- move to another tabel?
+    email_provider_id INTEGER, --move to another tabel?
+    email_provider_info JSONB, --maby
     reverse_dns TEXT,
     whois_info TEXT,
     catch_all TEXT,
@@ -147,16 +147,16 @@ CREATE TABLE IF NOT EXISTS email_validation_records (
     dkim_status TEXT,
     dmarc_status TEXT,
     server_policies TEXT,
-    disposable TEXT,
-    blacklist_info TEXT,
-    error_message TEXT,
-    is_valid BOOLEAN DEFAULT FALSE,
+    disposable TEXT, --change to booleen
+    blacklist_info TEXT, -- rename?
+    error_message TEXT, --maby What error?
+    is_valid BOOLEAN DEFAULT FALSE, -- maby
     confidence_score INTEGER DEFAULT 0,
     execution_time REAL DEFAULT 0,
-    timing_details TEXT,
+    timing_details TEXT, -- what detailes?
     check_count INTEGER DEFAULT 1,
     batch_id INTEGER NULL,
-    raw_result JSONB,
+    raw_result JSONB, --maby move to own tabel
     validation_complete BOOLEAN DEFAULT FALSE,
     CONSTRAINT unique_trace_id UNIQUE (trace_id),
     CONSTRAINT fk_batch FOREIGN KEY (batch_id) REFERENCES batch_info(id) ON DELETE SET NULL
@@ -179,39 +179,13 @@ INSERT INTO app_settings (category, sub_category, name, value, description) VALU
 ('http', 'user_agent', 'url', 'https://github.com/Ranrar/Email-Verification-Engine', 'URL for User-Agent contact'),
 -- ('http', 'user_agent', 'email', 'verification@example.com', 'email for User-Agent contact'),
 ('email', 'defaults', 'sender email', 'EmailVerificationEngine@example.com', 'Default sender email address for SMTP verification'),
-('Settings', 'Cache', 'cache purge', '30', 'Seconds between cache check TTL to purge for L1, L2 and L3 cache'),
+('Settings', 'Cache', 'cache purge', '300', 'Seconds between cache check TTL to purge for L1, L2 and L3 cache'),
 ('Settings', 'Debug', 'Enable', '1', 'Enable Debug menu 1=True 0=False'),
 ('Settings', 'Start', 'Enable', '0', 'Enable Auto-benchmark during start 1=True 0=False'),
 ('Database', 'Backup', 'Enable', '1', 'Enable database backup 1=True 0=False'),
 ('Database', 'Backup', 'Count', '5', 'Number of backups to keep'),
 ('Database', 'Backup', 'TimeUTC', '02:00', 'Time (UTC) to run backup (HH:MM)')
 ON CONFLICT (description) DO NOTHING;
-
--- Create a function that prevents modifications to user agent settings
-CREATE OR REPLACE FUNCTION protect_user_agent_settings()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Check if we're trying to modify user agent settings
-    IF (OLD.category = 'http' AND OLD.sub_category = 'user_agent' AND 
-        OLD.name IN ('name', 'version', 'url')) THEN
-        RAISE EXCEPTION 'User Agent settings (name, version, url) are read-only and cannot be modified';
-    END IF;
-    
-    -- For all other rows, allow the operation
-    RETURN OLD;
-END;
-$$ LANGUAGE plpgsql;
-
--- Create triggers to protect against updates and deletes
-CREATE TRIGGER prevent_user_agent_updates
-BEFORE UPDATE ON app_settings
-FOR EACH ROW
-EXECUTE FUNCTION protect_user_agent_settings();
-
-CREATE TRIGGER prevent_user_agent_deletes
-BEFORE DELETE ON app_settings
-FOR EACH ROW
-EXECUTE FUNCTION protect_user_agent_settings();
 
 -- validation scoring
 CREATE TABLE IF NOT EXISTS validation_scoring (
@@ -315,7 +289,7 @@ CREATE TABLE IF NOT EXISTS rate_limit (
     description TEXT,
     UNIQUE(name)
 );
-
+-- maby to meny  or convert all to time?
 INSERT INTO rate_limit (category, name, value, is_time, enabled, description) VALUES
 ('smtp', 'max_retries', 3, FALSE, TRUE, 'Maximum number of SMTP connection attempts'),
 ('smtp', 'max_connections_per_minute', 60, FALSE, TRUE, 'Maximum number of connections per minute globally'),
@@ -490,27 +464,103 @@ INSERT INTO dns_settings (name, value, is_time, description) VALUES
 ('stats_retention_days', '30', TRUE, 'Number of days to retain DNS server statistics'),
 
 -- Non-time based settings
-('nameservers', '8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1,9.9.9.9,9.9.9.10,149.112.112.112,208.67.222.222,208.67.220.220', FALSE, 'Comma-separated list of DNS nameservers'),
 ('collect_stats', '1', FALSE, 'Whether to collect DNS server performance statistics (1 = yes, 0 = no)'),
-('selection_strategy', 'best_performer', FALSE, 'DNS server selection strategy (random, round_robin, best_performer)'),
+('selection_strategy', '3', FALSE, 'DNS server selection strategy (random=1, round_robin=2, best_performer=3)'),
 ('max_attempts', '3', FALSE, 'Maximum number of attempts when resolving DNS records'),
 ('max_queries_per_minute', '60', FALSE, 'Maximum DNS queries allowed per minute total'),
 ('max_queries_per_domain', '5', FALSE, 'Maximum DNS queries allowed per minute for a specific domain'),
 ('use_edns', '1', FALSE, 'Use EDNS extensions for DNS queries (1 = yes, 0 = no)'),
-('use_tcp', '0', FALSE, 'Force TCP for DNS queries instead of UDP (1 = yes, 0 = no)'),
+('fallback_to_tcp', '1', FALSE, 'Fallback to TCP if UDP response is truncated or fails (1 = yes, 0 = no)'),
 ('use_dnssec', '1', FALSE, 'Enable DNSSEC validation for DNS queries (1 = yes, 0 = no)'),
+('edns_payload_size', '1232', TRUE, 'EDNS maximum UDP payload size'),
 ('prefer_ipv6', '1', FALSE, 'Prefer IPv6 addresses when available (1 = yes, 0 = no)')
 ON CONFLICT (name) DO NOTHING;
+
+-- DNS nameserver list
+
+CREATE TABLE dns_nameservers (
+    id SERIAL PRIMARY KEY,
+    ip_address TEXT NOT NULL UNIQUE,
+    version TEXT CHECK (version IN ('IPv4', 'IPv6')) NOT NULL,
+    provider TEXT NOT NULL,
+    supports_dnssec BOOLEAN DEFAULT TRUE,
+    supports_edns BOOLEAN DEFAULT TRUE,
+    is_active BOOLEAN DEFAULT TRUE,
+    priority INTEGER DEFAULT 100,
+    description TEXT
+);
+
+INSERT INTO dns_nameservers (ip_address, version, provider, supports_dnssec, supports_edns, is_active, priority, description) VALUES
+-- Cloudflare
+('1.1.1.1',       'IPv4', 'Cloudflare', TRUE, TRUE, TRUE, 100, 'Hurtig, privat DNS'),
+('1.0.0.1',       'IPv4', 'Cloudflare', TRUE, TRUE, TRUE, 100, 'Backup Cloudflare DNS'),
+('2606:4700:4700::1111', 'IPv6', 'Cloudflare', TRUE, TRUE, TRUE, 100, 'IPv6 primary'),
+('2606:4700:4700::1001', 'IPv6', 'Cloudflare', TRUE, TRUE, TRUE, 100, 'IPv6 secondary'),
+
+-- Google DNS
+('8.8.8.8',       'IPv4', 'Google DNS', TRUE, TRUE, TRUE, 110, 'Primær Google DNS'),
+('8.8.4.4',       'IPv4', 'Google DNS', TRUE, TRUE, TRUE, 110, 'Sekundær Google DNS'),
+('2001:4860:4860::8888', 'IPv6', 'Google DNS', TRUE, TRUE, TRUE, 110, 'IPv6 primary'),
+('2001:4860:4860::8844', 'IPv6', 'Google DNS', TRUE, TRUE, TRUE, 110, 'IPv6 secondary'),
+
+-- Quad9 Secure
+('9.9.9.9',       'IPv4', 'Quad9 Secure', TRUE, TRUE, TRUE, 120, 'Filtrerer malware og phishing'),
+('149.112.112.112', 'IPv4', 'Quad9 Secure', TRUE, TRUE, TRUE, 120, 'Backup Quad9'),
+('2620:fe::fe',   'IPv6', 'Quad9 Secure', TRUE, TRUE, TRUE, 120, 'IPv6 primary'),
+('2620:fe::9',    'IPv6', 'Quad9 Secure', TRUE, TRUE, TRUE, 120, 'IPv6 secondary'),
+
+-- Quad9 Unfiltered
+('9.9.9.10',      'IPv4', 'Quad9 Unfiltered', TRUE, TRUE, TRUE, 130, 'Ufiltreret Quad9'),
+('2620:fe::10',   'IPv6', 'Quad9 Unfiltered', TRUE, TRUE, TRUE, 130, 'Ufiltreret IPv6'),
+
+-- OpenDNS (Cisco)
+('208.67.222.222','IPv4', 'OpenDNS', TRUE, TRUE, TRUE, 140, 'Primær OpenDNS med filtrering'),
+('208.67.220.220','IPv4', 'OpenDNS', TRUE, TRUE, TRUE, 140, 'Sekundær OpenDNS'),
+('2620:119:35::35','IPv6', 'OpenDNS', TRUE, TRUE, TRUE, 140, 'IPv6 primary'),
+('2620:119:53::53','IPv6', 'OpenDNS', TRUE, TRUE, TRUE, 140, 'IPv6 secondary'),
+
+-- AdGuard
+('94.140.14.14',  'IPv4', 'AdGuard', TRUE, TRUE, TRUE, 150, 'DNS med reklameblokering'),
+('94.140.15.15',  'IPv4', 'AdGuard', TRUE, TRUE, TRUE, 150, 'Backup AdGuard'),
+('2a10:50c0::ad1:ff', 'IPv6', 'AdGuard', TRUE, TRUE, TRUE, 150, 'IPv6 primary'),
+('2a10:50c0::ad2:ff', 'IPv6', 'AdGuard', TRUE, TRUE, TRUE, 150, 'IPv6 secondary'),
+
+-- CleanBrowsing (Family)
+('185.228.168.168','IPv4', 'CleanBrowsing Family', TRUE, TRUE, TRUE, 160, 'Filtrerer voksenindhold og malware'),
+('185.228.169.168','IPv4', 'CleanBrowsing Family', TRUE, TRUE, TRUE, 160, 'Backup CleanBrowsing'),
+('2a0d:2a00:1::1','IPv6', 'CleanBrowsing Family', TRUE, TRUE, TRUE, 160, 'IPv6 primary'),
+('2a0d:2a00:2::1','IPv6', 'CleanBrowsing Family', TRUE, TRUE, TRUE, 160, 'IPv6 secondary'),
+
+-- Comodo Secure DNS
+('8.26.56.26',    'IPv4', 'Comodo Secure DNS', FALSE, TRUE, TRUE, 170, 'DNS med malware-beskyttelse'),
+('8.20.247.20',   'IPv4', 'Comodo Secure DNS', FALSE, TRUE, TRUE, 170, 'Backup Comodo'),
+
+-- Yandex DNS (Family)
+('77.88.8.7',     'IPv4', 'Yandex Family', FALSE, TRUE, TRUE, 180, 'Filtrerer voksenindhold og trusler'),
+('77.88.8.3',     'IPv4', 'Yandex Family', FALSE, TRUE, TRUE, 180, 'Backup Yandex Family'),
+('2a02:6b8::feed:a11', 'IPv6', 'Yandex Family', FALSE, TRUE, TRUE, 180, 'IPv6 primary'),
+('2a02:6b8:0:1::feed:a11', 'IPv6', 'Yandex Family', FALSE, TRUE, TRUE, 180, 'IPv6 secondary')
+ON CONFLICT (ip_address) DO NOTHING;
 
 -- DNS server statistics table for monitoring performance and reliability
 CREATE TABLE IF NOT EXISTS dns_server_stats (
     id SERIAL PRIMARY KEY,
     nameserver TEXT NOT NULL,
     query_type TEXT NOT NULL,
-    status TEXT NOT NULL,  -- 'success' or 'failure'
-    response_time_ms FLOAT NULL,  -- only for successful queries
-    error_message TEXT NULL,      -- only for failed queries
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    queries INTEGER NOT NULL DEFAULT 0,
+    hits INTEGER NOT NULL DEFAULT 0,
+    misses INTEGER NOT NULL DEFAULT 0,
+    errors INTEGER NOT NULL DEFAULT 0,
+    avg_latency_ms FLOAT,
+    max_latency_ms FLOAT,
+    min_latency_ms FLOAT,
+    p50_latency_ms FLOAT,
+    p90_latency_ms FLOAT,
+    p95_latency_ms FLOAT,
+    p99_latency_ms FLOAT,
+    since TIMESTAMPTZ NOT NULL,
+    last_updated TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(nameserver, query_type)
 );
 
 -- email_filter_regex_presets
@@ -759,8 +809,6 @@ CREATE TABLE IF NOT EXISTS smtp_domain_stats (
     --error code stats
     last_error_code INTEGER,
     common_error_codes JSONB DEFAULT '{}',
-    
-    
     UNIQUE(domain)
 );
 
@@ -873,23 +921,34 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to calculate success rates
+-- Calculate domain success rate function -- not implemenet yet!
 CREATE OR REPLACE FUNCTION calculate_domain_success_rate(domain_name TEXT)
-RETURNS NUMERIC AS $$
-DECLARE
-    success_rate NUMERIC;
+RETURNS TABLE (
+    success_rate NUMERIC(5,2),
+    total_attempts INTEGER,
+    successful_attempts INTEGER,
+    avg_response_time_ms INTEGER,
+    is_problematic BOOLEAN
+) AS $$
 BEGIN
+    RETURN QUERY
     SELECT 
         CASE 
-            WHEN total_attempts > 0 THEN 
-                ROUND((successful_attempts::NUMERIC / total_attempts) * 100, 2)
-            ELSE 0
-        END
-    INTO success_rate
-    FROM smtp_domain_stats
-    WHERE domain = domain_name;
+            WHEN s.total_attempts > 0 THEN 
+                (s.successful_attempts::NUMERIC / s.total_attempts::NUMERIC) * 100.0
+            ELSE 0.0
+        END AS success_rate,
+        s.total_attempts,
+        s.successful_attempts,
+        s.avg_response_time_ms,
+        s.is_problematic
+    FROM smtp_domain_stats s
+    WHERE s.domain = domain_name;
     
-    RETURN COALESCE(success_rate, 0);
+    -- Return empty record if no stats found
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT 0.0::NUMERIC(5,2), 0, 0, 0, FALSE;
+    END IF;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -956,9 +1015,15 @@ CREATE INDEX IF NOT EXISTS idx_depends_on ON email_validation_function_dependenc
 CREATE INDEX IF NOT EXISTS cache_entries_key_category_idx ON cache_entries(key, category);
 CREATE INDEX IF NOT EXISTS cache_entries_category_idx ON cache_entries(category);
 CREATE INDEX IF NOT EXISTS idx_cache_entries_created_ttl ON cache_entries(created_at, ttl);
-CREATE INDEX IF NOT EXISTS idx_dns_server_stats_nameserver ON dns_server_stats(nameserver);
-CREATE INDEX IF NOT EXISTS idx_dns_server_stats_timestamp ON dns_server_stats(timestamp);
 CREATE INDEX IF NOT EXISTS idx_executor_pool_benchmark_log_run_time ON executor_pool_benchmark_log(run_time DESC);
+
+--DNS
+CREATE INDEX IF NOT EXISTS idx_dns_server_stats_nameserver ON dns_server_stats(nameserver);
+CREATE INDEX IF NOT EXISTS idx_dns_server_stats_nameserver_query_type ON dns_server_stats(nameserver, query_type);
+CREATE INDEX IF NOT EXISTS idx_dns_server_stats_timestamp ON dns_server_stats(since);
+CREATE INDEX IF NOT EXISTS idx_dns_server_stats_agg_nameserver ON dns_server_stats(nameserver);
+CREATE INDEX IF NOT EXISTS idx_dns_server_stats_agg_query_type ON dns_server_stats(query_type);
+CREATE INDEX IF NOT EXISTS idx_dns_server_stats_agg_last_updated ON dns_server_stats(last_updated);
 
 --SMTP
 CREATE INDEX IF NOT EXISTS idx_smtp_domain_stats_domain ON smtp_domain_stats(domain);

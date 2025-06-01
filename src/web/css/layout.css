@@ -1,0 +1,337 @@
+/* Menu Bar Styles */
+.menu-bar {
+    background-color: var(--menu-bg);
+    width: 100%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    display: flex;
+    justify-content: space-between;
+}
+
+.menu-bar ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+}
+
+.menu-bar > ul {
+    display: flex;
+}
+
+.menu-bar > ul > li {
+    position: relative;
+}
+
+.menu-bar a {
+    display: block;
+    color: var(--menu-text);
+    text-align: center;
+    padding: 14px 16px;
+    text-decoration: none;
+}
+
+.menu-bar > ul > li:hover {
+    background-color: var(--container-bg);
+}
+
+/* Dropdown Menu */
+.dropdown, .submenu {
+    display: none;
+    position: absolute;
+    background-color: var(--dropdown-bg);
+    min-width: 200px;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    z-index: 200;
+}
+
+.dropdown {
+    top: 100%;
+    left: 0;
+}
+
+.dropdown a, .submenu a {
+    color: var(--dropdown-text);
+    padding: 10px 16px;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    line-height: 1.4;
+}
+
+.dropdown a:hover, .submenu a:hover {
+    background-color: rgba(0,0,0,0.1);
+}
+
+.menu-bar > ul > li:hover > .dropdown {
+    display: block;
+}
+
+/* Submenu positioning and display */
+.has-submenu {
+    position: relative;
+}
+
+.submenu {
+    min-width: 100%;
+    left: 100%;
+    top: 0;
+    z-index: 300;
+}
+
+.has-submenu:hover > .submenu {
+    display: block;
+}
+
+.dropdown.show, .submenu.show {
+    display: block;
+}
+
+/* Main Container */
+.container {
+    max-width: 600px;
+    margin: 20px auto;
+    background: var(--container-bg);
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    position: relative;
+    z-index: 50;
+    transition: background-color 0.3s ease;
+    padding-top: 15px;
+}
+
+/* Results container */
+.results-container {
+    margin-top: 20px;
+    border: 1px solid var(--results-container-border);
+    border-radius: 5px;
+    padding: 15px;
+    background-color: var(--results-container-bg);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.results-container h2 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+    color: var(--results-heading-color);
+    transition: color 0.3s ease;
+}
+
+.results-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.results-table tr {
+    border-bottom: 1px solid var(--results-row-border);
+    transition: border-color 0.3s ease;
+}
+
+.results-table tr:last-child {
+    border-bottom: none;
+}
+
+.results-table td {
+    padding: 8px 5px;
+    color: var(--text-color);
+    transition: color 0.3s ease;
+}
+
+.results-table td:first-child {
+    font-weight: bold;
+    width: 40%;
+}
+
+.valid-result {
+    color: var(--valid-result-color);
+    transition: color 0.3s ease;
+}
+
+.invalid-result {
+    color: var(--invalid-result-color);
+    transition: color 0.3s ease;
+}
+
+/* Details table */
+.details-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.details-table tr {
+    border-bottom: 1px solid var(--results-container-border);
+}
+
+.details-table tr:last-child {
+    border-bottom: none;
+}
+
+.details-table td {
+    padding: 8px;
+    vertical-align: top;
+}
+
+.details-table td:first-child {
+    font-weight: bold;
+    width: 30%;
+    color: var(--results-heading-color);
+}
+
+/* JSON display area */
+.json-display {
+    background-color: var(--results-container-bg);
+    padding: 10px;
+    border-radius: 4px;
+    overflow: auto;
+    max-height: 400px;
+    color: var(--text-color);
+    font-family: monospace;
+    white-space: pre-wrap;
+    border: 1px solid var(--results-container-border);
+}
+
+/* Initialization page layout */
+.init-page {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding-top: 0;
+}
+
+.loading-container {
+    max-width: 600px;
+    width: 100%;
+    background-color: var(--container-bg);
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    color: var(--text-color);
+    margin: 0 auto;
+}
+
+/* Settings Panel Layout */
+.settings-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+}
+
+.settings-container {
+    background-color: var(--container-bg);
+    color: var(--text-color);
+    width: 80%;
+    max-width: 900px;
+    max-height: 90vh;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background-color: var(--button-bg);
+    color: white;
+}
+
+.settings-header h2 {
+    margin: 0;
+    color: white;
+}
+
+.settings-content {
+    padding: 20px;
+    overflow-y: auto;
+    max-height: calc(90vh - 60px);
+}
+
+.settings-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--results-container-border);
+    margin-bottom: 20px;
+    gap: 5px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+
+.settings-tab-btn {
+    background-color: transparent;
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    color: var(--text-color);
+    font-weight: normal;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.settings-tab-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.settings-tab-btn.active {
+    color: var(--button-bg);
+    border-bottom: 3px solid var(--button-bg);
+    font-weight: bold;
+}
+
+.settings-tab-content {
+    margin-bottom: 30px;
+}
+
+.settings-form {
+    margin-top: 15px;
+}
+
+.settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 15px 0;
+    gap: 10px;
+    border-top: 1px solid var(--results-container-border);
+    margin-top: 20px;
+}
+
+.loader {
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    color: var(--text-color);
+}
+
+/* Other layout components */
+.show-more-container {
+    text-align: center;
+    margin: 15px 0;
+}
+
+.expanded-details-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 15px;
+}
+
+.system-message {
+    display: none;
+}

@@ -72,7 +72,8 @@ The Email Verification Engine (EVE) is a robust, modular system for high-perform
 ## Installation
 
 1. **Create the PostgreSQL database**  
-   Create a `postgres 16` database with `PgAgent`
+   - Create a `postgres 16` database with `PgAgent`
+   - Need help? read my guide here: `other/PostgresGuide.md`
 
 2. **Install the schema**  
    - Run the installer script:  

@@ -35,166 +35,6 @@ logger = Axe()
 # Global engine instance
 _engine_instance = None
 
-def validate_email(email: str, trace_id: Optional[str] = None, use_cache: bool = True) -> Dict[str, Any]:
-    """
-    Validates a single email address using the dynamic validation queue.
-    
-    Args:
-        email: The email address to validate
-        trace_id: Optional trace ID for tracking the validation process
-        use_cache: Whether to use cached results if available
-        
-    Returns:
-        Dictionary with validation results
-    """
-    # Generate or use provided trace ID
-    if not trace_id:
-        trace_id = str(uuid.uuid4())
-    
-    logger.info(f"[{trace_id}] Starting validation for {email}")
-    
-    # Check cache for existing validation results
-    if use_cache:
-        cache_key = f"validation_result:{email}"
-        cached_result, expiry_info = cache_manager.get_with_expiry(cache_key)
-        
-        if cached_result:
-            # Calculate remaining TTL and add to result
-            now = time.time()
-            cached_result['cache_info'] = {
-                'from_cache': True,
-                'created_at': expiry_info.get('created_at', now),
-                'expires_at': expiry_info.get('expires_at', now),
-                'ttl_seconds': max(0, (expiry_info.get('expires_at') or now) - now),
-                'cached_components': {}
-            }
-            
-            # Add component-specific TTL info if available
-            for component in ['format_check', 'mx_records', 'smtp_check', 'disposable_check']:
-                comp_key = f"{component}:{email}"
-                comp_result, comp_expiry = cache_manager.get_with_expiry(comp_key)
-                if comp_result and comp_expiry:
-                    cached_result['cache_info']['cached_components'][component] = {
-                        'ttl_seconds': max(0, (comp_expiry.get('expires_at') or now) - now),
-                        'expires_at': comp_expiry.get('expires_at', now)
-                    }
-            
-            # Log cache usage with TTL information
-            ttl_minutes = cached_result['cache_info']['ttl_seconds'] / 60
-            logger.info(f"[{trace_id}] Using cached validation result for {email} (expires in {ttl_minutes:.1f} minutes)")
-            
-            for comp, info in cached_result['cache_info']['cached_components'].items():
-                comp_ttl_minutes = info['ttl_seconds'] / 60
-                logger.debug(f"[{trace_id}] Component {comp} cached (expires in {comp_ttl_minutes:.1f} minutes)")
-            
-            # Update the trace ID in the cached result
-            cached_result['trace_id'] = trace_id
-            return cached_result
-    
-    # Create a result object to hold validation results
-    result = EmailValidationResult(email)
-    result.trace_id = trace_id
-    
-    # Get validation queue instance
-    from src.engine.queue import DynamicQueue
-    validation_queue = DynamicQueue.get_instance()
-    
-    # Prepare context for validation functions
-    context = {
-        "email": email,
-        "trace_id": result.trace_id,
-        "track_steps": True  # Add flag to track steps
-    }
-    
-    # Start validation timer
-    result.validation_start = datetime.now()
-    logger.debug(f"[{trace_id}] Validation process started for {email}")
-    
-    # Execute all validation functions in order through the queue
-    logger.debug(f"[{trace_id}] Executing validation queue for {email}")
-    validation_results = validation_queue.execute(context)
-    
-    # Mark validation complete
-    result.validation_complete = datetime.now()
-    result.execution_time = (result.validation_complete - result.validation_start).total_seconds() * 1000
-    logger.debug(f"[{trace_id}] Validation completed for {email} in {result.execution_time:.2f}ms")
-    
-    # Process validation results
-    logger.debug(f"[{trace_id}] Processing validation results for {email}")
-    process_validation_results(result, validation_results)
-    
-    # Log result to database
-    try:
-        db_record_id = log_to_database(result)
-        # Enhanced logging with validation results summary
-        logger.info(f"[{trace_id}] Validation results for {email} uploaded to database. " 
-                   f"Result: {'✓ Valid' if result.is_valid else '✗ Invalid'}, "
-                   f"Score: {result.confidence_score}, Level: {result.confidence_level}, "
-                   f"Record ID: {db_record_id}")
-        
-        # Add more detailed logging about specific checks
-        validation_details = []
-        if result.is_format_valid:
-            validation_details.append("Format: ✓")
-        if result.mx_records:
-            validation_details.append(f"MX: ✓ ({len(result.mx_records)} records)")
-        if result.smtp_result:
-            validation_details.append("SMTP: ✓")
-        if result.email_provider and result.email_provider.get('provider_name') != "Unknown":
-            validation_details.append(f"Provider: {result.email_provider.get('provider_name')}")
-            
-        if validation_details:
-            logger.info(f"[{trace_id}] Details: {', '.join(validation_details)}")
-            
-    except Exception as e:
-        logger.error(f"[{trace_id}] Failed to log validation results to database for {email}: {e}")
-        # Add more detailed error information
-        logger.error(f"[{trace_id}] Database upload error details: {type(e).__name__}, {str(e)}")
-        # Log stack trace at debug level
-        logger.debug(f"[{trace_id}] Database error stack trace:", exc_info=True)
-    
-    # Cache the validation results
-    if use_cache:
-        # Calculate appropriate TTL based on confidence score
-        # Higher confidence = longer TTL
-        if result.confidence_score >= 90:
-            ttl = 86400  # 24 hours for high confidence results
-        elif result.confidence_score >= 70:
-            ttl = 43200  # 12 hours
-        elif result.confidence_score >= 50:
-            ttl = 21600  # 6 hours
-        else:
-            ttl = 3600   # 1 hour for low confidence results
-            
-        cache_key = f"validation_result:{email}"
-        result_dict = result.to_dict()
-        cache_manager.set(cache_key, result_dict, ttl=ttl)
-        logger.debug(f"[trace_id] Cached validation result for {email} with TTL {ttl}s")
-    
-        logger.info(f"[{trace_id}] Validation process completed for {email} with score {result.confidence_score}")
-    
-    # Log SMTP details - always log them regardless of result
-    # Remove the condition that checks for result.smtp_details
-    smtp_success = "✓" if result.smtp_result else "✗"
-    smtp_banner = str(result.smtp_banner)
-    smtp_code = result.smtp_error_code if result.smtp_error_code is not None else 'N/A'
-    logger.debug(f"[{trace_id}] SMTP details: {smtp_success} Banner: {smtp_banner}, Code: {smtp_code}")
-
-    # Log SMTP fields that will be stored in database
-    db_fields = [
-        f"smtp_result: {result.smtp_result}",
-        f"smtp_banner: {str(result.smtp_banner)}",
-        f"smtp_vrfy: {result.smtp_vrfy}",
-        f"smtp_supports_tls: {result.smtp_supports_tls}",
-        f"smtp_supports_auth: {result.smtp_supports_auth}",
-        f"smtp_flow_success: {result.smtp_flow_success}",
-        f"smtp_error_code: {result.smtp_error_code if result.smtp_error_code is not None else 'NULL'}",
-        f"smtp_server_message: {str(result.smtp_server_message)}"
-    ]
-    logger.debug(f"[{trace_id}] SMTP DB fields: {', '.join(db_fields)}")
-    
-    return result.to_dict()
-
 class EmailValidationEngine:
     """Main engine for email validation"""
     
@@ -216,8 +56,170 @@ class EmailValidationEngine:
         Returns:
             Dictionary with validation results
         """
-        return validate_email(email, trace_id, use_cache)
+        # Generate or use provided trace ID
+        if not trace_id:
+            trace_id = str(uuid.uuid4())
         
+        # Protect all cache keys at once to prevent cleanup during validation
+        protected_keys = cache_manager.protect_validation_keys(email)
+        logger.debug(f"[{trace_id}] Protected {len(protected_keys)} cache keys for {email}")
+        
+        try:
+            logger.info(f"[{trace_id}] Starting validation for {email}")
+            
+            # Check cache for existing validation results
+            if use_cache:
+                cache_key = CacheKeys.validation_result(email)  # Use proper CacheKeys method
+                cached_result, expiry_info = cache_manager.get_with_expiry(cache_key)
+                
+                if cached_result:
+                    # Calculate remaining TTL and add to result
+                    now = time.time()
+                    cached_result['cache_info'] = {
+                        'from_cache': True,
+                        'created_at': expiry_info.get('created_at', now),
+                        'expires_at': expiry_info.get('expires_at', now),
+                        'ttl_seconds': max(0, (expiry_info.get('expires_at') or now) - now),
+                        'cached_components': {}
+                    }
+                    
+                    # Add component-specific TTL info if available
+                    for component in ['format_check', 'mx_records', 'smtp_check', 'disposable_check']:
+                        comp_key = f"{component}:{email}"
+                        comp_result, comp_expiry = cache_manager.get_with_expiry(comp_key)
+                        if comp_result and comp_expiry:
+                            cached_result['cache_info']['cached_components'][component] = {
+                                'ttl_seconds': max(0, (comp_expiry.get('expires_at') or now) - now),
+                                'expires_at': comp_expiry.get('expires_at', now)
+                            }
+                    
+                    # Log cache usage with TTL information
+                    ttl_minutes = cached_result['cache_info']['ttl_seconds'] / 60
+                    logger.info(f"[{trace_id}] Using cached validation result for {email} (expires in {ttl_minutes:.1f} minutes)")
+                    
+                    for comp, info in cached_result['cache_info']['cached_components'].items():
+                        comp_ttl_minutes = info['ttl_seconds'] / 60
+                        logger.debug(f"[{trace_id}] Component {comp} cached (expires in {comp_ttl_minutes:.1f} minutes)")
+                    
+                    # Update the trace ID in the cached result
+                    cached_result['trace_id'] = trace_id
+                    return cached_result
+            
+            # Create a result object to hold validation results
+            result = EmailValidationResult(email)
+            result.trace_id = trace_id
+            
+            # Get validation queue instance
+            from src.engine.queue import DynamicQueue
+            validation_queue = DynamicQueue.get_instance()
+            
+            # Prepare context for validation functions
+            context = {
+                "email": email,
+                "trace_id": result.trace_id,
+                "track_steps": True  # Add flag to track steps
+            }
+            
+            # Start validation timer
+            result.validation_start = datetime.now()
+            logger.debug(f"[{trace_id}] Validation process started for {email}")
+            
+            # Execute all validation functions in order through the queue
+            logger.debug(f"[{trace_id}] Executing validation queue for {email}")
+            validation_results = validation_queue.execute(context)
+            
+            # Mark validation complete
+            result.validation_complete = datetime.now()
+            result.execution_time = (result.validation_complete - result.validation_start).total_seconds() * 1000
+            logger.debug(f"[{trace_id}] Validation completed for {email} in {result.execution_time:.2f}ms")
+            
+            # Process validation results
+            logger.debug(f"[{trace_id}] Processing validation results for {email}")
+            process_validation_results(result, validation_results)
+            
+            # Log result to database
+            try:
+                db_record_id = log_to_database(result)
+                # Updated to JSON-like format without Unicode symbols
+                logger.info(f"[{trace_id}] VALIDATION_RESULT {{email: {email}, valid: {str(result.is_valid).lower()}, "
+                           f"score: {result.confidence_score}, level: \"{result.confidence_level}\", "
+                           f"db_id: {db_record_id}}}")
+                
+                # Convert validation details to JSON-like format as well
+                validation_details = []
+                if result.is_format_valid:
+                    validation_details.append("\"format\": true")
+                if result.mx_records:
+                    validation_details.append(f"\"mx\": {{\"count\": {len(result.mx_records)}}}")
+                if result.smtp_result:
+                    validation_details.append("\"smtp\": true")
+                if result.email_provider and result.email_provider.get('provider_name') != "Unknown":
+                    provider_name = result.email_provider.get('provider_name')
+                    validation_details.append(f"\"provider\": \"{provider_name}\"")
+                    
+                if validation_details:
+                    logger.info(f"[{trace_id}] VALIDATION_DETAILS {{{', '.join(validation_details)}}}")
+                    
+            except Exception as e:
+                logger.error(f"[{trace_id}] DB_ERROR {{type: \"{type(e).__name__}\", message: \"{str(e)}\"}}")
+                # Log stack trace at debug level
+                logger.debug(f"[{trace_id}] DATABASE_ERROR_STACK", exc_info=True)
+            
+            # Cache the validation results
+            if use_cache:
+                # Calculate appropriate TTL based on confidence score
+                # Higher confidence = longer TTL
+                if result.confidence_score >= 90:
+                    ttl = 86400  # 24 hours for high confidence results
+                elif result.confidence_score >= 70:
+                    ttl = 43200  # 12 hours
+                elif result.confidence_score >= 50:
+                    ttl = 21600  # 6 hours
+                else:
+                    ttl = 3600   # 1 hour for low confidence results
+                    
+                cache_key = CacheKeys.validation_result(email)  # Use proper CacheKeys method
+                result_dict = result.to_dict()
+                cache_manager.set(cache_key, result_dict, ttl=ttl)
+                logger.debug(f"[trace_id] Cached validation result for {email} with TTL {ttl}s")
+            
+                logger.info(f"[{trace_id}] Validation process completed for {email} with score {result.confidence_score}")
+            
+            # Log SMTP details - always log them regardless of result
+            # Remove the condition that checks for result.smtp_details
+            smtp_success = "SUCCESS" if result.smtp_result else "FAILURE"
+            smtp_banner = str(result.smtp_banner)
+            smtp_code = result.smtp_error_code if result.smtp_error_code is not None else 'N/A'
+            logger.debug(f"[{trace_id}] SMTP details: {smtp_success} Banner: {smtp_banner}, Code: {smtp_code}")
+
+            # Log SMTP details in JSON-like format
+            smtp_code_value = f"\"{result.smtp_error_code}\"" if result.smtp_error_code is not None else "null"
+            logger.debug(f"[{trace_id}] SMTP_DETAILS {{valid: {str(result.smtp_result).lower()}, "
+                        f"banner_present: {str(bool(result.smtp_banner)).lower()}, "
+                        f"code: {smtp_code_value}}}")
+
+            # Log SMTP fields in JSON-like format
+            logger.debug(f"[{trace_id}] SMTP_DB_FIELDS {{smtp_result: {str(result.smtp_result).lower()}, "
+                        f"smtp_banner_present: {str(bool(result.smtp_banner)).lower()}, "
+                        f"smtp_vrfy: {str(result.smtp_vrfy).lower()}, "
+                        f"smtp_supports_tls: {str(result.smtp_supports_tls).lower()}, "
+                        f"smtp_supports_auth: {str(result.smtp_supports_auth).lower()}, "
+                        f"smtp_flow_success: {str(result.smtp_flow_success).lower()}, "
+                        f"smtp_error_code: {smtp_code_value}, "
+                        f"smtp_server_message_present: {str(bool(result.smtp_server_message)).lower()}}}")
+            
+            # Return the validation result
+            return result.to_dict()
+            
+        except Exception as e:
+            logger.error(f"[{trace_id}] Validation failed: {str(e)}", exc_info=True)
+            raise
+        finally:
+            # Always unprotect keys, even if an error occurred
+            for key in protected_keys:
+                cache_manager.unmark_processing(key)
+            logger.debug(f"[{trace_id}] Released protection for {len(protected_keys)} cache keys")
+    
     def batch_validate(self, emails: list, trace_id_prefix: Optional[str] = None, batch_name: Optional[str] = None, source: Optional[str] = None) -> list:
         """
         Validate multiple email addresses

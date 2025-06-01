@@ -190,11 +190,46 @@ class ResultsDisplay {
         
         if (data.email_validation_record) {
             const record = data.email_validation_record;
-            this.addTableRow(smtpTable, 'SMTP Result', record.smtp_result || 'N/A');
-            this.addTableRow(smtpTable, 'SMTP Banner', record.smtp_banner || 'N/A');
-            this.addTableRow(smtpTable, 'SMTP VRFY', record.smtp_vrfy || 'N/A');
-            this.addTableRow(smtpTable, 'Port Used', record.port || 'N/A');
-            this.addTableRow(smtpTable, 'Catch-All', record.catch_all || 'N/A');
+            
+            // Add SMTP status with checkmark or X
+            this.addTableRow(smtpTable, 'SMTP Result', 
+                record.smtp_result ? '✓ Valid' : '✗ Invalid');
+                
+            // Add SMTP banner with proper display
+            if (record.smtp_banner) {
+                this.addTableRow(smtpTable, 'SMTP Banner', record.smtp_banner);
+            }
+            
+            // Add SMTP support details
+            this.addTableRow(smtpTable, 'SMTP VRFY Support', 
+                record.smtp_vrfy ? '✓ Supported' : '✗ Not Supported');
+            this.addTableRow(smtpTable, 'TLS Support', 
+                record.smtp_supports_tls ? '✓ Supported' : '✗ Not Supported');
+            this.addTableRow(smtpTable, 'AUTH Support', 
+                record.smtp_supports_auth ? '✓ Supported' : '✗ Not Supported');
+            this.addTableRow(smtpTable, 'SMTP Flow Completed', 
+                record.smtp_flow_success ? '✓ Yes' : '✗ No');
+                
+            // Add error code if available
+            if (record.smtp_error_code) {
+                this.addTableRow(smtpTable, 'SMTP Error Code', record.smtp_error_code);
+            }
+            
+            // Add server message if available
+            if (record.smtp_server_message) {
+                this.addTableRow(smtpTable, 'Server Message', record.smtp_server_message);
+            }
+            
+            // Add port information if available
+            if (record.port) {
+                this.addTableRow(smtpTable, 'Port Used', record.port);
+            }
+            
+            // Add catch-all status if available
+            this.addTableRow(smtpTable, 'Catch-All Domain', 
+                record.catch_all ? 'Yes (accepts all emails)' : 'No');
+        } else {
+            this.addTableRow(smtpTable, 'SMTP Details', 'No SMTP data available');
         }
     }
 

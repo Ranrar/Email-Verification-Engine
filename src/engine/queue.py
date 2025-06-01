@@ -353,6 +353,16 @@ class DynamicQueue:
                     # Log step to database if tracking enabled
                     if track_steps and trace_id:
                         try:
+                            # Fix: Check if func_result is a dictionary, if not, convert it
+                            if not isinstance(func_result, dict):
+                                # Handle string or other non-dict result
+                                error_msg = str(func_result) if func_result else "Unknown error"
+                                func_result = {
+                                    'valid': False,
+                                    'error': error_msg,
+                                    'step': function_name
+                                }
+                            
                             values = {
                                 "trace_id": trace_id,
                                 "email": email,

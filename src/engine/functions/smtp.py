@@ -90,11 +90,15 @@ class SMTPValidator:
             raise RuntimeError(error_msg) from e
     
     def verify_email(self, email: str, domain: str, mx_servers: List[Dict[str, Any]], 
-                    sender_email: Optional[str] = None, trace_id: Optional[str] = None) -> Dict[str, Any]:
+                 sender_email: Optional[str] = None, trace_id: Optional[str] = None,
+                 context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Verify if an email exists by checking the SMTP server"""
         # Add overall timeout
         overall_timeout = self.rate_limit_manager.get_overall_timeout()
         start_time = time.time()
+        
+        # Context might be None when called directly from validate_smtp_batch
+        context = context or {}
         
         # Throughout method, check if elapsed > overall_timeout:
         if time.time() - start_time > overall_timeout:
@@ -109,8 +113,26 @@ class SMTPValidator:
                 "details": {}
             }
         
-        # Check temporary blocklist first
-        if self._is_domain_temporarily_blocked(domain, trace_id):
+        # Get the BW result from context instead of making a separate call
+        domain_whitelisted = False
+        bw_result = context.get('bw_result', {})
+        domain_whitelisted = bw_result.get('whitelisted', False)
+        
+        # If we don't have bw_result in context, fall back to direct check
+        if not bw_result and not domain_whitelisted:
+            try:
+                from src.engine.functions.bw import get_domain_status
+                domain_status = get_domain_status(domain)
+                domain_whitelisted = domain_status.get('whitelisted', False)
+                if domain_whitelisted:
+                    logger.info(f"[{trace_id}] Domain {domain} is whitelisted, skipping temporary block check")
+            except Exception as e:
+                logger.debug(f"[{trace_id}] Could not check whitelist status: {e}")
+        elif domain_whitelisted:
+            logger.info(f"[{trace_id}] Using previously determined whitelist status for {domain}")
+        
+        # Check temporary blocklist unless domain is whitelisted
+        if not domain_whitelisted and self._is_domain_temporarily_blocked(domain, trace_id):
             logger.info(f"[{trace_id}] Domain {domain} is temporarily blocked")
             return {
                 "valid": False,
@@ -642,7 +664,7 @@ class SMTPValidator:
         """Check if domain is in temporary blocklist"""
         try:
             # Check cache first
-            cache_key = f"smtp_blocked:{domain}"
+            cache_key = CacheKeys.smtp_blocked(domain)
             cached_result = cache_manager.get(cache_key)
             if cached_result is not None:
                 return cached_result
@@ -704,7 +726,7 @@ class SMTPValidator:
             )
             
             # Invalidate cache
-            cache_key = f"smtp_blocked:{domain}"
+            cache_key = CacheKeys.smtp_blocked(domain)
             cache_manager.delete(cache_key)
             
             logger.info(f"[{trace_id}] Added {domain} to temporary blocklist for {block_seconds}s. Reason: {reason}")
@@ -819,19 +841,6 @@ def check_global_rate_limit(self, category: str) -> bool:
 def validate_smtp(context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Validates an email address by checking SMTP server responses.
-    
-    Args:
-        context: Dictionary containing email and validation context
-            - email: Email address to validate
-            - trace_id: Optional trace ID for tracking
-            - mx_records: Optional MX records (if already retrieved)
-            - test_mode: Optional boolean to bypass rate limits for testing
-            
-    Returns:
-        Dict with validation results:
-            - valid: Whether email passed validation
-            - is_deliverable: Whether email appears deliverable
-            - details: Dictionary with detailed information
     """
     # Extract key fields from context with defaults
     email = context.get('email', '')
@@ -848,11 +857,41 @@ def validate_smtp(context: Dict[str, Any]) -> Dict[str, Any]:
     local_part, domain = parsing_result["parts"]
     
     # Check cache first
-    cache_key = f"{CacheKeys.SMTP_RESULT}:{email}"
+    cache_key = CacheKeys.smtp_result(email)
     cached_result = cache_manager.get(cache_key)
     if cached_result:
         logger.debug(f"[{trace_id}] Using cached SMTP validation result for {email}")
         return cached_result
+    
+    # Check blacklist/whitelist status first
+    try:
+        from src.engine.functions.bw import check_black_white
+        bw_result = check_black_white(context)
+        # Store the result in context for later use
+        context['bw_result'] = bw_result
+        
+        # If domain is blacklisted, skip SMTP validation
+        if bw_result.get('blacklisted', False):
+            logger.info(f"[{trace_id}] Domain {domain} is blacklisted by {bw_result.get('source', 'unknown')}. Skipping SMTP validation.")
+            return {
+                'valid': False,
+                'error': f"Domain is blacklisted: {bw_result.get('source', 'Unknown blacklist')}",
+                'is_deliverable': False,
+                'blacklisted': True,
+                'smtp_result': False,
+                'email': email,
+                'blacklist_info': {
+                    'blacklisted': True,
+                    'source': bw_result.get('source', 'Unknown'),
+                    'whitelisted': False
+                }
+            }
+            
+        # If domain is whitelisted, log it but continue with validation
+        if bw_result.get('whitelisted', False):
+            logger.info(f"[{trace_id}] Domain {domain} is whitelisted by {bw_result.get('source', 'unknown')}. Proceeding with SMTP validation.")
+    except Exception as e:
+        logger.warning(f"[{trace_id}] Failed to check black/white list: {str(e)}")
     
     # Get or fetch MX records
     mx_result = _get_mx_records(context, domain, trace_id)
@@ -866,11 +905,10 @@ def validate_smtp(context: Dict[str, Any]) -> Dict[str, Any]:
     
     # Initialize SMTP validator and extract geographic info
     validator = SMTPValidator(test_mode=test_mode)
-
     
     # Perform validation with timing
     with EnhancedOperationTimer("smtp_validation", {"email": email}) as timer:
-        result = validator.verify_email(email, domain, mx_records, sender_email, trace_id)
+        result = validator.verify_email(email, domain, mx_records, sender_email, trace_id, context=context)
     
     # Add execution time
     result['execution_time'] = timer.elapsed_ms
@@ -1026,6 +1064,10 @@ def _normalize_validation_result(result: Dict[str, Any], email: str, trace_id: s
     # Map all SMTP fields directly to top level with standardized names
     normalized_result["smtp_result"] = result.get("valid", False)
     normalized_result["smtp_banner"] = details.get("smtp_banner", "") or details.get("banner", "")
+    
+    # Add explicit debug logging to track banner values
+    logger.debug(f"[{trace_id}] SMTP_BANNER_DEBUG: Raw banner from details={{smtp_banner: '{details.get('smtp_banner', '')}', banner: '{details.get('banner', '')}'}} → Final: '{normalized_result['smtp_banner']}'")
+    
     normalized_result["smtp_vrfy"] = details.get("vrfy_supported", False)
     normalized_result["smtp_supports_tls"] = details.get("supports_starttls", False)
     normalized_result["smtp_supports_auth"] = details.get("supports_auth", False)
@@ -1044,7 +1086,7 @@ def _normalize_validation_result(result: Dict[str, Any], email: str, trace_id: s
         normalized_result["execution_time"] = result["execution_time"]
     
     # Log result summary
-    logger.info(f"[{trace_id}] SMTP validation for {email}: {'✓ Valid' if normalized_result['smtp_result'] else '✗ Invalid'}")
+    logger.info(f"[{trace_id}] SMTP validation for {email}: {'SUCCESS' if normalized_result['smtp_result'] else 'FAILURE'}")
     
     # NO MORE nested details dictionary - everything is at the top level!
     return normalized_result
