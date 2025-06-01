@@ -123,17 +123,14 @@ class EmailValidationResult:
         self.server_policies = {}
         
         # SMTP validation - update to include all required fields
-        self.smtp_result = False
-        self.smtp_details = {
-            'smtp_result': '',        # Text representation of result
-            'smtp_banner': '',        # SMTP server banner
-            'smtp_vrfy': False,       # VRFY command supported
-            'smtp_supports_tls': False, # TLS supported
-            'smtp_supports_auth': False, # AUTH supported
-            'smtp_flow_success': False,  # SMTP flow completed successfully
-            'smtp_error_code': None,     # SMTP error code if any
-            'smtp_server_message': '',   # SMTP server message
-        }
+        self.smtp_result = False      # Overall SMTP validation result
+        self.smtp_banner = ''         # SMTP server banner
+        self.smtp_vrfy = False        # VRFY command supported
+        self.smtp_supports_tls = False # TLS supported
+        self.smtp_supports_auth = False # AUTH supported
+        self.smtp_flow_success = False # SMTP flow completed successfully
+        self.smtp_error_code = None   # SMTP error code if any
+        self.smtp_server_message = '' # SMTP server message
         
         # Other validation results
         self.is_disposable = []
@@ -201,7 +198,13 @@ class EmailValidationResult:
             
             # SMTP validation
             'smtp_result': self.smtp_result,
-            'smtp_details': self.smtp_details,
+            'smtp_banner': str(self.smtp_banner),
+            'smtp_vrfy': self.smtp_vrfy,
+            'smtp_supports_tls': self.smtp_supports_tls,
+            'smtp_supports_auth': self.smtp_supports_auth,
+            'smtp_flow_success': self.smtp_flow_success,
+            'smtp_error_code': self.smtp_error_code,
+            'smtp_server_message': str(self.smtp_server_message),
             
             # Other validation results
             'is_disposable': self.is_disposable,

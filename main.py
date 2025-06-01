@@ -100,11 +100,11 @@ def verify_email(email):
                 # SMTP validation details
                 "smtp": {
                     "verified": validation_result.get("smtp_result", False),
-                    "error_code": validation_result.get("smtp_details", {}).get("smtp_error_code"),
-                    "server_message": validation_result.get("smtp_details", {}).get("server_message", ""),
-                    "connection_success": validation_result.get("smtp_details", {}).get("connection_success", False),
-                    "supports_tls": validation_result.get("smtp_details", {}).get("supports_starttls", False),
-                    "supports_auth": validation_result.get("smtp_details", {}).get("supports_auth", False)
+                    "error_code": validation_result.get("smtp_error_code"),
+                    "server_message": validation_result.get("smtp_server_message", ""),
+                    "connection_success": validation_result.get("smtp_flow_success", False),
+                    "supports_tls": validation_result.get("smtp_supports_tls", False),
+                    "supports_auth": validation_result.get("smtp_supports_auth", False)
                 },
                 
                 # Infrastructure information
@@ -156,7 +156,7 @@ def verify_email(email):
                     "dkim": "",
                     "dmarc": ""
                 },
-                "smtp": {  # Add this nested structure
+                "smtp": {  # Add this nested structure 
                     "verified": False,
                     "error_code": None,
                     "server_message": str(e),

@@ -13,6 +13,7 @@ This module handles the collection, updating and retrieval of SMTP domain statis
 import time
 from typing import Dict, Any, Tuple, Optional
 from datetime import datetime, timezone, timedelta
+import decimal
 
 from src.managers.log import Axe
 from src.helpers.dbh import sync_db
@@ -104,7 +105,10 @@ class DomainStats:
                     retry_available_after = current_time + timedelta(seconds=backoff_seconds)
                     
                     # Update timeout adjustment factor (for adaptive timing)
-                    previous_factor = (stats.get('timeout_adjustment_factor', 1.0) or 1.0)
+                    previous_factor = stats.get('timeout_adjustment_factor', 1.0) or 1.0
+                    # Convert Decimal to float before multiplication
+                    if isinstance(previous_factor, decimal.Decimal):
+                        previous_factor = float(previous_factor)
                     timeout_adjustment = min(previous_factor * 1.2, 3.0)
                 else:
                     new_backoff_level = current_backoff_level

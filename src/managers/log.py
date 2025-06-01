@@ -201,13 +201,41 @@ class NoRenameTimedRotatingFileHandler(LazyTimedRotatingFileHandler):
     
     def doRollover(self):
         """Override rollover behavior to avoid renaming the existing file"""
+        # Close the current file if it's open
         if self.stream:
             self.stream.close()
         
-        # Don't rename the old file, just create a new one
+        # Calculate new filename for the next rotation period
+        # This creates a new file with today's date instead of renaming
+        current_time = int(time.time())
+        dstNow = time.localtime(current_time)[-1]
+        
+        t = self.computeRollover(current_time) - self.interval
+        if self.utc:
+            timeTuple = time.gmtime(t)
+        else:
+            timeTuple = time.localtime(t)
+            dstThen = timeTuple[-1]
+            if dstNow != dstThen:
+                if dstNow:
+                    addend = 3600
+                else:
+                    addend = -3600
+                timeTuple = time.localtime(t + addend)
+        
+        # Generate new log filename with current date
+        dfn = self.baseFilename + "." + time.strftime(self.suffix, timeTuple)
+        
+        # Don't try to rename the old file - just create a new one
         self.mode = 'a'
-        # Get current time for the new filename if needed
         self.stream = self._open()
+        
+        # Update rollover time
+        newRolloverAt = self.computeRollover(current_time)
+        while newRolloverAt <= current_time:
+            newRolloverAt = newRolloverAt + self.interval
+        
+        self.rolloverAt = newRolloverAt
 
 def Axe(axe_name=NAME, log_level=logging.DEBUG, log_to_console=False, 
         backup_count=7, use_json=True) -> logging.Logger:
@@ -255,7 +283,8 @@ def Axe(axe_name=NAME, log_level=logging.DEBUG, log_to_console=False,
                 level_log_file = os.path.join(logs_dir, f'{level_name}.{current_date}.log')
                 
                 # Create a handler for this specific level
-                file_handler = LazyTimedRotatingFileHandler(
+                # Replace LazyTimedRotatingFileHandler with NoRenameTimedRotatingFileHandler
+                file_handler = NoRenameTimedRotatingFileHandler(
                     level_log_file,
                     when='midnight',
                     interval=1,

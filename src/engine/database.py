@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 from src.managers.log import Axe
 from src.helpers.dbh import sync_db
-from engine.result import (
+from src.engine.result import (
     EmailValidationResult, 
     MxInfrastructure,
     IpAddresses, 
@@ -66,7 +66,6 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
 
     mx_infrastructure_dict = data.get('mx_infrastructure', {})
     email_provider_dict = data.get('email_provider', {})
-    smtp_details = data.get("smtp_details", {})
     blacklist_info = data.get("blacklist_info", {})
     domain_info = data.get("domain_check", {})
     infrastructure_info = data.get("infrastructure_info", {})
@@ -85,24 +84,23 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
         "email": sanitize_value(data.get("email")),
         "domain": sanitize_value(data.get("domain")),
 
-        # SMTP fields - ensure we always store the full details regardless of result
+        # SMTP fields - access directly from data instead of nested smtp_details
         "smtp_result": str(data.get("smtp_result", False)),
-        "smtp_banner": sanitize_value(smtp_details.get("smtp_banner", smtp_details.get("banner", ""))),
-        "smtp_vrfy": str(smtp_details.get("vrfy_supported", False)),
-        "smtp_supports_tls": smtp_details.get("supports_starttls", False),
-        "smtp_supports_auth": smtp_details.get("supports_auth", False),
-        "smtp_flow_success": smtp_details.get("smtp_flow_success", smtp_details.get("smtp_conversation_success", False)),
-        "smtp_error_code": to_int_or_none(smtp_details.get("smtp_error_code")),
-        "smtp_server_message": sanitize_value(smtp_details.get("server_message", 
-                   smtp_details.get("error_message", ""))),
-                   
+        "smtp_banner": sanitize_value(data.get("smtp_banner", "")),
+        "smtp_vrfy": str(data.get("smtp_vrfy", False)),
+        "smtp_supports_tls": data.get("smtp_supports_tls", False),
+        "smtp_supports_auth": data.get("smtp_supports_auth", False),
+        "smtp_flow_success": data.get("smtp_flow_success", False),
+        "smtp_error_code": to_int_or_none(data.get("smtp_error_code")),
+        "smtp_server_message": sanitize_value(data.get("smtp_server_message", "")),
+        
         # Capture timeout information in existing fields
-        "port": sanitize_value(smtp_details.get("port", "")),
+        "port": sanitize_value(data.get("port", "")),
 
         # Make sure main error_message field captures SMTP errors
         "error_message": data.get("error_message") or (
-            f"SMTP error: {', '.join(smtp_details.get('errors', []))}" 
-            if smtp_details.get('errors') else ""
+            f"SMTP error: {data.get('smtp_server_message')}" 
+            if data.get('smtp_server_message') else ""
         ),
 
         # MX fields

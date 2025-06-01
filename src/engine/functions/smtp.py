@@ -1003,83 +1003,48 @@ def _get_sender_email(trace_id: str) -> str:
 
 def _normalize_validation_result(result: Dict[str, Any], email: str, trace_id: str) -> Dict[str, Any]:
     """Ensure consistent result structure with all required fields"""
-    # Initialize details dict if missing
-    if "details" not in result or not isinstance(result["details"], dict):
-        result["details"] = {}
+    # Create a new normalized result with standard attribute names
+    normalized_result = {
+        "valid": result.get("valid", False),
+        "is_deliverable": result.get("is_deliverable", False),
+        "email": email,
+    }
     
-    # Always ensure these basic fields exist with correct database column names
-    result["details"]["smtp_banner"] = result["details"].get("smtp_banner", "")
-    result["details"]["smtp_vrfy"] = result["details"].get("vrfy_supported", False)  # Map from vrfy_supported
-    result["details"]["smtp_supports_tls"] = result["details"].get("supports_starttls", False)  # Map from supports_starttls
-    result["details"]["smtp_supports_auth"] = result["details"].get("supports_auth", False)  # Map from supports_auth
-    result["details"]["smtp_flow_success"] = result["details"].get("smtp_flow_success", False)
-    result["details"]["smtp_error_code"] = result["details"].get("smtp_error_code")
-    result["details"]["smtp_server_message"] = result["details"].get("server_message", "")  # Map from server_message
+    # Extract values from either top level or nested details
+    details = result.get("details", {})
     
-    # Overall SMTP result as text (success/failure reason)
-    if result.get("valid"):
-        result["details"]["smtp_result"] = "success"
-    else:
-        error_reason = result.get("error", "unknown error")
-        result["details"]["smtp_result"] = f"failed: {error_reason}"
+    # Copy error information
+    if "error" in result:
+        normalized_result["error_message"] = result["error"]
+    elif "errors" in result and result["errors"]:
+        normalized_result["error_message"] = result["errors"][0]
+    elif "error_message" in details:
+        normalized_result["error_message"] = details["error_message"]
+    elif "errors" in details and details["errors"]:
+        normalized_result["error_message"] = details["errors"][0]
     
-    # Also keep legacy field names for backward compatibility
-    result["details"]["port"] = result["details"].get("port")
-    result["details"]["server_message"] = result["details"].get("server_message", "")
-    result["details"]["connection_success"] = result["details"].get("connection_success", False)
+    # Map all SMTP fields directly to top level with standardized names
+    normalized_result["smtp_result"] = result.get("valid", False)
+    normalized_result["smtp_banner"] = details.get("smtp_banner", "") or details.get("banner", "")
+    normalized_result["smtp_vrfy"] = details.get("vrfy_supported", False)
+    normalized_result["smtp_supports_tls"] = details.get("supports_starttls", False)
+    normalized_result["smtp_supports_auth"] = details.get("supports_auth", False)
+    normalized_result["smtp_flow_success"] = details.get("smtp_flow_success", False) or details.get("smtp_conversation_success", False)
+    normalized_result["smtp_error_code"] = details.get("smtp_error_code")
+    normalized_result["smtp_server_message"] = details.get("server_message", "")
     
-    # Standardize error reporting
-    if not result["valid"]:
-        # Set primary error field from most specific source available
-        if result.get("error"):
-            result["details"]["error_message"] = result["error"]
-        elif result.get("errors") and result["errors"]:
-            result["details"]["error_message"] = result["errors"][0]
-        elif result["details"].get("errors") and result["details"]["errors"]:
-            result["details"]["error_message"] = result["details"]["errors"][0]
-        else:
-            # Last resort - create a generic error message
-            execution_time = result.get('execution_time', 0)
-            if execution_time > 30000:
-                error_message = "SMTP validation timeout"
-                result["details"]["timeout_detected"] = True
-                result["details"]["timeout_stage"] = "validation"
-            else:
-                error_message = "SMTP validation failed"
-            result["details"]["error_message"] = error_message
-        
-        # Ensure errors list exists
-        if "errors" not in result["details"]:
-            result["details"]["errors"] = []
-            if result.get("errors"):
-                result["details"]["errors"] = result["errors"]
-        
-        # Handle timeout information consistently
-        if result.get("timeout_detected") or result["details"].get("timeout_detected"):
-            result["timeout_detected"] = True
-            result["details"]["timeout_detected"] = True
-            result["timeout_stage"] = result.get("timeout_stage") or result["details"].get("timeout_stage", "unknown")
-            result["details"]["timeout_stage"] = result["timeout_stage"]
-            result["failure_stage"] = result.get("failure_stage") or result["details"].get("failure_stage", "unknown")
-            result["details"]["failure_stage"] = result["failure_stage"]
-        
-        # Include port attempts details
-        result["ports_tried"] = result["details"].get("ports_tried", 0)
-        result["mx_servers_tried"] = result["details"].get("mx_servers_tried", 0)
+    # Add additional fields that might be useful elsewhere
+    normalized_result["port"] = details.get("port")
+    normalized_result["connection_success"] = details.get("connection_success", False)
+    normalized_result["ports_tried"] = details.get("ports_tried", 0)
+    normalized_result["mx_servers_tried"] = details.get("mx_servers_tried", 0)
+    
+    # Copy execution time if available
+    if "execution_time" in result:
+        normalized_result["execution_time"] = result["execution_time"]
     
     # Log result summary
-    logger.info(f"[{trace_id}] SMTP validation for {email}: {'✓ Valid' if result['valid'] else '✗ Invalid'}")
+    logger.info(f"[{trace_id}] SMTP validation for {email}: {'✓ Valid' if normalized_result['smtp_result'] else '✗ Invalid'}")
     
-    # Debug logging
-    if logger.isEnabledFor(logging.DEBUG):
-        port_detail = f", port={result['details'].get('port')}" if result['details'].get('port') else ""
-        error_detail = ""
-        if not result["valid"] and result.get("errors"):
-            error_detail = f", error={result['errors'][0][:50]}..." if result.get("errors") else ""
-        
-        logger.debug(f"[{trace_id}] SMTP validation details: banner={bool(result['details'].get('smtp_banner'))}{port_detail}{error_detail}")
-        logger.debug(f"[{trace_id}] SMTP validation result structure:")
-        logger.debug(f"  - result.valid: {result.get('valid')}")
-        logger.debug(f"  - result.details keys: {list(result.get('details', {}).keys())}")
-    
-    return result
+    # NO MORE nested details dictionary - everything is at the top level!
+    return normalized_result

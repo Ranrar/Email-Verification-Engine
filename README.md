@@ -72,13 +72,12 @@ The Email Verification Engine (EVE) is a robust, modular system for high-perform
 ## Installation
 
 1. **Create the PostgreSQL database**  
-   Create a `postgres v17+` database with `PgAmin` and `PgAgent`
+   Create a `postgres 16` database with `PgAgent`
 
-2. **Register the database in PgAdmin**  
-   - Use the same name as `POSTGRES_DB` in your environment.
-   - Fill out the required fields under the connection tab.
-
-3. **Install the schema**  
+2. **Install the schema**  
    - Run the installer script:  
-     `python install.py`
+     `python install.py` from src/database
    - This will create all required tables.
+
+3. **Run**
+   py main.py

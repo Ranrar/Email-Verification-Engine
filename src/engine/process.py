@@ -129,29 +129,41 @@ def process_validation_results(result: EmailValidationResult, validation_results
                 logger.debug(f"[{result.trace_id}] Email provider: {result.email_provider.get('provider_name')}")
     
     if 'smtp_check' in validation_results:
-        smtp_result = validation_results.get('smtp_check', {}) 
+        smtp_result = validation_results.get('smtp_check', {})
+        
+        # Set the overall SMTP validation result
         result.smtp_result = smtp_result.get('valid', False)
         
-        # Initialize smtp_details if needed
-        if result.smtp_details is None or not isinstance(result.smtp_details, dict):
-            result.smtp_details = {}
+        # Process all SMTP fields directly on the result object (not in smtp_details)
+        result.smtp_banner = smtp_result.get('banner', '')
+        result.smtp_vrfy = smtp_result.get('vrfy_supported', False)
+        result.smtp_supports_tls = smtp_result.get('tls_supported', False)
+        result.smtp_supports_auth = smtp_result.get('auth_supported', False)
+        result.smtp_flow_success = smtp_result.get('flow_completed', False)
+        result.smtp_error_code = smtp_result.get('error_code')
+        result.smtp_server_message = smtp_result.get('server_message', '')
         
-        # First copy the essential top-level fields
-        result.smtp_details['smtp_result'] = 'success' if smtp_result.get('valid', False) else f"failed: {smtp_result.get('error', 'unknown error')}"
-        
-        # CRITICAL: Copy ALL top-level fields first
-        for key, value in smtp_result.items():
-            if key != 'valid':  # Skip valid as it's already handled
-                result.smtp_details[key] = value
-        
-        # CRITICAL: Then copy all 'details' fields, ensuring they override any conflicts
+        # Also look for these fields in the details subdictionary if they exist
         if 'details' in smtp_result and isinstance(smtp_result['details'], dict):
-            for key, value in smtp_result['details'].items():
-                result.smtp_details[key] = value
+            details = smtp_result['details']
+            # Only set values if they're not already set from the top-level
+            if not result.smtp_banner and 'banner' in details:
+                result.smtp_banner = details.get('banner', '')
+            if not result.smtp_vrfy and 'vrfy_supported' in details:
+                result.smtp_vrfy = details.get('vrfy_supported', False)
+            if not result.smtp_supports_tls and 'tls_supported' in details:
+                result.smtp_supports_tls = details.get('tls_supported', False)
+            if not result.smtp_supports_auth and 'auth_supported' in details:
+                result.smtp_supports_auth = details.get('auth_supported', False)
+            if not result.smtp_flow_success and 'flow_completed' in details:
+                result.smtp_flow_success = details.get('flow_completed', False)
+            if not result.smtp_error_code and 'error_code' in details:
+                result.smtp_error_code = details.get('error_code')
+            if not result.smtp_server_message and 'server_message' in details:
+                result.smtp_server_message = details.get('server_message', '')
         
-        # ENHANCED: Special error handling for failed SMTP validation
+        # Handle error message for SMTP failures
         if not result.smtp_result:
-            # Ensure we capture ALL available error information
             error_sources = [
                 smtp_result.get('error'),
                 smtp_result.get('errors', []),
@@ -172,21 +184,6 @@ def process_validation_results(result: EmailValidationResult, validation_results
             
             if main_error:
                 result.error_message = main_error
-                result.smtp_details['error_message'] = main_error
-            
-            # Ensure timeout information is captured
-            if smtp_result.get('timeout_detected') or smtp_result.get('details', {}).get('timeout_detected'):
-                result.smtp_details['timeout_detected'] = True
-                result.smtp_details['timeout_stage'] = (
-                    smtp_result.get('timeout_stage') or 
-                    smtp_result.get('details', {}).get('timeout_stage', 'unknown')
-                )
-                
-                if not result.error_message:
-                    stage = result.smtp_details.get('timeout_stage', 'unknown')
-                    result.error_message = f"SMTP timeout during {stage}"
-                    result.smtp_details['error_message'] = result.error_message
-    
     
     if 'disposable_check' in validation_results:
         disposable_check = validation_results.get('disposable_check', {})
@@ -252,7 +249,7 @@ def calculate_validity_and_confidence(result: EmailValidationResult, validation_
         'smtp_connection': result.smtp_result,
         'catch_all': result.catch_all is True,
         'no_catch_all': result.catch_all is False,
-        'vrfy_confirmed': result.smtp_details.get('smtp_vrfy', False) if isinstance(result.smtp_details, dict) else False,
+        'vrfy_confirmed': (result.smtp_banner != '') or result.smtp_flow_success,
         'imap_available': result.imap_status == "available",
         'pop3_available': result.pop3_status == "available",
     }

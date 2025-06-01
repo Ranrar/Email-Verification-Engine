@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional, Union
 # Import from refactored modules
 from src.managers.log import Axe
 from src.managers.cache import cache_manager, CacheKeys
-from engine.result import EmailValidationResult
+from src.engine.result import EmailValidationResult
 from src.engine.process import process_validation_results
 from src.engine.database import log_to_database, log_validation_operation
 
@@ -171,25 +171,27 @@ def validate_email(email: str, trace_id: Optional[str] = None, use_cache: bool =
         cache_manager.set(cache_key, result_dict, ttl=ttl)
         logger.debug(f"[trace_id] Cached validation result for {email} with TTL {ttl}s")
     
-    logger.info(f"[{trace_id}] Validation process completed for {email} with score {result.confidence_score}")
+        logger.info(f"[{trace_id}] Validation process completed for {email} with score {result.confidence_score}")
     
-    # Log SMTP details if available
-    if result.smtp_details:
-        smtp_success = "✓" if result.smtp_result else "✗"
-        smtp_banner = bool(result.smtp_details.get('smtp_banner'))
-        smtp_code = result.smtp_details.get('smtp_error_code', 'N/A')
-        logger.debug(f"[{trace_id}] SMTP details: {smtp_success} Banner: {smtp_banner}, Code: {smtp_code}")
+    # Log SMTP details - always log them regardless of result
+    # Remove the condition that checks for result.smtp_details
+    smtp_success = "✓" if result.smtp_result else "✗"
+    smtp_banner = str(result.smtp_banner)
+    smtp_code = result.smtp_error_code if result.smtp_error_code is not None else 'N/A'
+    logger.debug(f"[{trace_id}] SMTP details: {smtp_success} Banner: {smtp_banner}, Code: {smtp_code}")
 
-        # Log SMTP fields that will be stored in database
-        db_fields = [
-            f"smtp_result: {result.smtp_details.get('smtp_result', 'N/A')}",
-            f"smtp_banner: {bool(result.smtp_details.get('smtp_banner'))}",
-            f"smtp_vrfy: {result.smtp_details.get('smtp_vrfy', False)}",
-            f"smtp_supports_tls: {result.smtp_details.get('smtp_supports_tls', False)}",
-            f"smtp_supports_auth: {result.smtp_details.get('smtp_supports_auth', False)}",
-            f"smtp_flow_success: {result.smtp_details.get('smtp_flow_success', False)}",
-        ]
-        logger.debug(f"[{trace_id}] SMTP DB fields: {', '.join(db_fields)}")
+    # Log SMTP fields that will be stored in database
+    db_fields = [
+        f"smtp_result: {result.smtp_result}",
+        f"smtp_banner: {str(result.smtp_banner)}",
+        f"smtp_vrfy: {result.smtp_vrfy}",
+        f"smtp_supports_tls: {result.smtp_supports_tls}",
+        f"smtp_supports_auth: {result.smtp_supports_auth}",
+        f"smtp_flow_success: {result.smtp_flow_success}",
+        f"smtp_error_code: {result.smtp_error_code if result.smtp_error_code is not None else 'NULL'}",
+        f"smtp_server_message: {str(result.smtp_server_message)}"
+    ]
+    logger.debug(f"[{trace_id}] SMTP DB fields: {', '.join(db_fields)}")
     
     return result.to_dict()
 
