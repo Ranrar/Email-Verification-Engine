@@ -175,7 +175,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 INSERT INTO app_settings (category, sub_category, name, value, description) VALUES
 ('http', 'user_agent', 'name', 'EmailVerificationEngine', 'Name for User-Agent'),
-('http', 'user_agent', 'version', '0.2', 'Version for User-Agent'),
+('http', 'user_agent', 'version', '0.3', 'Version for User-Agent'),
 ('http', 'user_agent', 'url', 'https://github.com/Ranrar/Email-Verification-Engine', 'URL for User-Agent contact'),
 -- ('http', 'user_agent', 'email', 'verification@example.com', 'email for User-Agent contact'),
 ('email', 'defaults', 'sender email', 'EmailVerificationEngine@example.com', 'Default sender email address for SMTP verification'),
