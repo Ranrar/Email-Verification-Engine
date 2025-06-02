@@ -599,6 +599,7 @@ def start_initialization_process():
         q.add(initialize_thread_pool, "Initializing Thread Pool")
         q.add(initialize_time_manager, "Initializing Time Manager")
         q.add(initialize_dns_manager, "Initializing DNS Manager")
+        q.add(initialize_dns_warmup, "Warming up DNS Statistics")
         q.add(initialize_port_manager, "Initializing Port Manager")
         q.add(initialize_rate_manager, "Initializing Rate Limit Manager")
         q.add(initialize_email_format_check, "Initializing Email Format Check")
@@ -623,3 +624,26 @@ def start_initialization_process():
         except:
             pass
         # Don't exit here, let the main thread handle it
+
+def initialize_dns_warmup():
+    """Warm up DNS statistics if needed"""
+    from src.utils.dns_warmup import check_and_warmup
+    
+    logger.info("Checking DNS statistics...")
+    
+    # Run the warmup check with a 24-hour max age
+    result = check_and_warmup(force=False, max_age_hours=24)
+    
+    if result['performed']:
+        if 'success_rate' in result:
+            logger.info(f"DNS warmup completed with {result['success_rate']:.1f}% success rate")
+            
+            # If warmup discovered IPv6 isn't available but was preferred, log this important change
+            if result.get('ipv6_preference_changed', False):
+                logger.warning("IPv6 was preferred in settings but not available - setting was adjusted")
+        else:
+            logger.info("DNS warmup completed, but no statistics were gathered")
+    else:
+        logger.info(f"DNS warmup not needed: {result.get('reason', 'unknown')}")
+    
+    return result

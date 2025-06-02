@@ -34,6 +34,7 @@ import time
 import json
 from datetime import datetime, timedelta
 from pprint import pprint
+import dns.resolver
 
 # Add project root directory to Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
@@ -368,8 +369,7 @@ def clean_old_statistics():
 
 def warmup_dns_stats():
     """
-    Warm up the DNS statistics by ensuring collection is enabled 
-    and running some test queries
+    Warm up the DNS statistics by testing all nameservers in the database
     """
     print("\n=== Warming Up DNS Statistics ===")
     
@@ -380,25 +380,174 @@ def warmup_dns_stats():
             dns_manager.update_setting('collect_stats', '1')
         else:
             print("DNS statistics collection is enabled.")
-            
-        # Run some test queries to popular domains
-        warmup_domains = ['google.com', 'microsoft.com', 'amazon.com']
-        record_types = ['A', 'MX']
         
-        print("Performing warmup DNS queries...")
-        for domain in warmup_domains:
-            for record_type in record_types:
-                try:
-                    print(f"  Querying {record_type} records for {domain}...")
-                    dns_manager.resolve(domain, record_type)
-                    print("  ✓ Success")
-                except Exception as e:
-                    print(f"  ✗ Error: {e}")
-                    
-        print("DNS warmup complete. Statistics should now be available.")
+        # Get all active nameservers from database
+        nameservers = dns_manager.get_nameservers_from_db(include_ipv6=True)
+        if not nameservers:
+            print("No nameservers found in database.")
+            return
+            
+        print(f"Found {len(nameservers)} nameservers to test.")
+        
+        # Test domains and record types
+        warmup_domains = ['google.com', 'microsoft.com', 'amazon.com']
+        record_types = ['A', 'MX', 'TXT']
+        
+        # Create a base resolver to modify
+        base_resolver = dns.resolver.Resolver()
+        
+        # Track success rate for each nameserver
+        nameserver_stats = {}
+        
+        # Test each nameserver individually
+        for ns in nameservers:
+            nameserver_ip = ns['ip_address']
+            provider = ns['provider']
+            print(f"\nTesting nameserver: {nameserver_ip} ({provider})")
+            
+            # Configure resolver to use only this nameserver
+            test_resolver = dns.resolver.Resolver()
+            test_resolver.nameservers = [nameserver_ip]
+            test_resolver.timeout = float(dns_manager.get_timeout())
+            test_resolver.lifetime = float(dns_manager.get_timeout()) * 2
+            
+            success_count = 0
+            total_queries = 0
+            
+            # Run test queries through this specific nameserver
+            for domain in warmup_domains:
+                for record_type in record_types:
+                    total_queries += 1
+                    try:
+                        print(f"  Querying {record_type} records for {domain} using {nameserver_ip}...")
+                        start_time = time.time()
+                        answers = test_resolver.resolve(domain, record_type)
+                        duration_ms = (time.time() - start_time) * 1000
+                        
+                        # Manually record statistics for this query
+                        dns_manager._dns_stats.record_query_stats(
+                            nameserver_ip,
+                            record_type,
+                            'success',
+                            duration_ms
+                        )
+                        
+                        print(f"  ✓ Success ({len(answers)} records, {duration_ms:.2f}ms)")
+                        success_count += 1
+                    except Exception as e:
+                        # Record failure statistics
+                        dns_manager._dns_stats.record_query_stats(
+                            nameserver_ip,
+                            record_type,
+                            'failure',
+                            None,
+                            str(e)
+                        )
+                        print(f"  ✗ Error: {str(e)}")
+            
+            # Calculate success rate for this nameserver
+            success_rate = (success_count / total_queries) * 100 if total_queries > 0 else 0
+            print(f"  Results: {success_count}/{total_queries} successful queries ({success_rate:.1f}%)")
+            nameserver_stats[nameserver_ip] = {
+                'success_rate': success_rate,
+                'queries': total_queries,
+                'successful': success_count
+            }
+        
+        # Show overall results
+        print("\n=== DNS Warmup Summary ===")
+        print(f"Tested {len(nameservers)} nameservers with {len(warmup_domains)} domains and {len(record_types)} record types")
+        print(f"Total queries: {len(nameservers) * len(warmup_domains) * len(record_types)}")
+        
+        # Show best performers
+        print("\nNameserver Performance:")
+        print("-" * 70)
+        print(f"{'Nameserver':<20} {'Provider':<15} {'Success Rate':<12} {'Queries':<8}")
+        print("-" * 70)
+        
+        # Sort nameservers by success rate
+        sorted_nameservers = sorted(
+            nameservers,
+            key=lambda ns: nameserver_stats.get(ns['ip_address'], {}).get('success_rate', 0),
+            reverse=True
+        )
+        
+        for ns in sorted_nameservers:
+            ip = ns['ip_address']
+            if ip in nameserver_stats:
+                stats = nameserver_stats[ip]
+                print(f"{ip:<20} {ns['provider']:<15} {stats['success_rate']:>9.1f}%  {stats['queries']:<8}")
+        
+        print("\nDNS warmup complete. Statistics have been recorded for all nameservers.")
         
     except Exception as e:
         print(f"Error during DNS warmup: {e}")
+
+def test_ipv6_dns_support():
+    """Test IPv6 DNS support on this system"""
+    print("\n=== Testing IPv6 DNS Support ===")
+    
+    # Import the proper IPv6 resolver class from the new location
+    from src.helpers.ipv6_resolver import IPv6Resolver
+    
+    # Create an instance of the IPv6Resolver
+    ipv6_resolver = IPv6Resolver()
+    
+    # Test IPv6 availability
+    available = ipv6_resolver.is_available()
+    
+    # If the function returns too quickly, force a fresh check
+    ipv6_resolver.clear_availability_cache()
+    available = ipv6_resolver.is_available()
+    
+    # Check each component of IPv6 support
+    print(f"IPv6 Socket Support:     {'✓' if available else '✗'}")
+    print(f"IPv6 DNS Resolution:     {'✓' if available else '✗'}")
+    
+    # If IPv6 is available, run a performance comparison
+    if available:
+        print("\nRunning IPv4 vs IPv6 resolution speed test...")
+        test_domains = ["google.com", "microsoft.com", "cloudflare.com"]
+        
+        for domain in test_domains:
+            print(f"\nTesting {domain}...")
+            result = ipv6_resolver.compare_to_ipv4(domain)
+            
+            if result["ipv4"]["success"]:
+                print(f"  IPv4: {result['ipv4']['time_ms']:.2f}ms ({result['ipv4'].get('answers', '?')} records)")
+            else:
+                print(f"  IPv4: Failed - {result['ipv4']['error']}")
+                
+            if result["ipv6"]["success"]:
+                print(f"  IPv6: {result['ipv6']['time_ms']:.2f}ms ({result['ipv6'].get('answers', '?')} records)")
+            else:
+                print(f"  IPv6: Failed - {result['ipv6']['error']}")
+                
+            if result["faster"]:
+                print(f"  {result['faster'].upper()} was faster by {result['time_diff_ms']:.2f}ms")
+    else:
+        print("\nIPv6 DNS not available - skipping performance comparison")
+    
+    print("\nRecommendation:")
+    if available:
+        print("  ✓ IPv6 DNS is working - you can use IPv6 nameservers")
+        
+        # Check current preference setting
+        prefer_ipv6 = dns_manager.get_prefer_ipv6()
+        if not prefer_ipv6:
+            print("    IPv6 is working but not currently preferred in settings")
+            print("    Consider enabling: UPDATE dns_settings SET value = '1' WHERE name = 'prefer_ipv6';")
+    else:
+        print("  ✗ IPv6 DNS is not available - disable IPv6 preference in settings")
+        
+        # Check current preference setting
+        try:
+            prefer_ipv6 = bool(dns_manager._get_setting_with_fallback('prefer_ipv6', False, log_level="debug"))
+            if prefer_ipv6:
+                print("    IPv6 is currently preferred in settings but not available")
+                print("    Should disable: UPDATE dns_settings SET value = '0' WHERE name = 'prefer_ipv6';")
+        except:
+            pass
 
 def run_interactive_mode():
     """Run the DNS tester in interactive mode with a menu"""
@@ -417,9 +566,10 @@ def run_interactive_mode():
         print("  6. Clean up old statistics")
         print("  7. Test nameserver selection strategies")
         print("  8. Run quick tests on sample domains")
+        print("  9. Test IPv6 DNS support")
         print("  0. Exit")
         
-        choice = input("\nEnter your choice (0-8): ").strip()
+        choice = input("\nEnter your choice (0-9): ").strip()
         
         if choice == '0':
             print("Exiting DNS test tool.")
@@ -492,6 +642,11 @@ def run_interactive_mode():
             
         elif choice == '8':
             run_quick_tests()
+            input("\nPress Enter to continue...")
+            clear_screen()
+            
+        elif choice == '9':
+            test_ipv6_dns_support()
             input("\nPress Enter to continue...")
             clear_screen()
             

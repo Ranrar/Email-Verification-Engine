@@ -207,9 +207,9 @@ class DNSServerStats:
     """Manages DNS server statistics for performance monitoring and resolver selection"""
     
     def record_query_stats(self, nameserver: str, query_type: str, status: str, 
-                         response_time_ms: Optional[float] = None, error_message: Optional[str] = None):
+                     response_time_ms: Optional[float] = None, error_message: Optional[str] = None):
         """
-        Record individual DNS query statistics
+        Record DNS query statistics
         
         Args:
             nameserver: The IP address of the nameserver used
@@ -219,20 +219,7 @@ class DNSServerStats:
             error_message: Error message (for failed queries)
         """
         try:
-            # Get current timestamp
-            current_time = datetime.now(timezone.utc)
-            
-            # Insert individual query stat record
-            sync_db.execute(
-                """
-                INSERT INTO dns_server_stats 
-                (nameserver, query_type, status, response_time_ms, error_message, timestamp)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                """,
-                nameserver, query_type, status, response_time_ms, error_message, current_time
-            )
-            
-            # Update aggregate statistics
+            # Skip individual record insert and directly update aggregate stats
             if status == 'success':
                 self._update_aggregate_stats(nameserver, query_type, True, response_time_ms)
             else:
@@ -343,7 +330,7 @@ class DNSServerStats:
             
             # Extract just the IP addresses
             return [ns['nameserver'] for ns in nameservers]
-            
+    
         except Exception as e:
             logger.error(f"Failed to get best nameservers: {e}")
             return []
@@ -362,7 +349,7 @@ class DNSServerStats:
             result = sync_db.execute(
                 """
                 DELETE FROM dns_server_stats
-                WHERE timestamp < NOW() - INTERVAL '1 day' * $1
+                WHERE last_updated < NOW() - INTERVAL '1 day' * $1
                 RETURNING id
                 """,
                 days

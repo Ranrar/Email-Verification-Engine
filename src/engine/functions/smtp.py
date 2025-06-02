@@ -382,7 +382,7 @@ class SMTPValidator:
                     
             except Exception as e:
                 error_msg = f"EHLO/HELO error: {str(e)}, type: {type(e).__name__}"
-                logger.warning(f"[{trace_id}] {error_msg}")
+                logger.debug(f"[{trace_id}] {error_msg}")
                 details["errors"].append(error_msg)
                 return False, details
             

@@ -458,11 +458,9 @@ CREATE TABLE IF NOT EXISTS dns_settings (
 );
 
 INSERT INTO dns_settings (name, value, is_time, description) VALUES
-
 -- Time-based settings (is_time = 1)
 ('timeout', '10', TRUE, 'Timeout for DNS queries in seconds'),
 ('stats_retention_days', '30', TRUE, 'Number of days to retain DNS server statistics'),
-
 -- Non-time based settings
 ('collect_stats', '1', FALSE, 'Whether to collect DNS server performance statistics (1 = yes, 0 = no)'),
 ('selection_strategy', '3', FALSE, 'DNS server selection strategy (random=1, round_robin=2, best_performer=3)'),
@@ -533,13 +531,7 @@ INSERT INTO dns_nameservers (ip_address, version, provider, supports_dnssec, sup
 
 -- Comodo Secure DNS
 ('8.26.56.26',    'IPv4', 'Comodo Secure DNS', FALSE, TRUE, TRUE, 170, 'DNS med malware-beskyttelse'),
-('8.20.247.20',   'IPv4', 'Comodo Secure DNS', FALSE, TRUE, TRUE, 170, 'Backup Comodo'),
-
--- Yandex DNS (Family)
-('77.88.8.7',     'IPv4', 'Yandex Family', FALSE, TRUE, TRUE, 180, 'Filtrerer voksenindhold og trusler'),
-('77.88.8.3',     'IPv4', 'Yandex Family', FALSE, TRUE, TRUE, 180, 'Backup Yandex Family'),
-('2a02:6b8::feed:a11', 'IPv6', 'Yandex Family', FALSE, TRUE, TRUE, 180, 'IPv6 primary'),
-('2a02:6b8:0:1::feed:a11', 'IPv6', 'Yandex Family', FALSE, TRUE, TRUE, 180, 'IPv6 secondary')
+('8.20.247.20',   'IPv4', 'Comodo Secure DNS', FALSE, TRUE, TRUE, 170, 'Backup Comodo')
 ON CONFLICT (ip_address) DO NOTHING;
 
 -- DNS server statistics table for monitoring performance and reliability
