@@ -1,6 +1,9 @@
 # Email Verification Engine
 
 [![CodeQL Advanced](https://github.com/Ranrar/Email-Verification-Engine/actions/workflows/codeql.yml/badge.svg)](https://github.com/Ranrar/Email-Verification-Engine/actions/workflows/codeql.yml)
+[![License: CC BY-NC-ND 4.0](https://img.shields.io/badge/License-CC%20BY--NC--ND%204.0-yellow.svg)](https://creativecommons.org/licenses/by-nc-nd/4.0/)
+[![DO NOT USE COMMERCIALLY](https://img.shields.io/badge/Commercial%20Use-Not%20Allowed-red.svg)](mailto:kim@skovrasmussen.com)
+
 
 <pre lang="text">
  ██████████  █████   █████  ██████████
