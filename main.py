@@ -282,13 +282,13 @@ def read_markdown_file(filename):
 
 @eel.expose
 def list_documentation_files():
-    """List all Markdown files in the other/doc directory"""
+    """List all Markdown files in the doc directory"""
     try:
         import os
         
         # Get the root directory path
         root_dir = os.path.dirname(os.path.abspath(__file__))
-        doc_dir = os.path.join(root_dir, "other", "doc")
+        doc_dir = os.path.join(root_dir, "doc")
         
         # Check if directory exists
         if not os.path.exists(doc_dir):
@@ -315,7 +315,7 @@ def list_documentation_files():
                 markdown_files.append({
                     "name": file,
                     "title": title,
-                    "path": os.path.join("other", "doc", file)
+                    "path": os.path.join("doc", file)
                 })
         
         # Sort by name
