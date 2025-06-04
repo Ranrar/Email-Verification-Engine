@@ -212,7 +212,7 @@ function handleMenuAction(action) {
             
         // Help menu
         case 'help-docs':
-            showDialog('Documentation', 'Full documentation available at:\nhttps://github.com/Ranrar/EVS/wiki');
+            showDocumentationList();
             break;
             
         case 'help-shortcuts':
@@ -373,9 +373,32 @@ function showAboutDialogWithLogo(title, logo, content) {
     
     const buttonsContainer = document.createElement('div');
     buttonsContainer.className = 'dialog-buttons';
+    buttonsContainer.style.display = 'flex';
+    buttonsContainer.style.justifyContent = 'space-between';
+    buttonsContainer.style.width = '100%';
     
+    // Add License button
+    const licenseButton = document.createElement('button');
+    licenseButton.textContent = 'License';
+    licenseButton.style.width = '32%';
+    licenseButton.addEventListener('click', function() {
+        showMarkdownFile('LICENSE.md');
+    });
+    buttonsContainer.appendChild(licenseButton);
+    
+    // Add EULA button
+    const eulaButton = document.createElement('button');
+    eulaButton.textContent = 'EULA';
+    eulaButton.style.width = '32%';
+    eulaButton.addEventListener('click', function() {
+        showMarkdownFile('EULA.md');
+    });
+    buttonsContainer.appendChild(eulaButton);
+    
+    // Add OK button
     const okButton = document.createElement('button');
     okButton.textContent = 'OK';
+    okButton.style.width = '32%';
     okButton.addEventListener('click', closeDialog);
     buttonsContainer.appendChild(okButton);
     
@@ -385,133 +408,329 @@ function showAboutDialogWithLogo(title, logo, content) {
     overlay.style.display = 'block';
 }
 
-// Update the show_message function to match the Python Notifier's call signature
-eel.expose(show_message);
-function show_message(type_name, message, persistent = false, details = null) {
-    const div = document.createElement("div");
+/**
+ * Documentation viewer state
+ */
+const docViewerState = {
+    isActive: false,
+    currentFile: null,
+    dialogElement: null,
+    bodyElement: null,
+    breadcrumbElement: null
+};
 
-    let category, status;
-    if (type_name.includes(":")) {
-        [category, status] = type_name.split(":");
-    } else {
-        status = type_name;
-        category = "generic";
-    }
-
-    div.className = `toast ${category}-${status}`;
-    
-    const messageContainer = document.createElement("div");
-    messageContainer.className = "toast-message";
-    messageContainer.textContent = message;
-    div.appendChild(messageContainer);
-    
-    if (details) {
-        const detailsContainer = document.createElement("div");
-        detailsContainer.className = "toast-details";
-        detailsContainer.textContent = details;
-        detailsContainer.style.display = "none";
-        detailsContainer.style.maxHeight = "0";
-        detailsContainer.style.overflow = "hidden";
-        detailsContainer.style.transition = "max-height 0.3s ease, padding 0.3s ease";
-        div.appendChild(detailsContainer);
-    }
-    
-    if (persistent) {
-        div.setAttribute('data-persistent', 'true');
-        div.style.cursor = 'pointer';
-        div.style.position = 'relative';
+/**
+ * Show documentation file selection dialog
+ */
+async function showDocumentationList() {
+    try {
+        // Call Python function to get a list of documentation files
+        const result = await eel.list_documentation_files()();
         
-        let hoverTimeout;
-        
-        if (details) {
-            div.addEventListener('mouseenter', function() {
-                hoverTimeout = setTimeout(() => {
-                    const detailsContainer = this.querySelector('.toast-details');
-                    if (detailsContainer) {
-                        detailsContainer.style.display = "block";
-                        setTimeout(() => {
-                            detailsContainer.style.maxHeight = detailsContainer.scrollHeight + "px";
-                            detailsContainer.style.padding = "8px 0 0 0";
-                        }, 10);
-                    }
-                }, 500);
-            });
-            
-            div.addEventListener('mouseleave', function() {
-                clearTimeout(hoverTimeout);
-                const detailsContainer = this.querySelector('.toast-details');
-                if (detailsContainer) {
-                    detailsContainer.style.maxHeight = "0";
-                    detailsContainer.style.padding = "0";
-                    setTimeout(() => {
-                        if (detailsContainer.style.maxHeight === "0px") {
-                            detailsContainer.style.display = "none";
-                        }
-                    }, 300);
-                }
-            });
+        if (!result.success) {
+            show_message('error', 'Failed to load documentation files', true, result.error);
+            return;
         }
         
-        const closeIcon = document.createElement('span');
-        closeIcon.textContent = '✕';
-        closeIcon.className = 'close-icon';
-        div.appendChild(closeIcon);
+        if (result.files.length === 0) {
+            show_message('warning', 'No documentation files found', true, 'Check the other/doc directory');
+            return;
+        }
         
-        div.addEventListener('click', function(e) {
-            if (e.target === closeIcon || e.target === messageContainer || e.target === div) {
-                div.style.opacity = '0';
-                div.style.transform = 'translateX(-100%)';
-                setTimeout(() => div.remove(), 300);
-            }
+        // If we already have a doc viewer open, just go back to file list
+        if (docViewerState.isActive && docViewerState.dialogElement) {
+            showDocumentFileList(result.files);
+            return;
+        }
+        
+        // Create the dialog
+        const overlay = document.createElement('div');
+        overlay.className = 'dialog-overlay';
+        
+        const dialog = document.createElement('div');
+        dialog.className = 'dialog';
+        dialog.style.width = '800px';
+        dialog.style.maxWidth = '90%';
+        dialog.style.height = '600px';
+        dialog.style.maxHeight = '90vh';
+        dialog.style.display = 'flex';
+        dialog.style.flexDirection = 'column';
+        
+        const titleElement = document.createElement('div');
+        titleElement.className = 'dialog-title';
+        titleElement.textContent = 'Documentation';
+        dialog.appendChild(titleElement);
+        
+        // Create breadcrumb navigation
+        const breadcrumb = document.createElement('div');
+        breadcrumb.className = 'doc-breadcrumb';
+        breadcrumb.style.padding = '5px 15px';
+        breadcrumb.style.backgroundColor = 'var(--results-container-bg)';
+        breadcrumb.style.borderRadius = '4px';
+        breadcrumb.style.margin = '0 20px 10px 20px';
+        breadcrumb.style.fontSize = '0.9em';
+        breadcrumb.innerHTML = '<span class="breadcrumb-home">Documentation Home</span>';
+        dialog.appendChild(breadcrumb);
+        
+        // Create the body container that will hold either file list or content
+        const body = document.createElement('div');
+        body.className = 'dialog-body';
+        body.style.flex = '1';
+        body.style.overflow = 'auto';
+        body.style.padding = '0 20px 20px 20px';
+        dialog.appendChild(body);
+        
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.className = 'dialog-buttons';
+        
+        const closeButton = document.createElement('button');
+        closeButton.textContent = 'Close';
+        closeButton.addEventListener('click', function() {
+            docViewerState.isActive = false;
+            docViewerState.currentFile = null;
+            docViewerState.dialogElement = null;
+            docViewerState.bodyElement = null;
+            docViewerState.breadcrumbElement = null;
+            closeDialog();
         });
-    } else {
-        div.textContent = message;
+        buttonsContainer.appendChild(closeButton);
+        
+        dialog.appendChild(buttonsContainer);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        overlay.style.display = 'block';
+        
+        // Save references to elements
+        docViewerState.isActive = true;
+        docViewerState.dialogElement = dialog;
+        docViewerState.bodyElement = body;
+        docViewerState.breadcrumbElement = breadcrumb;
+        
+        // Show the file list
+        showDocumentFileList(result.files);
+        
+    } catch (error) {
+        console.error('Error loading documentation files:', error);
+        show_message('error', 'An error occurred while loading documentation files', true, error.toString());
     }
-    
-    div.style.opacity = '0';
-    div.style.transform = 'translateX(-100%)';
-    div.style.transition = 'all 0.3s ease';
-    
-    const container = document.getElementById("message-container");
-    if (container) {
-        container.prepend(div);
-    } else {
-        console.log(`[${type_name.toUpperCase()}] ${message}${details ? ' - ' + details : ''}`);
+}
+
+/**
+ * Display the list of documentation files in the body
+ * @param {Array} files - Array of documentation file objects
+ */
+function showDocumentFileList(files) {
+    if (!docViewerState.isActive || !docViewerState.bodyElement) {
         return;
     }
     
-    setTimeout(() => {
-        div.style.opacity = '1';
-        div.style.transform = 'translateX(0)';
-    }, 10);
+    // Reset state
+    docViewerState.currentFile = null;
     
-    if (!persistent) {
-        setTimeout(() => {
-            div.style.opacity = '0';
-            div.style.transform = 'translateX(-100%)';
-            setTimeout(() => div.remove(), 300);
-        }, 5000);
+    // Update breadcrumb
+    if (docViewerState.breadcrumbElement) {
+        docViewerState.breadcrumbElement.innerHTML = '<span class="breadcrumb-home">Documentation Home</span>';
     }
-}
-
-// Settings panel handling
-function openSettingsPanel(tabName = 'general') {
-    const settingsPanel = document.getElementById('settingsPanel');
-    settingsPanel.style.display = 'flex';
     
-    if (typeof initSettingsMenu === 'function') {
-        initSettingsMenu().then(() => {
-            if (tabName) {
-                switchSettingsTab(tabName);
-            }
+    // Create file list
+    const body = docViewerState.bodyElement;
+    body.innerHTML = '';
+    
+    const fileList = document.createElement('ul');
+    fileList.style.listStyle = 'none';
+    fileList.style.padding = '0';
+    fileList.style.margin = '0';
+    
+    // Add README first if available
+    const readmeOption = document.createElement('li');
+    readmeOption.style.padding = '12px';
+    readmeOption.style.margin = '5px 0';
+    readmeOption.style.backgroundColor = 'var(--results-container-bg)';
+    readmeOption.style.borderRadius = '5px';
+    readmeOption.style.cursor = 'pointer';
+    readmeOption.style.fontWeight = 'bold';
+    readmeOption.style.borderLeft = '4px solid var(--primary-color)';
+    readmeOption.textContent = 'README - Getting Started';
+    readmeOption.addEventListener('click', function() {
+        showMarkdownFile('README.md');
+    });
+    fileList.appendChild(readmeOption);
+    
+    // Group files by directory
+    const fileGroups = {};
+    files.forEach(file => {
+        const path = file.path;
+        const parts = path.split('/');
+        const directory = parts.length > 2 ? parts[1] : 'root';
+        
+        if (!fileGroups[directory]) {
+            fileGroups[directory] = [];
+        }
+        fileGroups[directory].push(file);
+    });
+    
+    // Sort directories
+    const sortedDirs = Object.keys(fileGroups).sort();
+    
+    sortedDirs.forEach(dir => {
+        if (dir !== 'root') {
+            // Add directory header
+            const dirHeader = document.createElement('div');
+            dirHeader.style.padding = '8px';
+            dirHeader.style.margin = '15px 0 5px 0';
+            dirHeader.style.backgroundColor = 'var(--border-color)';
+            dirHeader.style.borderRadius = '5px';
+            dirHeader.style.fontWeight = 'bold';
+            dirHeader.textContent = dir;
+            fileList.appendChild(dirHeader);
+        }
+        
+        // Add files for this directory
+        fileGroups[dir].forEach(file => {
+            const listItem = document.createElement('li');
+            listItem.style.padding = '12px';
+            listItem.style.margin = '5px 0';
+            listItem.style.backgroundColor = 'var(--results-container-bg)';
+            listItem.style.borderRadius = '5px';
+            listItem.style.cursor = 'pointer';
+            listItem.style.display = 'flex';
+            listItem.style.justifyContent = 'space-between';
+            listItem.style.alignItems = 'center';
+            
+            const fileName = document.createElement('div');
+            fileName.textContent = file.title || file.name.replace('.md', '');
+            listItem.appendChild(fileName);
+            
+            // Add icon to indicate it's clickable
+            const icon = document.createElement('span');
+            icon.textContent = '›';
+            icon.style.fontWeight = 'bold';
+            icon.style.fontSize = '20px';
+            listItem.appendChild(icon);
+            
+            listItem.addEventListener('click', function() {
+                showMarkdownFile(file.path);
+            });
+            
+            // Add hover effect
+            listItem.addEventListener('mouseover', function() {
+                this.style.backgroundColor = 'var(--primary-color-light)';
+            });
+            listItem.addEventListener('mouseout', function() {
+                this.style.backgroundColor = 'var(--results-container-bg)';
+            });
+            
+            fileList.appendChild(listItem);
         });
-    }
+    });
     
-    document.body.style.overflow = 'hidden';
+    body.appendChild(fileList);
 }
 
-function closeSettingsPanel() {
-    const settingsPanel = document.getElementById('settingsPanel');
-    settingsPanel.style.display = 'none';
-    document.body.style.overflow = 'auto';
+/**
+ * Show a markdown file in the documentation viewer
+ * @param {string} filename - The markdown file to display
+ */
+async function showMarkdownFile(filename) {
+    try {
+        // Call Python function to read the file content
+        const result = await eel.read_markdown_file(filename)();
+        
+        if (!result.success) {
+            show_message('error', `Failed to load ${filename}`, true, result.error);
+            return;
+        }
+
+        // If we're showing a document from the documentation browser
+        if (docViewerState.isActive && docViewerState.bodyElement) {
+            // Update current file
+            docViewerState.currentFile = filename;
+            
+            // Update breadcrumb
+            if (docViewerState.breadcrumbElement) {
+                const homeLink = document.createElement('span');
+                homeLink.className = 'breadcrumb-home';
+                homeLink.textContent = 'Documentation Home';
+                homeLink.style.cursor = 'pointer';
+                homeLink.style.color = 'var(--primary-color)';
+                homeLink.addEventListener('click', function() {
+                    showDocumentationList();
+                });
+                
+                // Create breadcrumb
+                docViewerState.breadcrumbElement.innerHTML = '';
+                docViewerState.breadcrumbElement.appendChild(homeLink);
+                docViewerState.breadcrumbElement.appendChild(document.createTextNode(' › '));
+                
+                // Extract directory if present
+                let displayName = filename;
+                if (filename.includes('/')) {
+                    const parts = filename.split('/');
+                    const dir = parts.length > 2 ? parts[1] : null;
+                    displayName = parts[parts.length - 1];
+                    
+                    if (dir) {
+                        const dirSpan = document.createElement('span');
+                        dirSpan.textContent = dir;
+                        docViewerState.breadcrumbElement.appendChild(dirSpan);
+                        docViewerState.breadcrumbElement.appendChild(document.createTextNode(' › '));
+                    }
+                }
+                
+                const fileSpan = document.createElement('span');
+                fileSpan.textContent = displayName;
+                fileSpan.style.fontWeight = 'bold';
+                docViewerState.breadcrumbElement.appendChild(fileSpan);
+            }
+            
+            // Clear the content area
+            docViewerState.bodyElement.innerHTML = '';
+            
+            // Create markdown content container
+            const mdContent = document.createElement('div');
+            mdContent.className = 'markdown-content markdown-body';
+            mdContent.style.padding = '20px';
+            
+            // Parse and display the markdown content
+            mdContent.innerHTML = marked.parse(result.content);
+            
+            // Add the content to the body
+            docViewerState.bodyElement.appendChild(mdContent);
+            
+            return;
+        }
+        
+        // Otherwise, create a standalone markdown viewer (for LICENSE.md, EULA.md)
+        const mdOverlay = document.createElement('div');
+        mdOverlay.className = 'markdown-overlay';
+        
+        const contentContainer = document.createElement('div');
+        contentContainer.className = 'markdown-container';
+        
+        const mdTitle = document.createElement('h2');
+        mdTitle.textContent = filename;
+        mdTitle.className = 'markdown-title';
+        contentContainer.appendChild(mdTitle);
+        
+        const mdContent = document.createElement('div');
+        mdContent.className = 'markdown-content markdown-body';
+        mdContent.innerHTML = marked.parse(result.content);
+        contentContainer.appendChild(mdContent);
+        
+        const closeButton = document.createElement('button');
+        closeButton.textContent = 'Close';
+        closeButton.className = 'btn btn-primary';
+        closeButton.style.alignSelf = 'center';
+        closeButton.addEventListener('click', function() {
+            document.body.removeChild(mdOverlay);
+        });
+        contentContainer.appendChild(closeButton);
+        
+        mdOverlay.appendChild(contentContainer);
+        document.body.appendChild(mdOverlay);
+        
+    } catch (error) {
+        console.error(`Error displaying ${filename}:`, error);
+        show_message('error', `Error displaying ${filename}`, true, error.toString());
+    }
 }

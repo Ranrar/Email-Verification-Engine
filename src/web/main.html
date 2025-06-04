@@ -6,6 +6,7 @@
     <title>Email Verification Engine</title>
     <link rel="stylesheet" href="css/style.css">
     <script type="text/javascript" src="/eel.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <nav class="menu-bar">
@@ -213,15 +214,14 @@
             <div id="settings-menu" class="settings-content">
                 <!-- Settings Navigation Tabs -->
                 <div class="settings-tabs">
-                    <button class="settings-tab-btn active" data-tab="general">General</button>
-                    <button class="settings-tab-btn" data-tab="rate-limits">Rate Limits</button>
+                    <button class="settings-tab-btn" data-tab="general">General</button>
+                    <button class="settings-tab-btn" data-tab="rate-limits">Rate Limits</button>  
                     <button class="settings-tab-btn" data-tab="dns">DNS Settings</button>
                     <button class="settings-tab-btn" data-tab="executor">Executor Pool</button>
-                    <button class="settings-tab-btn" data-tab="validation-scoring">Scoring</button>
-                    <button class="settings-tab-btn" data-tab="confidence-levels">Confidence</button>
+                    <button class="settings-tab-btn" data-tab="validation-scoring">validation and Confidence</button>
                     <button class="settings-tab-btn" data-tab="ports">Ports</button>
                     <button class="settings-tab-btn" data-tab="email-filter">Email Filter</button>
-                    <button class="settings-tab-btn" data-tab="black-white-list">Black/White List</button>
+                    <button class="settings-tab-btn" data-tab="black-white-list">Black and White List</button>
                 </div>
                 
                 <!-- Loading Indicator -->
@@ -231,7 +231,7 @@
                 <div class="settings-content-area">
                     <!-- General Settings Tab -->
                     <div id="general-settings" class="settings-tab-content" style="display: block;">
-                        <h3>General Settings</h3>
+
                         <div id="general-settings-content" class="settings-form">
                             <!-- Content loaded dynamically -->
                         </div>
@@ -239,7 +239,6 @@
                     
                     <!-- Rate Limits Tab -->
                     <div id="rate-limits-settings" class="settings-tab-content" style="display: none;">
-                        <h3>Rate Limits</h3>
                         <div id="rate-limits-settings-content" class="settings-form">
                             <!-- Content loaded dynamically -->
                         </div>
@@ -247,7 +246,6 @@
                     
                     <!-- DNS Settings Tab -->
                     <div id="dns-settings" class="settings-tab-content" style="display: none;">
-                        <h3>DNS Settings</h3>
                         <div id="dns-settings-content" class="settings-form">
                             <!-- Content loaded dynamically -->
                         </div>
@@ -255,7 +253,6 @@
                     
                     <!-- Executor Pool Settings Tab -->
                     <div id="executor-settings" class="settings-tab-content" style="display: none;">
-                        <h3>Executor Pool Settings</h3>
                         <div id="executor-settings-content" class="settings-form">
                             <!-- Content loaded dynamically -->
                         </div>
@@ -266,23 +263,13 @@
                     
                     <!-- Validation Scoring Tab -->
                     <div id="validation-scoring-settings" class="settings-tab-content" style="display: none;">
-                        <h3>Validation Scoring</h3>
                         <div id="validation-scoring-content" class="settings-form">
-                            <!-- Content loaded dynamically -->
-                        </div>
-                    </div>
-                    
-                    <!-- Confidence Levels Tab -->
-                    <div id="confidence-levels-settings" class="settings-tab-content" style="display: none;">
-                        <h3>Confidence Levels</h3>
-                        <div id="confidence-levels-content" class="settings-form">
                             <!-- Content loaded dynamically -->
                         </div>
                     </div>
                     
                     <!-- Ports Configuration Tab -->
                     <div id="ports-settings" class="settings-tab-content" style="display: none;">
-                        <h3>Ports Configuration</h3>
                         <div id="ports-configuration-content" class="settings-form">
                             <!-- Content loaded dynamically -->
                         </div>
@@ -290,7 +277,6 @@
                     
                     <!-- Email Filter Regex Tab -->
                     <div id="email-filter-settings" class="settings-tab-content" style="display: none;">
-                        <h3>Email Filter Regex</h3>
                         <div id="email-filter-regex-content" class="settings-form">
                             <!-- Content loaded dynamically -->
                         </div>
@@ -298,7 +284,6 @@
                     
                     <!-- Domain Black/White List Tab -->
                     <div id="black-white-list-settings" class="settings-tab-content" style="display: none;">
-                        <h3>Domain Black/White List</h3>
                         <div id="black-white-list-content" class="settings-form">
                             <!-- Content loaded dynamically -->
                         </div>
@@ -316,7 +301,7 @@
 
     <script src="js/main.js"></script>
     <script src="js/debug.js"></script>
-    <script src="js/Settings.js"></script>
+    <script type="module" src="js/Settings.js"></script>
     <script src="js/ValidationEngine.js"></script>
     <script src="js/ResultsDisplay.js"></script>
 </body>

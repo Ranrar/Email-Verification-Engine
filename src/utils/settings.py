@@ -92,9 +92,69 @@ def get_executor_pool_settings():
         }
 
 @eel.expose
+def get_executor_settings():
+    """Retrieve all executor pool settings, using executor.py implementation"""
+    try:
+        # Import the function from executor module
+        from src.managers.executor import get_executor_settings as get_raw_settings
+        
+        # Get basic settings using the executor's implementation
+        raw_settings = get_raw_settings()
+        
+        # Fetch additional data needed for the UI (presets)
+        presets = sync_db.fetch(
+            "SELECT name, settings_json, description FROM executor_pool_presets ORDER BY name"
+        )
+        
+        # Format settings for UI compatibility
+        settings = []
+        for name, value in raw_settings.items():
+            # Get description (optional query)
+            desc_row = sync_db.fetchrow(
+                "SELECT description, is_time FROM executor_pool_settings WHERE name = $1",
+                name
+            )
+            description = desc_row['description'] if desc_row else ''
+            is_time = desc_row['is_time'] if desc_row else False
+            
+            settings.append({
+                'name': name,
+                'value': str(value),
+                'is_time': is_time,
+                'description': description
+            })
+        
+        return {
+            "success": True,
+            "settings": settings,
+            "presets": presets
+        }
+    except Exception as e:
+        logger.error(f"Error fetching executor settings: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@eel.expose
 def update_app_setting(id: int, value: str):
     """Update a specific app setting by ID"""
     try:
+        # First, get the name of the setting being updated
+        setting = sync_db.fetchrow(
+            "SELECT name FROM app_settings WHERE id = $1",
+            id
+        )
+        
+        # Check if this is a protected field
+        if setting and setting['name'].lower() in ['name', 'url', 'version']:
+            logger.warning(f"Attempted update to read-only setting '{setting['name']}' (id={id}) was blocked")
+            return {
+                "success": False,
+                "error": "This setting is read-only and cannot be modified"
+            }
+        
+        # If we get here, it's not a protected field, so proceed with the update
         sync_db.execute(
             "UPDATE app_settings SET value = $1 WHERE id = $2",
             value, id
@@ -419,9 +479,21 @@ def apply_email_filter_regex_preset(preset_id: int):
 def get_black_white_list():
     """Retrieve the domain black/white list"""
     try:
+        # Import time formatting utilities
+        from src.managers.time import to_iso8601, normalize_datetime
+        
+        # Fetch the domains
         domains = sync_db.fetch(
             "SELECT id, domain, category, timestamp, added_by FROM black_white ORDER BY domain"
         )
+        
+        # Format timestamps to ISO8601 format for JavaScript
+        for domain in domains:
+            if domain['timestamp']:
+                # Normalize and format to ISO8601
+                normalized_time = normalize_datetime(domain['timestamp'])
+                domain['timestamp'] = to_iso8601(normalized_time)
+        
         return {
             "success": True,
             "domains": domains
@@ -516,6 +588,24 @@ def run_executor_autotune(apply_settings=True):
         }
     except Exception as e:
         logger.error(f"Error running executor autotune: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@eel.expose
+def get_executor_presets():
+    """Retrieve all executor pool presets"""
+    try:
+        presets = sync_db.fetch(
+            "SELECT id, name, settings_json, description FROM executor_pool_presets ORDER BY name"
+        )
+        return {
+            "success": True,
+            "presets": presets
+        }
+    except Exception as e:
+        logger.error(f"Error fetching executor presets: {str(e)}")
         return {
             "success": False,
             "error": str(e)

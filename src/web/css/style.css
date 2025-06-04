@@ -52,3 +52,14 @@ h1 {
     margin-top: 20px;
     color: var(--text-color);
 }
+
+/* Override markdown link colors for theme-specific styling */
+.markdown-body a {
+    color: var(--markdown-link-color) !important;
+    text-decoration: none;
+    transition: text-decoration 0.3s ease;
+}
+
+.markdown-body a:hover {
+    text-decoration: underline;
+}

@@ -235,9 +235,10 @@
 .settings-container {
     background-color: var(--container-bg);
     color: var(--text-color);
-    width: 80%;
-    max-width: 900px;
+    width: 90%;
+    max-width: 1000px;
     max-height: 90vh;
+    height: 90%;
     border-radius: 8px;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
     display: flex;
@@ -266,7 +267,12 @@
     max-height: calc(90vh - 60px);
 }
 
+.settings-tabs::-webkit-scrollbar {
+    display: none; /* Hide scrollbar in Chrome/Safari/Edge */
+}
+
 .settings-tabs {
+    scrollbar-width: none; /* Hide scrollbar in Firefox */
     display: flex;
     border-bottom: 1px solid var(--results-container-border);
     margin-bottom: 20px;
@@ -276,24 +282,30 @@
 }
 
 .settings-tab-btn {
-    background-color: transparent;
-    border: none;
-    padding: 10px 20px;
+    background-color: var(--active-color);
+    border: 1px solid var(--border-color);
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: 10px 15px;
+    margin-right: 3px;
     cursor: pointer;
+    transition: background-color 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
     color: var(--text-color);
     font-weight: normal;
-    border-bottom: 3px solid transparent;
-    transition: all 0.2s ease;
+    border-bottom: 2px solid var(--active-tab);
 }
 
 .settings-tab-btn:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color:var(--active-tab);
+    border-bottom: 2px solid var(--primary-color);
 }
 
 .settings-tab-btn.active {
-    color: var(--button-bg);
-    border-bottom: 3px solid var(--button-bg);
-    font-weight: bold;
+    background-color: var(--active-tab);
+    border-bottom: 2px solid var(--primary-color);
+    color: var(--text-color);
 }
 
 .settings-tab-content {
@@ -334,4 +346,44 @@
 
 .system-message {
     display: none;
+}
+
+/* Domain management layout */
+.domain-input-container {
+    display: flex;
+    gap: 10px;
+    margin: 15px 0;
+    padding: 15px;
+    background-color: var(--results-container-bg);
+    border-radius: 5px;
+}
+
+.domain-table-container {
+    margin-top: 10px;
+}
+
+.domain-table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: var(--results-container-bg);
+    border-radius: 5px;
+}
+
+.domain-table th,
+.domain-table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--results-container-border);
+}
+
+.domain-table th {
+    text-align: left;
+}
+
+.domain-table .text-center {
+    text-align: center;
+}
+
+.empty-list-message {
+    text-align: center;
+    padding: 20px;
 }

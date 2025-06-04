@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS users (
     is_active BOOLEAN DEFAULT FALSE,
     suspended_date TIMESTAMPTZ,               
     signup_location TEXT,
-    signup_IP TEXT                  
+    signup_IP TEXT,
+    accepts_EULA BOOLEAN NOT NULL,
+    accepts_LICENS BOOLEAN NOT NULL                  
 );
 
 -- audit_log

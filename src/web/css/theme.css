@@ -11,6 +11,12 @@
     --button-hover: #4cae4c;
     --button-text: #fff;
     
+    /* Missing variables - ADD THESE */
+    --border-color: #fff;
+    --active-tab: #fff;  /* Light green to match button */
+    --primary-color: #5cb85c; /* Match button-bg for consistency */
+    --text-muted: #777777;
+    
     /* Toggle switch colors for light theme */
     --toggle-bg: #ccc;
     --toggle-active-bg: #5cb85c;
@@ -43,6 +49,17 @@
     /* Theme switch specific variables for light mode */
     --theme-switch-bg: #4cae4c;
     --theme-switch-active-bg: #4cae4c;
+    
+    /* Domain management specific colors */
+    --domain-btn-text: #333;
+    --domain-btn-hover-bg: rgba(0, 0, 0, 0.05);
+    --domain-btn-danger-text: #ff6666;
+    --domain-btn-danger-bg: rgba(255, 0, 0, 0.1);
+    --domain-btn-danger-hover: rgba(255, 0, 0, 0.2);
+    
+    /* Add markdown link colors for light theme */
+    --markdown-link-color: #000000;
+    --markdown-link-hover-decoration: underline;
 }
 
 [data-theme="dark"] {
@@ -57,6 +74,12 @@
     --button-bg: #cc0000;
     --button-hover: #990000;
     --button-text: #fff;
+    
+    /* Missing variables - ADD THESE */
+    --border-color: #333;
+    --active-tab: #333;  /* Darker red to match theme */
+    --primary-color: #cc0000; /* Match button-bg for dark theme */
+    --text-muted: #999999;
     
     /* Toggle switch colors for dark theme */
     --toggle-bg: #555;
@@ -90,6 +113,17 @@
     /* Theme switch specific variables for dark mode */
     --theme-switch-bg: #990000;
     --theme-switch-active-bg: #990000;
+    
+    /* Domain management specific colors */
+    --domain-btn-text: #eee;
+    --domain-btn-hover-bg: rgba(255, 255, 255, 0.1);
+    --domain-btn-danger-text: #ff8080;
+    --domain-btn-danger-bg: rgba(255, 0, 0, 0.2);
+    --domain-btn-danger-hover: rgba(255, 0, 0, 0.3);
+    
+    /* Add markdown link colors for dark theme */
+    --markdown-link-color: #ffffff;
+    --markdown-link-hover-decoration: underline;
 }
 
 /* Theme Switch - completely rebuilt to match toggle switch */

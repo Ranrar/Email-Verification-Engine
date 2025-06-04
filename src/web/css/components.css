@@ -35,10 +35,25 @@ button:hover {
     background-color: var(--bg-color);
     color: var(--text-color);
     border: 1px solid var(--results-container-border);
+    margin-right: 10px;
+    padding: 4px 8px;
 }
 
 .btn-secondary:hover {
     background-color: rgba(0, 0, 0, 0.05);
+}
+
+.btn-danger {
+    padding: 4px 8px;
+    background-color: rgba(255, 0, 0, 0.1);
+    color: #ff6666;
+    border: 1px solid #ff6666;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-danger:hover {
+    background-color: rgba(255, 0, 0, 0.2);
 }
 
 .settings-button {
@@ -521,4 +536,164 @@ input:checked + .toggle-slider:before {
     50% { opacity: 1; transform: translateY(0); }
     75% { opacity: 0; transform: translateY(0); }
     100% { opacity: 0; transform: translateY(0); }
+}
+
+/* Domain management components */
+.domain-input {
+    flex: 3;
+    padding: 8px;
+    border: 1px solid var(--results-container-border);
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+.domain-category-select {
+    flex: 0.5;
+    padding: 8px;
+    border: 1px solid var(--results-container-border);
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+/* Markdown viewer styles */
+.markdown-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 2000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.markdown-container {
+    background-color: var(--container-bg);
+    color: var(--text-color);
+    width: 80%;
+    max-width: 800px;
+    max-height: 80vh;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+}
+
+.markdown-title {
+    margin-top: 0;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+}
+
+.markdown-content {
+    overflow: auto;
+    flex: 1;
+    padding: 10px 5px;
+    margin-bottom: 15px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+}
+
+/* GitHub Markdown Styling */
+.markdown-body {
+    box-sizing: border-box;
+    min-width: 200px;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3, 
+.markdown-body h4, .markdown-body h5, .markdown-body h6 {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.markdown-body h1 {
+    font-size: 2em;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: .3em;
+}
+
+.markdown-body h2 {
+    font-size: 1.5em;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: .3em;
+}
+
+.markdown-body p {
+    margin-top: 0;
+    margin-bottom: 16px;
+}
+
+.markdown-body code {
+    padding: .2em .4em;
+    margin: 0;
+    font-size: 85%;
+    background-color: rgba(175, 184, 193, 0.2);
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+}
+
+.markdown-body pre {
+    padding: 16px;
+    overflow: auto;
+    font-size: 85%;
+    line-height: 1.45;
+    background-color: var(--results-container-bg);
+    border-radius: 6px;
+    margin-bottom: 16px;
+}
+
+.markdown-body pre code {
+    background-color: transparent;
+    padding: 0;
+}
+
+.markdown-body a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.markdown-body a:hover {
+    text-decoration: underline;
+}
+
+.markdown-body ul, .markdown-body ol {
+    padding-left: 2em;
+    margin-top: 0;
+    margin-bottom: 16px;
+}
+
+.markdown-body blockquote {
+    padding: 0 1em;
+    color: var(--text-muted);
+    border-left: 0.25em solid var(--border-color);
+    margin: 0 0 16px 0;
+}
+
+/* Documentation viewer styles */
+.doc-breadcrumb {
+    display: flex;
+    align-items: center;
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+.breadcrumb-home {
+    color: var(--primary-color);
+    cursor: pointer;
+}
+
+.breadcrumb-home:hover {
+    text-decoration: underline;
 }

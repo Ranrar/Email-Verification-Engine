@@ -150,15 +150,24 @@ class DNSWarmup:
         # Initialize the variable outside the try block
         ipv6_preference_changed = False
         
-        # Check if IPv6 is not available but is preferred in settings
-        # If so, update the setting to disable IPv6 preference
+        # Check if IPv6 availability matches preference setting
         try:
             current_prefer_ipv6 = self.dns_manager._get_setting_with_fallback('prefer_ipv6', '1', log_level="debug")
-            if not ipv6_available and current_prefer_ipv6 == '1':
-                logger.warning("IPv6 is not available but is preferred in settings. Updating setting to disable IPv6 preference.")
-                self.dns_manager.update_setting('prefer_ipv6', '0')
-                logger.info("Updated 'prefer_ipv6' setting to '0'")
+            
+            # If IPv6 is available but preference is disabled, enable it
+            if ipv6_available and current_prefer_ipv6 != '1':
+                logger.info("IPv6 is available. Enabling IPv6 preference in settings.")
+                self.dns_manager.update_setting('prefer_ipv6', '1')
                 ipv6_preference_changed = True
+            
+            # If IPv6 is NOT available but preference is enabled, disable it 
+            elif not ipv6_available and current_prefer_ipv6 != '0':
+                logger.warning("IPv6 is not available. Disabling IPv6 preference in settings.")
+                self.dns_manager.update_setting('prefer_ipv6', '0')
+                ipv6_preference_changed = True
+            else:
+                logger.info(f"IPv6 preference setting already correct (available: {ipv6_available}, setting: {current_prefer_ipv6})")
+                
         except Exception as e:
             logger.error(f"Failed to check or update IPv6 preference setting: {e}")
             # Variable is already initialized to False, so we're safe

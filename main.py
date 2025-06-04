@@ -10,10 +10,11 @@ Email Verification Engine
  ██████████     ░░███       ██████████
 ░░░░░░░░░░       ░░░       ░░░░░░░░░░
 
-Email Verification Engine V 0.2
-Copytight © 2025 by Kim Skov Rasmussen
-https://github.com/Ranrar
-Read licens before use
+Email Verification Engine V 0.3
+# Copyright (c) 2025 Kim Skov Rasmussen
+# This software is licensed under CC BY-NC-ND 4.0.
+# Non-commercial academic use only.
+# Commercial use prohibited without explicit permission.
 """
 
 import eel
@@ -253,6 +254,83 @@ def get_detailed_validation_data(trace_id):
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
+
+@eel.expose
+def read_markdown_file(filename):
+    """Read a markdown file from the root directory or a subdirectory"""
+    try:
+        import os
+        
+        # Get the root directory path
+        root_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Define the full path to the file
+        file_path = os.path.join(root_dir, filename)
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return {"success": False, "error": f"File {filename} not found"}
+        
+        # Read the file content
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+            
+        return {"success": True, "content": content}
+    
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@eel.expose
+def list_documentation_files():
+    """List all Markdown files in the other/doc directory"""
+    try:
+        import os
+        
+        # Get the root directory path
+        root_dir = os.path.dirname(os.path.abspath(__file__))
+        doc_dir = os.path.join(root_dir, "other", "doc")
+        
+        # Check if directory exists
+        if not os.path.exists(doc_dir):
+            return {
+                "success": False,
+                "error": f"Documentation directory not found: {doc_dir}"
+            }
+        
+        # List all markdown files
+        markdown_files = []
+        for file in os.listdir(doc_dir):
+            if file.lower().endswith('.md'):
+                file_path = os.path.join(doc_dir, file)
+                # Get file title from first line if possible
+                title = file.replace('.md', '')
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        first_line = f.readline().strip()
+                        if first_line.startswith('# '):
+                            title = first_line[2:]
+                except:
+                    pass
+                
+                markdown_files.append({
+                    "name": file,
+                    "title": title,
+                    "path": os.path.join("other", "doc", file)
+                })
+        
+        # Sort by name
+        markdown_files.sort(key=lambda x: x['name'])
+        
+        return {
+            "success": True,
+            "files": markdown_files
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 # Main function - Non-async for better multiprocessing compatibility
 def main():
