@@ -93,7 +93,7 @@ A simple development roadmap for the Email Verification Engine.
 
 ---
 
-## ✅ Phase 1 – Core System (Almost Done)
+## Phase 1 – Core System (Almost Done)
 
 - [x] Backend email validation engine  
   - Syntax & format check  
@@ -154,7 +154,7 @@ A simple development roadmap for the Email Verification Engine.
 
 ---
 
-## 📘 Phase 5 – Documentation & Deployment
+## Phase 5 – Documentation & Deployment
 
 - [ ] Developer guide (how to extend or modify)  
 - [ ] API docs (Swagger/FastAPI)  
