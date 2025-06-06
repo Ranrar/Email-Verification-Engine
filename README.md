@@ -85,3 +85,85 @@ The Email Verification Engine (EVE) is a robust, modular system for high-perform
 
 3. **Run**
    py main.py
+
+
+# Roadmap
+
+A simple development roadmap for the Email Verification Engine.
+
+---
+
+## ✅ Phase 1 – Core System (Almost Done)
+
+- [x] Backend email validation engine  
+  - Syntax & format check  
+  - DNS & MX records  
+  - SMTP deliverability  
+  - Blacklist & disposable detection
+  - IDN and IDNA Support
+- [x] Multi-layer caching (RAM, Disk, PostgreSQL)  
+- [x] Central configuration in database  
+- [x] Basic backend API  
+  - `POST /validate`  
+  - `GET /job/:id/status`
+  -  `Most settings functions`
+- [x] Rate limiting engine
+- [X] WHOIS lookup
+- [ ] SPF, DKIM, DMARC
+- [ ] Imap and Pop3 chek
+- [ ] Cachall chek
+- [ ] Batch job support (bulk processing)
+
+---
+
+## Phase 2 – Interfaces
+
+### Backend GUI
+- [x] Main Theme done
+- [ ] Admin dashboard  
+- [ ] Job & system logs  
+- [ ] Cache stats and hit rates  
+- [ ] Thread/worker tuning controls  
+
+### Frontend (Web UI)
+- [ ] User dashboard  
+- [ ] Submit single/batch email jobs  
+- [ ] View job progress & results  
+- [ ] API key management  
+
+---
+
+## Phase 3 – Security & User Roles
+
+- [ ] Role-based access (Admin, Operator, Viewer)  
+- [ ] Audit logs (who did what & when)  
+- [ ] GDPR compliance  
+  - [ ] Right to delete user data  
+  - [ ] Data retention limits  
+  - [ ] Log anonymization  
+
+---
+
+## Phase 4 – Batch & Performance
+
+- [ ] Real-time job progress tracker  
+- [ ] Import/export CSV files  
+- [ ] Email list scoring system  
+- [ ] High-scale batch job support  
+- [ ] Asynchronous queue support (e.g. Redis, RabbitMQ)  
+
+---
+
+## 📘 Phase 5 – Documentation & Deployment
+
+- [ ] Developer guide (how to extend or modify)  
+- [ ] API docs (Swagger/FastAPI)  
+- [ ] Deployment guide (Docker, environment config)  
+- [ ] GDPR checklist  
+- [ ] Improved `install.py` or web installer  
+
+“NB. I am sure I have missed something.”
+---
+
+_Questions or suggestions? Reach out: [kim@skovrasmussen.com](mailto:kim@skovrasmussen.com)_
+
