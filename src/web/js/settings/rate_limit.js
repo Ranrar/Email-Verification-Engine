@@ -3,6 +3,17 @@
  * Handles configuration of rate limiting features
  */
 
+/**
+ * Get current theme for applying theme-specific classes
+ */
+function getCurrentTheme() {
+    // Use the global function if available, otherwise fallback
+    if (window.getCurrentTheme) {
+        return window.getCurrentTheme();
+    }
+    return document.documentElement.getAttribute('data-theme') || 'light';
+}
+
 // Import shared utilities if needed
 // import { capitalizeFirstLetter, showNotification } from './utils.js';
 
@@ -83,34 +94,38 @@ function renderRateLimits() {
     for (const category in groupedSettings) {
         html += `<div class="results-container">
                     <h2>${capitalizeFirstLetter(category)} Rate Limits</h2>
-                    <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">`;
+                    <div class="grid-1col">`;
         
         groupedSettings[category].forEach(setting => {
             html += `
-                <div style="display: flex; padding: 10px; background-color: var(--results-container-bg); 
-                     border-radius: 5px; margin-bottom: 5px;" data-id="${setting.id}" data-type="rate">
-                    <div style="flex: 1; padding-right: 15px;">
-                        <label for="rate-setting-${setting.id}" style="font-weight: bold; color: var,--text-color);">
+                <div class="settings-item p-10 flex justify-space-between align-center" 
+                     data-id="${setting.id}" data-type="rate">
+                    <div class="flex-1 pr-15">
+                        <label for="rate-setting-${setting.id}" class="settings-label">
                             ${setting.name}
                         </label>
-                        <div style="font-size: 0.9em; color: var(--text-muted); margin-top: 5px;">
+                        <div class="text-muted mt-5">
                             ${setting.description}
                         </div>
-                        <div style="display: inline-block; font-size: 0.8em; background-color: var(--bg-color); 
-                             color: var(--text-color); padding: 2px 6px; border-radius: 10px; margin-top: 5px;">
-                            ${setting.is_time ? 'Time (seconds)' : 'Count'}
+                        <div class="mt-5">
+                            <span class="input-label">
+                                ${setting.is_time ? 'Time (seconds)' : 'Count'}
+                            </span>
                         </div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <input type="number" id="rate-setting-${setting.id}" value="${setting.value}"
-                               min="0" ${setting.is_time ? 'step="1"' : 'step="1"'}
-                               style="width: 80px; padding: 8px; border: 1px solid var(--results-container-border); 
-                               border-radius: 4px; background-color: var(--bg-color); color: var,--text-color);">
-                        <label class="toggle-switch">
+                    <div class="flex align-center gap-10">
+                        <div class="number-input-group">
+                            <input type="number" id="rate-setting-${setting.id}" value="${setting.value}"
+                                   min="0" ${setting.is_time ? 'step="1"' : 'step="1"'}
+                                   class="rate-setting-input">
+                            <button type="button" class="number-btn" onclick="incrementValue('rate-setting-${setting.id}')">+</button>
+                            <button type="button" class="number-btn" onclick="decrementValue('rate-setting-${setting.id}')">−</button>
+                        </div>
+                        <div class="checkbox-wrapper" style="padding-left: 8px;">
                             <input type="checkbox" id="rate-enabled-${setting.id}" 
                                    ${setting.enabled ? "checked" : ""}>
-                            <span class="toggle-slider round"></span>
-                        </label>
+                            <label for="rate-enabled-${setting.id}">Enabled</label>
+                        </div>
                     </div>
                 </div>
             `;
@@ -121,6 +136,38 @@ function renderRateLimits() {
     
     container.innerHTML = html;
 }
+
+/**
+ * Increment number input value
+ */
+function incrementValue(inputId) {
+    const input = document.getElementById(inputId);
+    if (input) {
+        const currentValue = parseInt(input.value) || 0;
+        const step = parseInt(input.step) || 1;
+        input.value = currentValue + step;
+        input.dispatchEvent(new Event('change'));
+    }
+}
+
+/**
+ * Decrement number input value
+ */
+function decrementValue(inputId) {
+    const input = document.getElementById(inputId);
+    if (input) {
+        const currentValue = parseInt(input.value) || 0;
+        const step = parseInt(input.step) || 1;
+        const min = parseInt(input.min) || 0;
+        const newValue = Math.max(min, currentValue - step);
+        input.value = newValue;
+        input.dispatchEvent(new Event('change'));
+    }
+}
+
+// Make functions global so they can be called from HTML
+window.incrementValue = incrementValue;
+window.decrementValue = decrementValue;
 
 /**
  * Save rate limit settings
@@ -154,6 +201,18 @@ async function saveRateLimitSettings() {
     
     return { success: successCount, errors: errorCount };
 }
+
+/**
+ * Update theme classes when theme changes
+ */
+function updateRateLimitTheme() {
+    // Re-apply any theme-specific styling
+    const theme = getCurrentTheme();
+    // Update any module-specific theme classes here if needed
+}
+
+// Listen for theme changes
+document.addEventListener('themeChanged', updateRateLimitTheme);
 
 // Export functions and state for use by the main settings module
 export {

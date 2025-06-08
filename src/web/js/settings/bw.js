@@ -3,8 +3,16 @@
  * Handles domain blacklist and whitelist management
  */
 
-// Import shared utilities if needed
-// import { capitalizeFirstLetter, showNotification } from './utils.js';
+/**
+ * Get current theme for applying theme-specific classes
+ */
+function getCurrentTheme() {
+    // Use the global function if available, otherwise fallback
+    if (window.getCurrentTheme) {
+        return window.getCurrentTheme();
+    }
+    return document.documentElement.getAttribute('data-theme') || 'light';
+}
 
 /**
  * Capitalize the first letter of a string
@@ -358,6 +366,18 @@ async function removeDomainFromList(id) {
         }
     }
 }
+
+/**
+ * Update theme classes when theme changes
+ */
+function updateBWTheme() {
+    // Re-apply any theme-specific styling
+    const theme = getCurrentTheme();
+    // Update any module-specific theme classes here if needed
+}
+
+// Listen for theme changes
+document.addEventListener('themeChanged', updateBWTheme);
 
 // Export functions and state for use by the main settings module
 export {

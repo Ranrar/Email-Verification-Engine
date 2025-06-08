@@ -10,7 +10,8 @@ class ValidationEngine {
         this.emailInput = null;
         this.resultDiv = null;
         this.detailedResults = null;
-        this.animationElement = null; // New reference for our animation element
+        this.animationElement = null;
+        this.progressContainer = null;
     }
 
     /**
@@ -21,7 +22,7 @@ class ValidationEngine {
         this.emailInput = document.getElementById('emailInput');
         this.resultDiv = document.getElementById('result');
         this.detailedResults = document.getElementById('detailedResults');
-        this.progressBar = document.getElementById('validationProgress');
+        this.progressContainer = document.getElementById('validationProgress');
         this.progressFill = document.getElementById('validation-progress-fill');
         this.percentText = document.getElementById('validation-percent');
         this.stepText = document.getElementById('validation-step');
@@ -96,23 +97,15 @@ class ValidationEngine {
         this.verifyButton.disabled = true;
         
         // Clear previous results
-        this.resultDiv.innerText = "";
-        this.resultDiv.className = '';
-        this.detailedResults.style.display = 'none';
-        
-        // Hide show more button
-        const showMoreButton = document.getElementById('showMoreButton');
-        if (showMoreButton) {
-            showMoreButton.style.display = 'none';
-        }
+        this.clearResults();
         
         try {
             // Show progress and start validation
-            await this.showValidationProgress();
+            this.showValidationProgress();
             
             // Call the Python validation function
             const response = await eel.verify_email(email)();
-            console.log("Validation response:", response);  // Debug output
+            console.log("Validation response:", response);
             
             // Process the response
             this.handleValidationResponse(response);
@@ -128,61 +121,103 @@ class ValidationEngine {
     }
 
     /**
-     * Show validation progress animation
+     * Clear all previous results
      */
-    async showValidationProgress() {
-        // Create or get the animation container
-        let animContainer = document.getElementById('validationAnimation');
-        if (!animContainer) {
-            animContainer = document.createElement('div');
-            animContainer.id = 'validationAnimation';
-            animContainer.className = 'validation-animation';
-            
-            // Insert after the verify button instead of email input
-            this.verifyButton.parentNode.insertBefore(animContainer, this.verifyButton.nextSibling);
+    clearResults() {
+        // Clear result message
+        this.resultDiv.innerHTML = "";
+        this.resultDiv.className = '';
+        
+        // Hide detailed results
+        this.detailedResults.style.display = 'none';
+        
+        // Hide show more button
+        const showMoreButton = document.getElementById('showMoreButton');
+        if (showMoreButton) {
+            showMoreButton.style.display = 'none';
         }
         
-        // Show the animation container
-        animContainer.style.display = 'block';
+        // Hide expanded details
+        const expandedDetails = document.getElementById('expandedDetails');
+        if (expandedDetails) {
+            expandedDetails.style.display = 'none';
+        }
+    }
+
+    /**
+     * Show validation progress with improved animation
+     */
+    showValidationProgress() {
+        // Remove any existing animation
+        if (this.animationElement) {
+            this.animationElement.remove();
+        }
         
-        // Create the text element and dots container
-        animContainer.innerHTML = `
-            <span class="validation-text">Validating please wait</span>
-            <span class="dots">
-                <span class="dot dot1">.</span>
-                <span class="dot dot2">.</span>
-                <span class="dot dot3">.</span>
-            </span>
+        // Create new validation animation using CSS classes
+        this.animationElement = document.createElement('div');
+        this.animationElement.className = 'validation-animation mb-20';
+        this.animationElement.innerHTML = `
+            <div class="text-center">
+                <span>Validating email</span>
+                <div class="dots">
+                    <span class="dot">.</span>
+                    <span class="dot">.</span>
+                    <span class="dot">.</span>
+                </div>
+            </div>
         `;
         
-        // Hide the old progress bar if it exists
-        if (this.progressBar) {
-            this.progressBar.style.display = 'none';
+        // Insert after the input container
+        const inputContainer = this.emailInput.closest('.email-input-container');
+        if (inputContainer) {
+            inputContainer.parentNode.insertBefore(this.animationElement, inputContainer.nextSibling);
+        } else {
+            // Fallback: insert after email input
+            this.emailInput.parentNode.insertBefore(this.animationElement, this.emailInput.nextSibling);
         }
         
-        // Return a promise that resolves when validation is complete
-        return new Promise(resolve => {
-            // Store the animation element so we can hide it later
-            this.animationElement = animContainer;
+        // Show the progress container if it exists in HTML
+        if (this.progressContainer) {
+            this.progressContainer.style.display = 'block';
             
-            // Set a minimum display time to ensure animation is visible
-            setTimeout(() => {
-                resolve();
-            }, 1500);
-        });
+            // Hide the text labels
+            if (this.percentText) {
+                this.percentText.style.display = 'none';
+            }
+            if (this.stepText) {
+                this.stepText.style.display = 'none';
+            }
+        }
+    }
+
+    /**
+     * Update validation progress (if using progress bar)
+     */
+    updateProgress(percent, step) {
+        if (this.progressFill) {
+            this.progressFill.style.width = `${percent}%`;
+        }
+        if (this.percentText) {
+            this.percentText.textContent = `${percent}%`;
+        }
+        if (this.stepText) {
+            this.stepText.textContent = step;
+        }
     }
 
     /**
      * Hide validation progress
      */
     hideValidationProgress() {
-        if (this.progressBar) {
-            this.progressBar.style.display = 'none';
+        // Hide progress container
+        if (this.progressContainer) {
+            this.progressContainer.style.display = 'none';
         }
         
-        // Also hide our new animation
+        // Remove animation element
         if (this.animationElement) {
-            this.animationElement.style.display = 'none';
+            this.animationElement.remove();
+            this.animationElement = null;
         }
     }
 
@@ -190,71 +225,93 @@ class ValidationEngine {
      * Handle validation response from backend
      */
     handleValidationResponse(response) {
-        // Set the basic result message
-        this.resultDiv.innerText = response.message;
-        this.resultDiv.className = response.valid ? 'message success' : 'message error';
+        // Create result message with proper CSS classes
+        this.resultDiv.className = response.valid ? 'message success mb-20' : 'message error mb-20';
+        
+        // Create main result content
+        const resultContent = document.createElement('div');
+        resultContent.textContent = response.message;
+        this.resultDiv.appendChild(resultContent);
         
         // Add error message if available
         if (!response.valid && response.details && response.details.error_message) {
-            this.resultDiv.innerText += "\n" + response.details.error_message;
+            const errorDetail = document.createElement('div');
+            errorDetail.className = 'mt-10 text-muted';
+            errorDetail.textContent = response.details.error_message;
+            this.resultDiv.appendChild(errorDetail);
         }
         
-        // Extract SMTP details - look for them at the root level of response or in details
-        const smtpDetails = {
-            smtp_result: response.smtp_result || (response.details && response.details.smtp_result) || false,
-            smtp_banner: response.smtp_banner || (response.details && response.details.smtp_banner) || '',
-            smtp_vrfy: response.smtp_vrfy || (response.details && response.details.smtp_vrfy) || false,
-            supports_tls: response.smtp_supports_tls || (response.details && response.details.smtp_supports_tls) || false,
-            supports_auth: response.smtp_supports_auth || (response.details && response.details.smtp_supports_auth) || false,
-            smtp_flow_success: response.smtp_flow_success || (response.details && response.details.smtp_flow_success) || false,
-            smtp_error_code: response.smtp_error_code || (response.details && response.details.smtp_error_code) || null,
-            server_message: response.smtp_server_message || (response.details && response.details.smtp_server_message) || '',
-            connection_success: response.connection_success || (response.details && response.details.connection_success) || false
-        };
+        // Add warning messages using new CSS classes
+        this.addWarningMessages(response.details);
         
-        // IMPORTANT: Make sure detailedResults is displayed BEFORE ResultsDisplay
-        this.detailedResults.style.display = 'block';
-        
-        // Use ResultsDisplay to handle detailed results
-        if (window.ResultsDisplay) {
-            window.resultsDisplay.displayResults(response.details);
-        }
-        
-        // Show detailed results container
-        this.detailedResults.style.display = 'block';
-        
-        // Show the "Show More" button if we have a trace ID
-        const showMoreButton = document.getElementById('showMoreButton');
-        if (showMoreButton && response.details.trace_id) {
-            showMoreButton.style.display = 'block';
-        }
+        // Show detailed results
+        this.showDetailedResults(response);
         
         // Change button to "New Validation"
         this.verifyButton.textContent = "New Validation";
-        
-        // Add this code to show blacklist/disposable warnings
-        if (response.details && response.details.blacklist_info && response.details.blacklist_info.blacklisted) {
-             const blacklistWarning = document.createElement('div');
-             blacklistWarning.className = 'blacklist-warning';
-             blacklistWarning.textContent = '⚠️ Domain is blacklisted: ' + 
-                 (response.details.blacklist_info.source || 'Unknown source');
-             this.resultDiv.appendChild(blacklistWarning);
-         }
-         
-        if (response.details && response.details.is_disposable) {
-             const disposableWarning = document.createElement('div');
-             disposableWarning.className = 'disposable-warning';
-             disposableWarning.textContent = '⚠️ Disposable email address detected';
-             this.resultDiv.appendChild(disposableWarning);
-         }
+        this.verifyButton.className = 'btn btn-secondary';
     }
 
     /**
-     * Show error message
+     * Add warning messages for blacklist/disposable emails
+     */
+    addWarningMessages(details) {
+        if (!details) return;
+        
+        // Blacklist warning
+        if (details.blacklist_info && details.blacklist_info.blacklisted) {
+            const blacklistWarning = document.createElement('div');
+            blacklistWarning.className = 'message warning mt-10';
+            blacklistWarning.innerHTML = `
+                <strong>⚠️ Domain Blacklisted:</strong> 
+                ${details.blacklist_info.source || 'Unknown source'}
+            `;
+            this.resultDiv.appendChild(blacklistWarning);
+        }
+        
+        // Disposable email warning
+        if (details.is_disposable) {
+            const disposableWarning = document.createElement('div');
+            disposableWarning.className = 'message warning mt-10';
+            disposableWarning.innerHTML = `
+                <strong>⚠️ Disposable Email:</strong> 
+                This appears to be a temporary email address
+            `;
+            this.resultDiv.appendChild(disposableWarning);
+        }
+    }
+
+    /**
+     * Show detailed results using new CSS structure
+     */
+    showDetailedResults(response) {
+        // Make sure detailedResults is displayed
+        this.detailedResults.style.display = 'block';
+        
+        // Use ResultsDisplay to handle detailed results
+        if (window.ResultsDisplay && window.resultsDisplay) {
+            window.resultsDisplay.displayResults(response.details);
+        }
+        
+        // Show the "Show More" button if we have a trace ID
+        const showMoreButton = document.getElementById('showMoreButton');
+        if (showMoreButton && response.details && response.details.trace_id) {
+            showMoreButton.style.display = 'block';
+            showMoreButton.className = 'btn btn-secondary';
+        }
+    }
+
+    /**
+     * Show error message with improved styling
      */
     showError(message) {
-        this.resultDiv.innerText = message;
-        this.resultDiv.className = 'message error';
+        this.resultDiv.innerHTML = '';
+        this.resultDiv.className = 'message error mb-20';
+        
+        const errorContent = document.createElement('div');
+        errorContent.innerHTML = `<strong>Error:</strong> ${message}`;
+        this.resultDiv.appendChild(errorContent);
+        
         this.detailedResults.style.display = 'none';
     }
 
@@ -266,10 +323,8 @@ class ValidationEngine {
         this.emailInput.value = '';
         this.emailInput.disabled = false;
         
-        // Clear the results
-        this.resultDiv.innerText = '';
-        this.resultDiv.className = '';
-        this.detailedResults.style.display = 'none';
+        // Clear all results
+        this.clearResults();
         
         // Clear SMTP results if they exist
         if (this.smtpResultsDiv) {
@@ -277,23 +332,16 @@ class ValidationEngine {
             this.smtpResultsDiv.style.display = 'none';
         }
         
-        // Reset Show More button - both hide and reset its state
+        // Reset Show More button
         const showMoreButton = document.getElementById('showMoreButton');
         if (showMoreButton) {
             showMoreButton.style.display = 'none';
-            // Reset button text in case it was toggled to "Show Less"
-            showMoreButton.textContent = "Show More";
-            // Remove any active/expanded classes
+            showMoreButton.textContent = "Show More Details";
+            showMoreButton.className = 'btn btn-secondary';
             showMoreButton.classList.remove('expanded');
         }
         
-        // Hide expanded details
-        const expandedDetails = document.getElementById('expandedDetails');
-        if (expandedDetails) {
-            expandedDetails.style.display = 'none';
-        }
-        
-        // Reset any other expanded sections that might be controlled by the Show More button
+        // Reset any trace sections
         const traceSection = document.getElementById('traceSection');
         if (traceSection) {
             traceSection.style.display = 'none';
@@ -301,9 +349,22 @@ class ValidationEngine {
         
         // Reset the button
         this.verifyButton.textContent = "Verify Email";
+        this.verifyButton.className = 'btn';
         
         // Set focus to the input field
         this.emailInput.focus();
+    }
+
+    /**
+     * Show toast notification using the global system
+     */
+    showToast(message, type = 'info') {
+        // Use the global showToast function
+        if (typeof window.showToast === 'function') {
+            window.showToast(message, type);
+        } else {
+            console.log(`${type.toUpperCase()}: ${message}`);
+        }
     }
 }
 

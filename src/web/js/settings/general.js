@@ -3,8 +3,16 @@
  * Handles application-wide general settings
  */
 
-// Import shared utilities if they're moved to a separate file
-// import { capitalizeFirstLetter, formatSettingName, showNotification } from './utils.js';
+/**
+ * Get current theme for applying theme-specific classes
+ */
+function getCurrentTheme() {
+    // Use the global function if available, otherwise fallback
+    if (window.getCurrentTheme) {
+        return window.getCurrentTheme();
+    }
+    return document.documentElement.getAttribute('data-theme') || 'light';
+}
 
 /**
  * Capitalize the first letter of a string
@@ -37,11 +45,8 @@ function formatSettingName(name) {
  */
 function showNotification(type_name, message, persistent = false, details = null) {
     if (typeof show_message === 'function') {
-        // Use the global show_message function exposed by main.js
-        // Parameters match notifier.py: type_name, message, persistent, details
         show_message(type_name, message, persistent, details);
     } else {
-        // Fallback if show_message isn't available
         console[type_name === 'error' ? 'error' : type_name === 'warning' ? 'warn' : 'log'](message);
         alert(`${type_name.toUpperCase()}: ${message}${details ? '\n' + details : ''}`);
     }
@@ -210,6 +215,18 @@ async function saveGeneralSettings() {
     
     return { success: successCount, errors: errorCount };
 }
+
+/**
+ * Update theme classes when theme changes
+ */
+function updateGeneralTheme() {
+    // Re-apply any theme-specific styling
+    const theme = getCurrentTheme();
+    // Update any module-specific theme classes here if needed
+}
+
+// Listen for theme changes
+document.addEventListener('themeChanged', updateGeneralTheme);
 
 // Export functions and state for use by the main settings module
 export {

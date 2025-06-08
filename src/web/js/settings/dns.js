@@ -3,8 +3,16 @@
  * Handles DNS server configuration and related settings
  */
 
-// Import shared utilities if needed
-// import { capitalizeFirstLetter, formatSettingName, showNotification } from './utils.js';
+/**
+ * Get current theme for applying theme-specific classes
+ */
+function getCurrentTheme() {
+    // Use the global function if available, otherwise fallback
+    if (window.getCurrentTheme) {
+        return window.getCurrentTheme();
+    }
+    return document.documentElement.getAttribute('data-theme') || 'light';
+}
 
 /**
  * Capitalize the first letter of a string
@@ -37,11 +45,8 @@ function formatSettingName(name) {
  */
 function showNotification(type_name, message, persistent = false, details = null) {
     if (typeof show_message === 'function') {
-        // Use the global show_message function exposed by main.js
-        // Parameters match notifier.py: type_name, message, persistent, details
         show_message(type_name, message, persistent, details);
     } else {
-        // Fallback if show_message isn't available
         console[type_name === 'error' ? 'error' : type_name === 'warning' ? 'warn' : 'log'](message);
         alert(`${type_name.toUpperCase()}: ${message}${details ? '\n' + details : ''}`);
     }
@@ -93,14 +98,14 @@ function renderDNSSettings() {
                         <label for="dns-setting-${setting.id}" style="font-weight: bold; color: var(--text-color);">
                             DNS Nameservers
                         </label>
-                        <div style="font-size: 0.9em; color: var,--text-muted); margin-top: 5px;">
+                        <div style="font-size: 0.9em; color: var(--text-muted); margin-top: 5px;">
                             ${setting.description}
                         </div>
                     </div>
                     <div>
                         <textarea id="dns-setting-${setting.id}" rows="4"
                             style="width: 250px; padding: 8px; border: 1px solid var(--results-container-border); 
-                            border-radius: 4px; background-color: var(--bg-color); color: var,--text-color);">${setting.value}</textarea>
+                            border-radius: 4px; background-color: var(--bg-color); color: var(--text-color);">${setting.value}</textarea>
                     </div>
                 </div>
             `;
@@ -113,7 +118,7 @@ function renderDNSSettings() {
                         <label for="dns-setting-${setting.id}" style="font-weight: bold; color: var(--text-color);">
                             ${formatSettingName(setting.name)}
                         </label>
-                        <div style="font-size: 0.9em; color: var,--text-muted); margin-top: 5px;">
+                        <div style="font-size: 0.9em; color: var(--text-muted); margin-top: 5px;">
                             ${setting.description}
                         </div>
                         <div style="display: inline-block; font-size: 0.8em; background-color: var(--bg-color); 
@@ -143,7 +148,7 @@ function renderDNSSettings() {
                             ${setting.description}
                         </div>
                         <div style="display: inline-block; font-size: 0.8em; background-color: var(--bg-color); 
-                             color: var,--text-color); padding: 2px 6px; border-radius: 10px; margin-top: 5px;">
+                             color: var(--text-color); padding: 2px 6px; border-radius: 10px; margin-top: 5px;">
                             ${setting.is_time ? 'Time (seconds)' : 'Value'}
                         </div>
                     </div>
@@ -151,7 +156,7 @@ function renderDNSSettings() {
                         <input type="number" id="dns-setting-${setting.id}" value="${setting.value}"
                                min="0" ${setting.is_time ? 'step="1"' : 'step="1"'}
                                style="width: 80px; padding: 8px; border: 1px solid var(--results-container-border); 
-                               border-radius: 4px; background-color: var(--bg-color); color: var,--text-color);">
+                               border-radius: 4px; background-color: var(--bg-color); color: var(--text-color);">
                     </div>
                 </div>
             `;
@@ -197,6 +202,18 @@ async function saveDNSSettings() {
     
     return { success: successCount, errors: errorCount };
 }
+
+/**
+ * Update theme classes when theme changes
+ */
+function updateDNSTheme() {
+    // Re-apply any theme-specific styling
+    const theme = getCurrentTheme();
+    // Update any module-specific theme classes here if needed
+}
+
+// Listen for theme changes
+document.addEventListener('themeChanged', updateDNSTheme);
 
 // Export functions and state for use by the main settings module
 export {

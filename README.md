@@ -4,7 +4,6 @@
 [![License: CC BY-NC-ND 4.0](https://img.shields.io/badge/License-CC%20BY--NC--ND%204.0-yellow.svg)](https://creativecommons.org/licenses/by-nc-nd/4.0/)
 [![DO NOT USE COMMERCIALLY](https://img.shields.io/badge/Commercial%20Use-Not%20Allowed-red.svg)](mailto:kim@skovrasmussen.com)
 
-
 <pre lang="text">
  ██████████  █████   █████  ██████████
 ░░███░░░░░█ ░░███   ░░███  ░░███░░░░░█  
@@ -15,155 +14,176 @@
  ██████████     ░░███       ██████████
 ░░░░░░░░░░       ░░░       ░░░░░░░░░░</pre>
 
+> **Development Status**: This project is currently under active development. Core validation features are functional, but some advanced features are still being implemented. See [Roadmap.md](Roadmap.md) for current development status and planned features.
+
 ## Overview
 
-The Email Verification Engine (EVE) is a robust, modular system for high-performance, scalable email validation. It combines advanced syntax checks, DNS and SMTP validation, security policy analysis (SPF, DKIM, DMARC), and disposable/blacklist detection. EVE uses a multi-layered caching strategy—combining in-memory (RAM), local disk (SQLite3), and distributed (PostgreSQL) caches—for maximum speed and efficiency.
+**Email Verification Engine (EVE)** is a comprehensive email validation platform that goes beyond simple format checking. Built for developers and marketing professionals who demand accuracy and performance, EVE combines multiple validation layers to deliver enterprise-grade email verification.
 
-## Key Features & Functions
+### **What Makes EVE Different**
 
-- **Multi-layered Caching**  
-  Combines RAM, disk, and PostgreSQL caches for fast, persistent, and distributed validation.
+- **Deep Validation** - Multi-layer verification including syntax, DNS, SMTP, and security protocol analysis
+- **High Performance** - Parallel processing with intelligent caching for maximum speed
+- **Security Focused** - SPF, DKIM, DMARC validation plus blacklist and disposable email detection
+- **Smart Analytics** - Real-time metrics, confidence scoring, and validation insights
+- **Developer Ready** - RESTful API, webhooks, and extensible architecture for custom integrations
 
-- **Centralized Configuration**  
-  All settings (cache, rate limits, operational) are managed in the database for live tuning.
-
-- **Validation Engine**  
-  Orchestrates modular checks:
-  - **Syntax & Format Check**: Validates email structure and syntax.
-  - **DNS Validation**: Confirms domain existence and MX records.
-  - **SMTP Validation**: Connects to mail servers to verify deliverability.
-  - **Blacklist/Disposable Detection**: Flags known bad or temporary domains.
-  - **Security Checks**: SPF, DKIM, DMARC, MTA-STS, TLS-RPT, and server policy analysis.
-
-- **Batch & Parallel Processing**  
-  Flow manager supports bulk validation jobs, parallel execution, and job progress tracking.
-
-- **Authentication & Security Manager**  
-  Handles advanced email security protocol checks and caches results for efficiency.
-
-- **Additional Protocols Manager**  
-  Supports IMAP, POP3, and catch-all detection with secure protocol checks and rate limiting.
-
-- **DNS Manager**  
-  Advanced DNS resolution, nameserver performance tracking, and adaptive rate limiting.
-
-- **Port Manager**  
-  Centralized management of protocol ports (SMTP, DNS, WHOIS, IMAP, POP3, etc.) with dynamic configuration.
-
-- **Rate Limit Manager**  
-  Fine-grained, per-resource and per-category rate limiting, with durations and limits stored in the database.
-
-- **Scoring System**  
-  Configurable scoring and confidence levels for validation results.
-
-- **Performance Monitoring & Auto-tuning**  
-  Tracks timing and metrics, with self-tuning of threads and processes based on live benchmarks.
-
-- **Logging & Statistics**  
-  Centralized logging, statistics, and debugging tools.
-
-- **Extensible & Modular**  
-  Designed for easy integration, customization, and extension via dependency injection.
+### **Built for Scale**
+EVE handles everything from single email validation to processing millions of addresses with automatic rate limiting, queue management, and resource optimization.
 
 ## Use Cases
 
-- SaaS email validation platforms
-- Bulk email list cleaning tools
-- Security-focused email workflows
-- Distributed and high-throughput environments
+### **Email Marketing Operations**
+- **List Hygiene**: Clean databases before campaigns to improve deliverability rates
+- **Sender Reputation**: Protect your domain reputation by removing harmful addresses
+- **Campaign ROI**: Reduce bounce rates and improve engagement metrics
+- **Compliance**: Meet GDPR and CAN-SPAM requirements with validated contact data
+
+### **Application Security & UX**
+- **User Registration**: Block fake signups and disposable emails during account creation
+- **Form Validation**: Real-time validation for better user experience
+- **Fraud Prevention**: Identify suspicious patterns and temporary email services
+- **Data Quality**: Maintain clean user databases with ongoing validation
+
+### **Enterprise & API Integration**
+- **CRM Integration**: Validate leads and contacts as they enter your system
+- **Webhook Processing**: Real-time validation callbacks for automated workflows
+- **Batch Processing**: Handle large datasets with progress tracking and reporting
+- **Custom Workflows**: Build validation into existing business processes
+
+### **Compliance & Data Governance**
+- **Data Quality Assurance**: Maintain accurate customer databases
+- **Regulatory Compliance**: Support GDPR data quality requirements
+- **Audit Trails**: Complete validation history and decision logging
+- **Risk Management**: Identify and flag high-risk email patterns
+
+---
+
+## Why Choose EVE?
+
+### **Performance That Scales**
+- **Multi-threaded Processing**: Parallel validation across CPU cores
+- **Intelligent Caching**: Three-tier caching system reduces redundant checks
+- **Rate Limiting**: Respectful validation that won't overwhelm mail servers
+- **Auto-optimization**: Self-tuning algorithms adapt to your usage patterns
+
+### **Validation Depth**
+Unlike basic validators, EVE performs:
+- **Syntax Analysis**: RFC 5322 compliance with custom pattern support
+- **DNS Resolution**: MX record validation with IPv4/IPv6 dual-stack support
+- **SMTP Verification**: Actual mailbox existence checking
+- **Security Protocols**: SPF/DKIM/DMARC policy analysis
+- **Reputation Checking**: Real-time blacklist and disposable email detection
+
+### **Developer Experience**
+- **Modern Web Interface**: Intuitive dashboard with real-time updates
+- **Complete API**: RESTful endpoints for seamless integration
+- **Extensible Architecture**: Plugin system for custom validation rules
+- **Comprehensive Logging**: Detailed analytics and debugging information
+
+### **Enterprise Security**
+- **No Data Retention**: Email content never stored, only validation metadata
+- **Secure Communications**: TLS encryption for all external connections
+- **Audit Logging**: Complete activity tracking for compliance
+- **Role-based Access**: Configurable permissions and user management
+
+---
+
+## Technical Highlights
+
+**Architecture**: Modular Python application with PostgreSQL backend  
+**Caching**: Multi-layer (RAM/SQLite/PostgreSQL) for optimal performance  
+**Protocols**: SMTP, DNS, WHOIS, IMAP, POP3 with security protocol analysis  
+**Scalability**: Parallel processing with dynamic resource allocation  
+**Integration**: RESTful API, webhooks, CSV/Excel import/export  
+
+**Perfect for:** Development teams building email-dependent applications, marketing operations requiring high-quality data, and enterprises needing scalable validation infrastructure.
+
+---
 
 ## Installation
 
-1. **Create the PostgreSQL database**  
-   - Create a `postgres 16` database with `PgAgent`
-   - Need help? read my guide here: `other/PostgresGuide.md`
+<details>
+<summary><strong>Quick Installation Guide</strong></summary>
 
-2. **Install the schema**  
-   - Run the installer script:  
-     `python install.py` from src/database
-   - This will create all required tables.
+### **Prerequisites**
+- Python 3.11 or higher
+- PostgreSQL 16 with PgAgent
+- 4GB RAM minimum (8GB recommended)
+- Modern web browser
 
-3. **Run**
-   py main.py
+### **Step-by-Step Setup**
 
+1. **Database Preparation**
+   ```bash
+   # Create PostgreSQL database
+   createdb email_verification_engine
+   
+   # Verify connection
+   psql -d email_verification_engine -c "SELECT version();"
+   ```
 
-# Roadmap
+2. **Application Installation**
+   ```bash
+   # Clone or download the application
+   git clone https://github.com/Ranrar/Email-Verification-Engine.git
+   cd Email-Verification-Engine
+   
+   # Install Python dependencies
+   pip install -r requirements.txt
+   ```
 
-A simple development roadmap for the Email Verification Engine.
+3. **Database Connection and Schema Setup**
+   ```bash
+   # Navigate to database directory
+   cd src/database
+   
+   # Run the automated installer
+   python install.py
+   ```
+
+4. **Launch Application**
+   ```bash
+   # Start the application
+   python main.py
+   ```
+   The web interface will automatically open at `http://localhost:8080`
+
+### **Configuration**
+- Database connection settings are configured during the installation process
+- System settings can be adjusted via the web interface
+- Advanced configuration options are available in the settings panel
+
+</details>
+
+## Documentation
+
+| Resource | Description |
+|----------|-------------|
+| [`doc/PostgresGuide.md`](doc/PostgresGuide.md) | Complete database setup and configuration |
+| [`doc/Regex.md`](doc/Regex.md) | Custom validation patterns and rules |
+| [`Roadmap.md`](Roadmap.md) | Development status and upcoming features |
+| [`SECURITY.md`](SECURITY.md) | Security policies and vulnerability reporting |
+| [`LICENSE.md`](LICENSE.md) | License terms and commercial usage |
+
+## Development Status
+
+**Current Phase**: Active Development - Core features implemented, advanced features in progress
+
+See [`Roadmap.md`](Roadmap.md) for detailed development timeline and planned features.
+
+## Support & Info
+
+- **Technical Questions**: Create an issue on GitHub
+- **Development Updates**: Follow the repository for latest changes
+
+## License
+
+This software is licensed under **CC BY-NC-ND 4.0** for non-commercial use.  
+Commercial licensing available - contact: kim@skovrasmussen.com
+
+**Email Verification Engine © 2025 Kim Skov Rasmussen**
 
 ---
 
-## Phase 1 – Core System (Almost Done)
-
-- [x] Backend email validation engine  
-  - Syntax & format check  
-  - DNS & MX records  
-  - SMTP deliverability  
-  - Blacklist & disposable detection
-  - IDN and IDNA Support
-- [x] Multi-layer caching (RAM, Disk, PostgreSQL)  
-- [x] Central configuration in database  
-- [x] Basic backend API  
-  - `POST /validate`  
-  - `GET /job/:id/status`
-  -  `Most settings functions`
-- [x] Rate limiting engine
-- [X] WHOIS lookup
-- [ ] SPF, DKIM, DMARC
-- [ ] Imap and Pop3 chek
-- [ ] Cachall chek
-- [ ] Batch job support (bulk processing)
-
----
-
-## Phase 2 – Interfaces
-
-### Backend GUI
-- [x] Main Theme done
-- [ ] Admin dashboard  
-- [ ] Job & system logs  
-- [ ] Cache stats and hit rates  
-- [ ] Thread/worker tuning controls  
-
-### Frontend (Web UI)
-- [ ] User dashboard  
-- [ ] Submit single/batch email jobs  
-- [ ] View job progress & results  
-- [ ] API key management  
-
----
-
-## Phase 3 – Security & User Roles
-
-- [ ] Role-based access (Admin, Operator, Viewer)  
-- [ ] Audit logs (who did what & when)  
-- [ ] GDPR compliance  
-  - [ ] Right to delete user data  
-  - [ ] Data retention limits  
-  - [ ] Log anonymization  
-
----
-
-## Phase 4 – Batch & Performance
-
-- [ ] Real-time job progress tracker  
-- [ ] Import/export CSV files  
-- [ ] Email list scoring system  
-- [ ] High-scale batch job support  
-- [ ] Asynchronous queue support (e.g. Redis, RabbitMQ)  
-
----
-
-## Phase 5 – Documentation & Deployment
-
-- [ ] Developer guide (how to extend or modify)  
-- [ ] API docs (Swagger/FastAPI)  
-- [ ] Deployment guide (Docker, environment config)  
-- [ ] GDPR checklist  
-- [ ] Improved `install.py` or web installer  
-
-“NB. I am sure I have missed something.”
----
-
-_Questions or suggestions? Reach out: [kim@skovrasmussen.com](mailto:kim@skovrasmussen.com)_
-
+*Ready to improve your email data quality? Contact us to discuss your validation requirements and explore licensing options.*

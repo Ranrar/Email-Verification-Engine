@@ -1,5 +1,9 @@
 /* Main stylesheet - imports all components */
 
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Ubuntu+Mono:wght@400;700&display=swap');
+
 /* Import all CSS modules */
 @import url('theme.css');
 @import url('components.css');
@@ -7,41 +11,29 @@
 
 /* Base styles */
 body {
-    font-family: Arial, sans-serif;
+    font-family: var(--font-family-main);
     background-color: var(--bg-color);
     color: var(--text-color);
     margin: 0;
-    padding: 0;
+    padding: 40px 0 0 0;
     transition: background-color 0.3s ease;
-    padding-top: 40px; /* Adjust this value to match your menu height */
 }
 
 h1 {
     color: var(--text-color);
 }
 
-/* Adjust theme switch wrapper to accommodate button */
-.theme-switch-wrapper {
-    display: flex;
-    align-items: center;
-    margin-left: auto;
-    padding-right: 15px;
-}
-
-/* ASCII Art Logo Styling */
+/* ASCII Art Logo */
 .ascii-art {
     font-family: "Courier New", Courier, monospace;
     white-space: pre;
-    text-align: left;
+    text-align: center;
     font-size: 10px;
     line-height: 1.2;
     margin: 20px auto;
-    color: var(--logo-color);
-    text-shadow: 0 0 2px var(--logo-shadow);
+    color: var(--primary-color);
+    text-shadow: 0 0 2px var(--shadow);
     max-width: 400px;
-    display: table;
-    margin-left: auto;
-    margin-right: auto;
     transition: color 0.3s ease, text-shadow 0.3s ease;
 }
 
@@ -50,12 +42,12 @@ h1 {
     text-align: center;
     font-size: 0.8em;
     margin-top: 20px;
-    color: var(--text-color);
+    color: var(--text-muted);
 }
 
-/* Override markdown link colors for theme-specific styling */
+/* Markdown links */
 .markdown-body a {
-    color: var(--markdown-link-color) !important;
+    color: var(--primary-color);
     text-decoration: none;
     transition: text-decoration 0.3s ease;
 }

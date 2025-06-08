@@ -85,26 +85,22 @@ async function initSettingsMenu() {
         return;
     }
 
-    // Fix tab text wrapping issues
+    // Initialize tab buttons with proper CSS classes
     const tabButtons = document.querySelectorAll('.settings-tab-btn');
     tabButtons.forEach(btn => {
-        // Prevent text wrapping
+        // Use CSS utility classes instead of inline styles
+        btn.classList.add('text-center');
+        
+        // Remove inline styles and rely on CSS classes
         btn.style.whiteSpace = 'nowrap';
-        // Add some horizontal padding for better appearance
-        btn.style.padding = '10px 15px';
-        // Set consistent width behavior
         btn.style.flexShrink = '0';
     });
     
-    // Make the tabs container scrollable horizontally if needed
+    // Initialize tabs container with CSS classes
     const tabsContainer = document.querySelector('.settings-tabs');
     if (tabsContainer) {
-        tabsContainer.style.display = 'flex';
-        tabsContainer.style.overflowX = 'auto';
-        tabsContainer.style.width = '100%';
-        tabsContainer.style.padding = '10px 0 5px 0';
-        tabsContainer.style.msOverflowStyle = 'none'; // Hide scrollbar in IE
-        tabsContainer.style.scrollbarWidth = 'none'; // Hide scrollbar in Firefox
+        tabsContainer.classList.add('flex');
+        // The CSS already handles overflow-x: auto and scrollbar hiding
     }
 
     // Add event listeners to tab buttons
@@ -115,28 +111,27 @@ async function initSettingsMenu() {
     // Load initial data
     await loadAllSettings();
     
-    // Ensure the save button is properly attached
+    // Initialize save button with proper CSS classes
     const saveButton = document.getElementById('save-settings-btn');
     if (saveButton) {
+        saveButton.classList.add('btn');
         saveButton.addEventListener('click', saveAllSettings);
     }
     
-    // Reset button functionality
+    // Initialize reset button with proper CSS classes
     const resetButton = document.getElementById('reset-settings-btn');
     if (resetButton) {
+        resetButton.classList.add('btn', 'btn-cancel');
         resetButton.addEventListener('click', () => loadAllSettings());
     }
     
-    // Add event listener to Run Autotune button
+    // Initialize autotune button with proper CSS classes and hover effects
     const autotuneBtn = document.getElementById('run-autotune-btn');
     if (autotuneBtn) {
+        autotuneBtn.classList.add('btn');
         autotuneBtn.addEventListener('click', runExecutorAutotune);
-        autotuneBtn.addEventListener('mouseover', function() {
-            this.style.backgroundColor = 'var(--button-hover)';
-        });
-        autotuneBtn.addEventListener('mouseout', function() {
-            this.style.backgroundColor = 'var(--button-bg)';
-        });
+        
+        // Remove inline style event listeners - CSS handles hover states
     }
     
     // Mark as initialized
@@ -144,24 +139,18 @@ async function initSettingsMenu() {
 }
 
 /**
- * Switch between settings tabs
+ * Switch between settings tabs using CSS classes
  * @param {string} tabName - The name of the tab to show
  */
 function switchSettingsTab(tabName) {
-    // Update active tab button
+    // Update active tab button using CSS classes
     document.querySelectorAll('.settings-tab-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.tab === tabName);
     });
     
-    // Update visible tab content - Fix the mapping between tab names and IDs
+    // Update visible tab content
     document.querySelectorAll('.settings-tab-content').forEach(tab => {
-        // Map the various tab names to their correct content IDs
-        let shouldShow = false;
-        
-        if (tab.id === `${tabName}-settings`) {
-            shouldShow = true;
-        }
-        
+        const shouldShow = tab.id === `${tabName}-settings`;
         tab.style.display = shouldShow ? 'block' : 'none';
         
         // Debug - log what's happening
@@ -169,8 +158,6 @@ function switchSettingsTab(tabName) {
     });
     
     settingsState.currentTab = tabName;
-    
-    // Debug - log the current tab
     console.log(`Current tab: ${tabName}`);
 }
 
@@ -182,32 +169,24 @@ async function loadAllSettings() {
     updateLoadingState(true);
     
     try {
-        // Load app settings
-        await loadGeneralSettings();
+        // Load all settings modules
+        await Promise.all([
+            loadGeneralSettings(),
+            loadRateLimitSettings(),
+            loadDNSSettings(),
+            loadExecutorSettings(),
+            loadValidationSettings(),
+            loadPortsConfiguration(),
+            loadEmailFilterRegexSettings(),
+            loadBlackWhiteList()
+        ]);
         
-        // Load rate limits
-        await loadRateLimitSettings();
+        // Show success toast using new CSS classes
+        showToast('Settings loaded successfully', 'success');
         
-        // Load DNS settings
-        await loadDNSSettings();
-        
-        // Load executor pool settings
-        await loadExecutorSettings();
-        
-        // Load validation scoring and confidence levels
-        await loadValidationSettings();
-        
-        // Load ports configuration
-        await loadPortsConfiguration();
-        
-        // Load email filter regex settings
-        await loadEmailFilterRegexSettings();
-        
-        // Load black/white list
-        await loadBlackWhiteList();
     } catch (error) {
         console.error('Error loading settings:', error);
-        showNotification('error', 'An error occurred while loading settings');
+        showToast('An error occurred while loading settings', 'error');
     } finally {
         settingsState.loading = false;
         updateLoadingState(false);
@@ -215,135 +194,122 @@ async function loadAllSettings() {
 }
 
 /**
- * Update the UI loading state
+ * Update the UI loading state using CSS classes
  * @param {boolean} isLoading - Whether the UI is in a loading state
  */
 function updateLoadingState(isLoading) {
     const loader = document.getElementById('settings-loader');
     if (loader) {
         loader.style.display = isLoading ? 'block' : 'none';
-        loader.style.backgroundColor = 'var(--container-bg)';
-        loader.style.color = 'var(--text-color)';
+        loader.classList.add('loader', 'text-center');
+        // Remove inline styles - CSS variables handle theming
     }
     
-    // Update save button styling
+    // Update buttons using CSS classes and proper disabled states
     const saveBtn = document.getElementById('save-settings-btn');
     if (saveBtn) {
         saveBtn.disabled = isLoading;
-        saveBtn.style.backgroundColor = isLoading ? '#ccc' : 'var(--button-bg)';
-        saveBtn.style.color = 'var(--button-text)';
-        saveBtn.style.cursor = isLoading ? 'not-allowed' : 'pointer';
+        saveBtn.classList.toggle('btn-disabled', isLoading);
+        // CSS handles the visual state changes
     }
     
-    // Update reset button styling
     const resetBtn = document.getElementById('reset-settings-btn');
     if (resetBtn) {
         resetBtn.disabled = isLoading;
-        resetBtn.style.backgroundColor = isLoading ? '#ccc' : 'var(--bg-color)';
-        resetBtn.style.color = isLoading ? '#999' : 'var(--text-color)';
-        resetBtn.style.cursor = isLoading ? 'not-allowed' : 'pointer';
+        resetBtn.classList.toggle('btn-disabled', isLoading);
+        // CSS handles the visual state changes
     }
     
     // Disable/enable form controls during loading
-    document.querySelectorAll('.settings-form input, .settings-form select, .settings-form button, textarea')
+    document.querySelectorAll('.settings-form input, .settings-form select, .settings-form button, .settings-form textarea')
         .forEach(el => {
             el.disabled = isLoading;
+            el.classList.toggle('disabled', isLoading);
         });
 }
 
 /**
- * Save all modified settings
+ * Save all modified settings with improved error handling
  */
 async function saveAllSettings() {
     updateLoadingState(true);
     let successCount = 0;
     let errorCount = 0;
+    const errors = [];
     
     try {
-        // Save app settings
-        const generalResult = await saveGeneralSettings();
-        successCount += generalResult.success;
-        errorCount += generalResult.errors;
+        // Create array of save operations for better error handling
+        const saveOperations = [
+            { name: 'General Settings', fn: saveGeneralSettings },
+            { name: 'Rate Limits', fn: saveRateLimitSettings },
+            { name: 'DNS Settings', fn: saveDNSSettings },
+            { name: 'Executor Settings', fn: saveExecutorSettings },
+            { name: 'Validation Settings', fn: saveValidationSettings },
+            { name: 'Port Settings', fn: savePortsConfiguration },
+            { name: 'Email Filter Settings', fn: saveEmailFilterRegexSettings }
+        ];
         
-        // Save rate limit settings
-        const rateLimitResult = await saveRateLimitSettings();
-        successCount += rateLimitResult.success;
-        errorCount += rateLimitResult.errors;
-        
-        // Save DNS settings
-        const dnsResult = await saveDNSSettings();
-        successCount += dnsResult.success;
-        errorCount += dnsResult.errors;
-        
-        // Save executor settings
-        const executorResult = await saveExecutorSettings();
-        successCount += executorResult.success;
-        errorCount += executorResult.errors;
-        
-        // Save validation scoring settings
-        const validationResult = await saveValidationSettings();
-        successCount += validationResult.success;
-        errorCount += validationResult.errors;
-        
-        // Save port settings
-        const portResult = await savePortsConfiguration();
-        successCount += portResult.success;
-        errorCount += portResult.errors;
-        
-        // Save email filter regex settings
-        const emailFilterResult = await saveEmailFilterRegexSettings();
-        successCount += emailFilterResult.success;
-        errorCount += emailFilterResult.errors;
-        
-        // Note: Black/white list has dedicated add/remove/update functions
-        
-        if (errorCount === 0) {
-            showNotification('success', `Successfully saved ${successCount} settings`);
-        } else {
-            showNotification('warning', `Saved ${successCount} settings, but ${errorCount} failed`);
+        // Execute save operations
+        for (const operation of saveOperations) {
+            try {
+                const result = await operation.fn();
+                successCount += result.success || 0;
+                errorCount += result.errors || 0;
+                
+                if (result.errors > 0) {
+                    errors.push(`${operation.name}: ${result.errors} errors`);
+                }
+            } catch (error) {
+                console.error(`Error saving ${operation.name}:`, error);
+                errors.push(`${operation.name}: Failed to save`);
+                errorCount++;
+            }
         }
+        
+        // Show appropriate notification using new CSS classes
+        if (errorCount === 0) {
+            showToast(`Successfully saved ${successCount} settings`, 'success');
+        } else {
+            showToast(`Saved ${successCount} settings, but ${errorCount} failed`, 'warning');
+            console.warn('Save errors:', errors);
+        }
+        
     } catch (error) {
         console.error('Error saving settings:', error);
-        showNotification('error', 'An error occurred while saving settings');
+        showToast('An error occurred while saving settings', 'error');
     } finally {
         updateLoadingState(false);
     }
 }
 
 /**
- * Open settings panel with specified tab
+ * Open settings panel with improved CSS handling
  */
 function openSettingsPanel(tabName = 'general') {
     const settingsPanel = document.getElementById('settingsPanel');
     if (!settingsPanel) return;
     
+    // Use CSS classes for display control
+    settingsPanel.classList.add('settings-overlay-active');
     settingsPanel.style.display = 'flex';
     
-    // Apply styles to make tabs fixed and content scrollable
+    // Setup close button with proper styles and event listener
+    const closeBtn = document.getElementById('closeSettingsBtn');
+    if (closeBtn) {
+        // Apply the CSS class
+        closeBtn.classList.add('settings-close-btn');
+        // Add event listener to close settings when clicked
+        closeBtn.addEventListener('click', closeSettingsPanel);
+    }
+    
+    // Apply layout improvements using CSS classes
     const tabsContainer = document.querySelector('.settings-tabs');
     const contentContainer = document.querySelector('.settings-content');
     
     if (tabsContainer && contentContainer) {
-        // Make tabs fixed at the top and touch the red title
-        tabsContainer.style.position = 'sticky';
-        tabsContainer.style.top = '0';
-        tabsContainer.style.zIndex = '10';
-        tabsContainer.style.backgroundColor = 'var(--container-bg)';
-        tabsContainer.style.borderBottom = '1px solid var(--border-color)';
-        tabsContainer.style.width = '100%';
-        tabsContainer.style.marginTop = '0';
-        tabsContainer.style.paddingTop = '0';
-        
-        // Remove any padding/margin from parent elements that might create a gap
-        if (tabsContainer.parentElement) {
-            tabsContainer.parentElement.style.paddingTop = '0';
-            tabsContainer.parentElement.style.marginTop = '0';
-        }
-        
-        // Make content area scrollable
-        contentContainer.style.overflowY = 'auto';
-        contentContainer.style.maxHeight = 'calc(100vh - 120px)'; // Adjust based on your header height
-        contentContainer.style.paddingBottom = '20px';
+        // Add CSS classes for sticky behavior
+        tabsContainer.classList.add('settings-tabs-sticky');
+        contentContainer.classList.add('settings-content-scrollable');
     }
     
     // Initialize settings if needed
@@ -354,21 +320,37 @@ function openSettingsPanel(tabName = 'general') {
         }
     });
     
-    // Disable scrolling on the background
-    document.body.style.overflow = 'hidden';
+    // Disable body scrolling
+    document.body.classList.add('modal-open');
 }
 
 /**
- * Close settings panel
+ * Close settings panel with CSS classes
  */
 function closeSettingsPanel() {
     const settingsPanel = document.getElementById('settingsPanel');
     if (!settingsPanel) return;
     
+    // Use CSS classes for hiding
+    settingsPanel.classList.remove('settings-overlay-active');
     settingsPanel.style.display = 'none';
     
-    // Re-enable scrolling
-    document.body.style.overflow = 'auto';
+    // Re-enable body scrolling
+    document.body.classList.remove('modal-open');
+}
+
+/**
+ * Show toast notification using the global system
+ * @param {string} message - The message to display
+ * @param {string} type - The type of toast (success, error, warning, info)
+ */
+function showToast(message, type = 'info') {
+    // Use the global showToast function
+    if (typeof window.showToast === 'function') {
+        window.showToast(message, type);
+    } else {
+        console.log(`${type.toUpperCase()}: ${message}`);
+    }
 }
 
 // Export functions for use in main.js
@@ -376,6 +358,7 @@ window.openSettingsPanel = openSettingsPanel;
 window.closeSettingsPanel = closeSettingsPanel;
 window.initSettingsMenu = initSettingsMenu;
 window.switchSettingsTab = switchSettingsTab;
+window.showToast = showToast;
 
 // Debugging function to list available tabs and content areas
 window.debugTabs = function() {
@@ -394,5 +377,6 @@ export {
     capitalizeFirstLetter,
     formatSettingName,
     showNotification,
-    formatDate
+    formatDate,
+    showToast
 };

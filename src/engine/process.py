@@ -128,6 +128,45 @@ def process_validation_results(result: EmailValidationResult, validation_results
             if result.email_provider and result.email_provider.get('provider_detected'):
                 logger.debug(f"[{result.trace_id}] Email provider: {result.email_provider.get('provider_name')}")
     
+    # SPF check processing - NEW CODE
+    if 'spf_check' in validation_results:
+        spf_data = validation_results.get('spf_check', {})
+        
+        # Update basic SPF status
+        result.spf_status = spf_data.get('spf_result', '')
+        
+        # Store detailed SPF information
+        result.spf_details = {
+            'valid': spf_data.get('valid', False),
+            'record': spf_data.get('spf_record', ''),
+            'reason': spf_data.get('spf_reason', ''),
+            'mechanism_matched': spf_data.get('spf_mechanism_matched', ''),
+            'dns_lookups': spf_data.get('spf_dns_lookups', 0),
+            'explanation': spf_data.get('spf_explanation', ''),
+            'domain': spf_data.get('spf_domain', ''),
+            'execution_time': spf_data.get('execution_time', 0)
+        }
+        
+        # Log SPF validation result
+        logger.info(f"[{result.trace_id}] SPF validation result: {result.spf_status}")
+        if result.spf_status == 'pass':
+            logger.debug(f"[{result.trace_id}] SPF passed via mechanism: {spf_data.get('spf_mechanism_matched', 'unknown')}")
+        elif result.spf_status == 'softfail':
+            # Log softfails as debug instead of warning
+            logger.debug(f"[{result.trace_id}] SPF {result.spf_status}: {spf_data.get('spf_reason', '')}")
+        elif result.spf_status in ['fail', 'permerror']:
+            # Keep actual failures as warnings
+            logger.warning(f"[{result.trace_id}] SPF {result.spf_status}: {spf_data.get('spf_reason', '')}")
+    
+    # Legacy DNS security processing
+    if 'dns_security' in validation_results:
+        dns_sec = validation_results.get('dns_security', {})
+        # Only update spf_status if not already set by detailed SPF check
+        if not result.spf_status:
+            result.spf_status = dns_sec.get('spf', "")
+        result.dkim_status = dns_sec.get('dkim', "")
+        result.dmarc_status = dns_sec.get('dmarc', "")
+    
     # SMTP check processing
     if 'smtp_validation' in validation_results:
         smtp_result = validation_results.get('smtp_validation', {})
@@ -152,12 +191,6 @@ def process_validation_results(result: EmailValidationResult, validation_results
     if 'catch_all_check' in validation_results:
         catch_all = validation_results.get('catch_all_check', {})
         result.catch_all = catch_all.get('is_catch_all', False)
-    
-    if 'dns_security' in validation_results:
-        dns_sec = validation_results.get('dns_security', {})
-        result.spf_status = dns_sec.get('spf', "")
-        result.dkim_status = dns_sec.get('dkim', "")
-        result.dmarc_status = dns_sec.get('dmarc', "")
     
     # Calculate overall validity and confidence score
     calculate_validity_and_confidence(result, validation_results)

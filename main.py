@@ -10,7 +10,7 @@ Email Verification Engine
  ██████████     ░░███       ██████████
 ░░░░░░░░░░       ░░░       ░░░░░░░░░░
 
-Email Verification Engine V 0.3
+Email Verification Engine V 0.4
 # Copyright (c) 2025 Kim Skov Rasmussen
 # This software is licensed under CC BY-NC-ND 4.0.
 # Non-commercial academic use only.
@@ -91,11 +91,22 @@ def verify_email(email):
                 "is_disposable": validation_result.get("is_disposable", False),
                 "catch_all": validation_result.get("catch_all", False),
                 
-                # DNS security
+                # DNS security with enhanced SPF details
                 "dns_security": {
                     "spf": validation_result.get("spf_status", ""),
                     "dkim": validation_result.get("dkim_status", ""),
-                    "dmarc": validation_result.get("dmarc_status", "")
+                    "dmarc": validation_result.get("dmarc_status", ""),
+                    # Add detailed SPF information
+                    "spf_details": {
+                        "spf_record": validation_result.get("spf_details", {}).get("spf_record", ""),
+                        "spf_result": validation_result.get("spf_details", {}).get("spf_result", ""),
+                        "spf_mechanism_matched": validation_result.get("spf_details", {}).get("spf_mechanism_matched", ""),
+                        "spf_dns_lookups": validation_result.get("spf_details", {}).get("spf_dns_lookups", 0),
+                        "spf_reason": validation_result.get("spf_details", {}).get("spf_reason", ""),
+                        "warnings": validation_result.get("spf_details", {}).get("warnings", []),
+                        "errors": validation_result.get("spf_details", {}).get("errors", []),
+                        "dns_lookup_log": validation_result.get("spf_details", {}).get("dns_lookup_log", [])
+                    }
                 },
                 
                 # SMTP validation details

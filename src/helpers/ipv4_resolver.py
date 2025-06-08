@@ -29,7 +29,7 @@ class IPv4Resolver:
         Args:
             hostname: The hostname to query
             record_type: The type of DNS record (A, MX, TXT, etc.)
-            nameservers: List of nameserver IP addresses to use
+            nameservers: List of nameserver IP addresses to use (required)
             timeout: Timeout in seconds
             use_tcp: Whether to use TCP instead of UDP
             use_edns: Whether to use EDNS extensions
@@ -39,22 +39,21 @@ class IPv4Resolver:
             dns.resolver.Answer object
             
         Raises:
+            ValueError: If no valid IPv4 nameservers are provided
             Various DNS exceptions if resolution fails
         """
         resolver = dns.resolver.Resolver()
         
-        # Configure resolver with nameservers if provided
-        if nameservers:
-            # Filter to only IPv4 addresses
-            ipv4_ns = [ns for ns in nameservers if ':' not in ns]
-            if ipv4_ns:
-                resolver.nameservers = ipv4_ns
-            else:
-                # If no IPv4 nameservers provided, use defaults
-                logger.warning("No IPv4 nameservers provided, using defaults")
-                resolver.nameservers = self.get_default_nameservers()
-        else:
-            resolver.nameservers = self.get_default_nameservers()
+        # Require nameservers and validate they are IPv4 (no colons)
+        if not nameservers:
+            raise ValueError("IPv4 nameservers must be provided, no fallbacks available")
+        
+        ipv4_ns = [ns for ns in nameservers if ':' not in ns]
+        if not ipv4_ns:
+            raise ValueError("No valid IPv4 nameservers provided (IPv4 addresses must not contain colons)")
+        
+        # Set the nameservers
+        resolver.nameservers = ipv4_ns
         
         # Set timeout
         resolver.timeout = timeout
@@ -70,44 +69,27 @@ class IPv4Resolver:
         # Perform the resolution
         return resolver.resolve(hostname, record_type, tcp=use_tcp)
     
-    def get_default_nameservers(self) -> List[str]:
+    def check_ipv4_connectivity(self, nameservers: List[str]) -> bool:
         """
-        Get a list of reliable IPv4 DNS servers
+        Test if IPv4 connectivity is working with provided nameservers
         
-        Returns:
-            List of IPv4 nameserver addresses
-        """
-        return [
-            # Cloudflare
-            "1.1.1.1",
-            "1.0.0.1",
+        Args:
+            nameservers: List of IPv4 nameserver addresses to test
             
-            # Google DNS
-            "8.8.8.8",
-            "8.8.4.4",
-            
-            # Quad9
-            "9.9.9.9",
-            "149.112.112.112",
-            
-            # OpenDNS
-            "208.67.222.222",
-            "208.67.220.220"
-        ]
-    
-    def check_ipv4_connectivity(self) -> bool:
-        """
-        Test if IPv4 connectivity is working
-        
         Returns:
             Boolean indicating if IPv4 is working
+            
+        Raises:
+            ValueError: If no valid IPv4 nameservers are provided
         """
-        test_servers = [
-            "1.1.1.1",  # Cloudflare
-            "8.8.8.8"   # Google
-        ]
+        if not nameservers:
+            raise ValueError("IPv4 nameservers must be provided for connectivity check")
         
-        for server in test_servers:
+        ipv4_ns = [ns for ns in nameservers if ':' not in ns]
+        if not ipv4_ns:
+            raise ValueError("No valid IPv4 nameservers provided for connectivity check")
+        
+        for server in ipv4_ns:
             try:
                 resolver = dns.resolver.Resolver()
                 resolver.nameservers = [server]
@@ -124,17 +106,17 @@ class IPv4Resolver:
         # If we get here, all tests failed
         return False
     
-    def resolve_with_fallback(self, hostname: str, record_type: str, 
-                             nameservers: Optional[List[str]] = None,
-                             timeout: float = 5.0,
-                             use_tcp: bool = False) -> dns.resolver.Answer:
+    def resolve_with_multiple_servers(self, hostname: str, record_type: str, 
+                                    nameservers: List[str],
+                                    timeout: float = 5.0,
+                                    use_tcp: bool = False) -> dns.resolver.Answer:
         """
-        Resolve DNS with automatic fallback between nameservers
+        Try multiple nameservers in sequence without fallback to defaults
         
         Args:
             hostname: The hostname to query
             record_type: The type of DNS record (A, MX, TXT, etc.)
-            nameservers: List of nameserver IP addresses to use
+            nameservers: List of nameserver IP addresses to use (required)
             timeout: Timeout in seconds
             use_tcp: Whether to use TCP instead of UDP
             
@@ -142,16 +124,19 @@ class IPv4Resolver:
             dns.resolver.Answer object
             
         Raises:
+            ValueError: If no valid IPv4 nameservers are provided
             dns.resolver.NXDOMAIN: If the domain does not exist
             dns.resolver.NoAnswer: If the domain exists but has no records of the requested type
             dns.exception.Timeout: If all nameservers timed out
         """
-        # Get nameservers to try
-        ns_to_try = nameservers if nameservers else self.get_default_nameservers()
-        ns_to_try = [ns for ns in ns_to_try if ':' not in ns]  # Filter to IPv4 only
+        if not nameservers:
+            raise ValueError("IPv4 nameservers must be provided, no fallbacks available")
+        
+        # Filter to IPv4 only
+        ns_to_try = [ns for ns in nameservers if ':' not in ns]
         
         if not ns_to_try:
-            ns_to_try = self.get_default_nameservers()
+            raise ValueError("No valid IPv4 nameservers provided")
         
         # Try each nameserver
         last_error = None

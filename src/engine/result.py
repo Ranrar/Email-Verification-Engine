@@ -122,6 +122,18 @@ class EmailValidationResult:
         self.dmarc_status = ""
         self.server_policies = {}
         
+        # Detailed SPF information
+        self.spf_details = {
+            'valid': False,
+            'record': '',
+            'reason': '',
+            'mechanism_matched': '',
+            'dns_lookups': 0,
+            'explanation': '',
+            'domain': '',
+            'execution_time': 0
+        }
+        
         # SMTP validation - update to include all required fields
         self.smtp_result = False      # Overall SMTP validation result
         self.smtp_banner = ''         # SMTP server banner
@@ -196,6 +208,7 @@ class EmailValidationResult:
             'dkim_status': self.dkim_status,
             'dmarc_status': self.dmarc_status,
             'server_policies': str(self.server_policies),
+            'spf_details': self.spf_details,
             
             # SMTP validation
             'smtp_result': self.smtp_result,

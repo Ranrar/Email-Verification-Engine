@@ -496,8 +496,7 @@ def test_ipv6_dns_support():
     # Test IPv6 availability
     available = ipv6_resolver.is_available()
     
-    # If the function returns too quickly, force a fresh check
-    ipv6_resolver.clear_availability_cache()
+    # Check IPv6 availability
     available = ipv6_resolver.is_available()
     
     # Check each component of IPv6 support
@@ -511,20 +510,51 @@ def test_ipv6_dns_support():
         
         for domain in test_domains:
             print(f"\nTesting {domain}...")
-            result = ipv6_resolver.compare_to_ipv4(domain)
             
-            if result["ipv4"]["success"]:
-                print(f"  IPv4: {result['ipv4']['time_ms']:.2f}ms ({result['ipv4'].get('answers', '?')} records)")
+            # Test IPv4 resolution
+            ipv4_result = {"success": False, "time_ms": 0, "error": "", "answers": 0}
+            try:
+                ipv4_resolver = dns.resolver.Resolver()
+                start_time = time.time()
+                answers = ipv4_resolver.resolve(domain, 'A')
+                ipv4_result["time_ms"] = (time.time() - start_time) * 1000
+                ipv4_result["success"] = True
+                ipv4_result["answers"] = len(answers)
+            except Exception as e:
+                ipv4_result["error"] = str(e)
+            
+            # Test IPv6 resolution
+            ipv6_result = {"success": False, "time_ms": 0, "error": "", "answers": 0}
+            try:
+                start_time = time.time()
+                answers = ipv6_resolver.resolve(domain, 'AAAA')
+                ipv6_result["time_ms"] = (time.time() - start_time) * 1000
+                ipv6_result["success"] = True
+                ipv6_result["answers"] = len(answers)
+            except Exception as e:
+                ipv6_result["error"] = str(e)
+            
+            # Display results
+            if ipv4_result["success"]:
+                print(f"  IPv4: {ipv4_result['time_ms']:.2f}ms ({ipv4_result['answers']} records)")
             else:
-                print(f"  IPv4: Failed - {result['ipv4']['error']}")
+                print(f"  IPv4: Failed - {ipv4_result['error']}")
                 
-            if result["ipv6"]["success"]:
-                print(f"  IPv6: {result['ipv6']['time_ms']:.2f}ms ({result['ipv6'].get('answers', '?')} records)")
+            if ipv6_result["success"]:
+                print(f"  IPv6: {ipv6_result['time_ms']:.2f}ms ({ipv6_result['answers']} records)")
             else:
-                print(f"  IPv6: Failed - {result['ipv6']['error']}")
+                print(f"  IPv6: Failed - {ipv6_result['error']}")
                 
-            if result["faster"]:
-                print(f"  {result['faster'].upper()} was faster by {result['time_diff_ms']:.2f}ms")
+            # Compare performance
+            if ipv4_result["success"] and ipv6_result["success"]:
+                if ipv4_result["time_ms"] < ipv6_result["time_ms"]:
+                    diff = ipv6_result["time_ms"] - ipv4_result["time_ms"]
+                    print(f"  IPv4 was faster by {diff:.2f}ms")
+                elif ipv6_result["time_ms"] < ipv4_result["time_ms"]:
+                    diff = ipv4_result["time_ms"] - ipv6_result["time_ms"]
+                    print(f"  IPv6 was faster by {diff:.2f}ms")
+                else:
+                    print(f"  Both had similar response times")
     else:
         print("\nIPv6 DNS not available - skipping performance comparison")
     

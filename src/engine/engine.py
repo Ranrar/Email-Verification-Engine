@@ -156,7 +156,22 @@ class EmailValidationEngine:
                 if result.email_provider and result.email_provider.get('provider_name') != "Unknown":
                     provider_name = result.email_provider.get('provider_name')
                     validation_details.append(f"\"provider\": \"{provider_name}\"")
+                
+                # Add SPF details
+                if result.spf_status:
+                    validation_details.append(f"\"spf\": {{\"status\": \"{result.spf_status}\", \"valid\": {str(result.spf_details.get('valid', False)).lower()}}}")
                     
+                    # Add mechanism info if available
+                    if result.spf_details.get('mechanism_matched'):
+                        validation_details.append(f"\"spf_mechanism\": \"{result.spf_details.get('mechanism_matched')}\"")
+                    
+                    # Add SPF record snippet if available (truncate if too long)
+                    if result.spf_details.get('record'):
+                        spf_record = result.spf_details.get('record')
+                        if spf_record and len(spf_record) > 40:
+                            spf_record = spf_record[:37] + "..."
+                        validation_details.append(f"\"spf_record\": \"{spf_record}\"")
+                
                 if validation_details:
                     logger.info(f"[{trace_id}] VALIDATION_DETAILS {{{', '.join(validation_details)}}}")
                     

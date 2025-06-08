@@ -25,6 +25,13 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 /**
+ * Get current theme
+ */
+function getCurrentTheme() {
+    return document.documentElement.getAttribute('data-theme') || 'light';
+}
+
+/**
  * Initialize all application modules
  */
 function initializeModules() {
@@ -67,6 +74,11 @@ function initializeTheme() {
     function applyTheme(theme) {
         document.documentElement.setAttribute('data-theme', theme);
         localStorage.setItem('theme', theme);
+        
+        // Dispatch theme changed event for other modules to listen to
+        document.dispatchEvent(new CustomEvent('themeChanged', {
+            detail: { theme: theme }
+        }));
     }
     
     // Apply the saved theme or OS preference on page load
@@ -89,30 +101,129 @@ function initializeTheme() {
 }
 
 /**
- * Initialize menu system
+ * Open settings panel with proper integration
+ */
+function openSettingsPanel(section = 'general') {
+    console.log(`Opening settings panel: ${section}`);
+    
+    // Check if Settings module is available
+    if (typeof window.openSettingsPanel === 'function') {
+        // Use the Settings module function
+        window.openSettingsPanel(section);
+    } else {
+        // Fallback to dialog
+        showDialog('Settings', `Opening ${section} settings panel...`);
+    }
+}
+
+/**
+ * Close settings panel with proper integration
+ */
+function closeSettingsPanel() {
+    console.log('Closing settings panel');
+    
+    // Check if Settings module is available
+    if (typeof window.closeSettingsPanel === 'function') {
+        // Use the Settings module function
+        window.closeSettingsPanel();
+    } else {
+        // Fallback to close dialog
+        closeDialog();
+    }
+}
+
+/**
+ * Initialize menu system with click-based dropdown handling
  */
 function initializeMenuSystem() {
-    document.querySelectorAll('.menu-bar a[data-action]').forEach(item => {
+    // Add click event listeners to top-level menu items for dropdown toggling
+    document.querySelectorAll('.menu-bar > ul > li > a').forEach(item => {
         item.addEventListener('click', function(e) {
             e.preventDefault();
+            e.stopPropagation();
+            
+            // Check if this item has a dropdown
+            const dropdown = this.nextElementSibling;
+            if (dropdown && dropdown.classList.contains('dropdown')) {
+                // Close all other dropdowns first
+                closeAllDropdowns();
+                
+                // Toggle this dropdown
+                dropdown.classList.toggle('show');
+            } else {
+                // Handle direct actions if no dropdown
+                const action = this.getAttribute('data-action');
+                if (action) {
+                    handleMenuAction(action);
+                }
+            }
+        });
+    });
+    
+    // Add event listeners to dropdown menu items with data-action
+    document.querySelectorAll('.dropdown a[data-action], .submenu a[data-action]').forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
             const action = this.getAttribute('data-action');
+            closeAllDropdowns(); // Close dropdowns when action is selected
             handleMenuAction(action);
         });
     });
     
-    // Add settings close button event listener
-    const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-    if (closeSettingsBtn) {
-        closeSettingsBtn.addEventListener('click', closeSettingsPanel);
-    }
+    // Handle submenu toggles
+    document.querySelectorAll('.has-submenu > a').forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const submenu = this.nextElementSibling;
+            if (submenu && submenu.classList.contains('submenu')) {
+                submenu.classList.toggle('show');
+            }
+        });
+    });
     
     // Add settings button event listener
     const settingsButton = document.getElementById('settingsButton');
     if (settingsButton) {
-        settingsButton.addEventListener('click', function() {
+        settingsButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAllDropdowns();
             openSettingsPanel('general');
         });
     }
+    
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.menu-bar')) {
+            closeAllDropdowns();
+        }
+    });
+    
+    // Enhanced keyboard navigation
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeAllDropdowns();
+            closeDialog();
+            
+            // Close settings panel if open
+            const settingsPanel = document.getElementById('settingsPanel');
+            if (settingsPanel && settingsPanel.style.display !== 'none') {
+                closeSettingsPanel();
+            }
+        }
+    });
+}
+
+/**
+ * Close all open dropdowns and submenus
+ */
+function closeAllDropdowns() {
+    document.querySelectorAll('.dropdown.show, .submenu.show').forEach(dropdown => {
+        dropdown.classList.remove('show');
+    });
 }
 
 /**
@@ -734,3 +845,94 @@ async function showMarkdownFile(filename) {
         show_message('error', `Error displaying ${filename}`, true, error.toString());
     }
 }
+
+/**
+ * Show message notification - exposed to Python backend
+ * @param {string} type_name - The notification type: 'success', 'error', 'warning', 'info'
+ * @param {string} message - The message to display
+ * @param {boolean} persistent - Whether the notification should persist until clicked
+ * @param {string} details - Optional additional details to show on hover
+ */
+function show_message(type_name, message, persistent = false, details = null) {
+    // Create toast container if it doesn't exist
+    let toastContainer = document.getElementById('message-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'message-container';
+        toastContainer.className = 'toast-container';
+        toastContainer.style.position = 'fixed';
+        toastContainer.style.bottom = '20px';
+        toastContainer.style.left = '20px';
+        toastContainer.style.zIndex = '2000';
+        toastContainer.style.display = 'flex';
+        toastContainer.style.flexDirection = 'column';
+        toastContainer.style.gap = '10px';
+        toastContainer.style.maxWidth = '400px';
+        document.body.appendChild(toastContainer);
+    }
+    
+    // Create toast element with standard CSS classes
+    const toast = document.createElement('div');
+    toast.className = `toast generic-${type_name}`;
+    toast.style.opacity = '1';
+    
+    if (persistent) {
+        toast.setAttribute('data-persistent', 'true');
+    }
+    
+    // Add message content
+    let content = `<div class="toast-message">${message}</div>`;
+    if (details) {
+        content += `<div class="toast-details" style="font-size: 0.9em; opacity: 0.8; margin-top: 5px;">${details}</div>`;
+    }
+    
+    // Add close button for persistent toasts
+    if (persistent) {
+        content += `<div class="close-icon"></div>`;
+    }
+    
+    toast.innerHTML = content;
+    toastContainer.appendChild(toast);
+    
+    // Handle removal
+    const removeToast = () => {
+        toast.style.opacity = '0';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300);
+    };
+    
+    if (persistent) {
+        // Add click handler to close button
+        const closeBtn = toast.querySelector('.close-icon');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                removeToast();
+            });
+        }
+        
+        // Also allow clicking the toast itself to close
+        toast.addEventListener('click', removeToast);
+        toast.style.cursor = 'pointer';
+    } else {
+        // Auto-remove after 5 seconds for non-persistent notifications
+        setTimeout(removeToast, 5000);
+    }
+}
+
+// Expose the function to Python backend
+eel.expose(show_message);
+
+// Make it available globally for other JavaScript modules
+window.show_message = show_message;
+
+// Also create a simpler alias for JavaScript-only usage
+window.showToast = function(message, type = 'info', persistent = false, details = null) {
+    show_message(type, message, persistent, details);
+};
+
+// Make getCurrentTheme available globally
+window.getCurrentTheme = getCurrentTheme;

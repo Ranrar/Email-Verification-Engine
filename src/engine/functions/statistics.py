@@ -364,3 +364,116 @@ class DNSServerStats:
         except Exception as e:
             logger.error(f"Failed to clean up DNS statistics: {e}")
             return 0
+    
+    def record_spf_statistics(self, trace_id, domain, result, mechanism_matched, dns_lookups, 
+                         processing_time_ms, raw_record=None, explanation=None, 
+                         error_message=None, dns_lookup_log=None):
+        """
+        Record SPF validation statistics
+    
+        Args:
+            trace_id: Validation trace ID
+            domain: The domain that was checked
+            result: SPF result (pass, fail, softfail, neutral, none, permerror, temperror)
+            mechanism_matched: The SPF mechanism that matched
+            dns_lookups: Number of DNS lookups performed
+            processing_time_ms: Processing time in milliseconds
+            raw_record: Raw SPF record text
+            explanation: Optional explanation text
+            error_message: Optional error message
+            dns_lookup_log: List of DNS lookup operations
+        """
+        try:
+            # Insert main SPF validation statistics
+            spf_validation_id = sync_db.fetchval(
+                """
+                INSERT INTO spf_validation_statistics 
+                (trace_id, domain, raw_record, result, mechanism_matched, 
+                 dns_lookups, processing_time_ms, explanation, error_message)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING id
+                """,
+                trace_id, domain, raw_record, result, mechanism_matched,
+                dns_lookups, processing_time_ms, explanation, error_message
+            )
+            
+            # Insert DNS lookup log entries if provided
+            if dns_lookup_log and spf_validation_id:
+                for entry in dns_lookup_log:
+                    sync_db.execute(
+                        """
+                        INSERT INTO spf_dns_lookup_log
+                        (spf_validation_id, mechanism, lookups_used, total_lookups)
+                        VALUES ($1, $2, $3, $4)
+                        """,
+                        spf_validation_id, entry.get('mechanism'), 
+                        entry.get('lookups_used', 0), entry.get('total_so_far', 0)
+                    )
+        
+        except Exception as e:
+            logger.error(f"Failed to record SPF statistics for {domain}: {str(e)}")
+    
+    def record_spf_dns_stats(self, domain: str, mechanism_type: str, 
+                       lookups: int, success: bool, response_time_ms: Optional[float] = None):
+        """
+        Record SPF-specific DNS statistics
+        
+        Args:
+            domain: The domain being queried
+            mechanism_type: Type of SPF mechanism (a, mx, include, etc.)
+            lookups: Number of lookups performed
+            success: Whether the lookup was successful
+            response_time_ms: Response time in milliseconds
+        """
+        try:
+            current_time = datetime.now(timezone.utc)
+            
+            # Create aggregated statistics entry
+            sync_db.execute(
+                """
+                INSERT INTO dns_server_stats 
+                (nameserver, query_type, queries, hits, misses, errors, avg_latency_ms, 
+                 max_latency_ms, min_latency_ms, since, last_updated) 
+                VALUES 
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ON CONFLICT (nameserver, query_type) DO UPDATE SET
+                    queries = dns_server_stats.queries + $3,
+                    hits = dns_server_stats.hits + $4,
+                    misses = dns_server_stats.misses + $5,
+                    errors = dns_server_stats.errors + $6,
+                    avg_latency_ms = CASE 
+                        WHEN $7 IS NOT NULL THEN 
+                            (dns_server_stats.avg_latency_ms * dns_server_stats.hits + $7) / 
+                            (dns_server_stats.hits + CASE WHEN $12 THEN 1 ELSE 0 END)
+                        ELSE dns_server_stats.avg_latency_ms
+                    END,
+                    max_latency_ms = CASE 
+                        WHEN $7 IS NOT NULL THEN GREATEST(dns_server_stats.max_latency_ms, $7) 
+                        ELSE dns_server_stats.max_latency_ms
+                    END,
+                    min_latency_ms = CASE 
+                        WHEN $7 IS NOT NULL THEN 
+                            LEAST(
+                                CASE WHEN dns_server_stats.min_latency_ms = 0 THEN $7 
+                                     ELSE dns_server_stats.min_latency_ms END, 
+                                $7
+                            )
+                        ELSE dns_server_stats.min_latency_ms
+                    END,
+                    last_updated = $11
+                """,
+                f"SPF:{domain}", f"mechanism:{mechanism_type}", 
+                1,  # queries
+                1 if success else 0,  # hits
+                0 if success else 1,  # misses
+                0 if success else 1,  # errors
+                response_time_ms,  # avg_latency_ms
+                response_time_ms,  # max_latency_ms
+                response_time_ms,  # min_latency_ms
+                current_time,  # since
+                current_time,  # last_updated
+                success  # for the CASE statement
+            )
+                    
+        except Exception as e:
+            logger.warning(f"Failed to update SPF DNS stats for {domain}/{mechanism_type}: {e}")

@@ -3,6 +3,17 @@
  * Handles port settings for different connection types
  */
 
+/**
+ * Get current theme for applying theme-specific classes
+ */
+function getCurrentTheme() {
+    // Use the global function if available, otherwise fallback
+    if (window.getCurrentTheme) {
+        return window.getCurrentTheme();
+    }
+    return document.documentElement.getAttribute('data-theme') || 'light';
+}
+
 // Import shared utilities if needed
 // import { capitalizeFirstLetter, showNotification } from './utils.js';
 
@@ -145,6 +156,18 @@ async function savePortsConfiguration() {
     
     return { success: successCount, errors: errorCount };
 }
+
+/**
+ * Update theme classes when theme changes
+ */
+function updatePortTheme() {
+    // Re-apply any theme-specific styling
+    const theme = getCurrentTheme();
+    // Update any module-specific theme classes here if needed
+}
+
+// Listen for theme changes
+document.addEventListener('themeChanged', updatePortTheme);
 
 // Export functions and state for use by the main settings module
 export {

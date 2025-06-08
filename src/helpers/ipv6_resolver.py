@@ -35,7 +35,8 @@ class IPv6Resolver:
         Args:
             hostname: The hostname to query
             record_type: The type of DNS record (A, MX, TXT, etc.)
-            nameservers: List of nameserver IP addresses to use
+            nameservers: List of IPv6 nameserver addresses (REQUIRED) - must contain colons
+                        (no fallback to defaults)
             timeout: Timeout in seconds
             use_tcp: Whether to use TCP instead of UDP
             use_edns: Whether to use EDNS extensions
@@ -45,7 +46,7 @@ class IPv6Resolver:
             dns.resolver.Answer object
             
         Raises:
-            ValueError: If IPv6 is not available
+            ValueError: If IPv6 is not available or no valid nameservers provided
             Various DNS exceptions if resolution fails
         """
         # Check IPv6 availability first
@@ -54,18 +55,16 @@ class IPv6Resolver:
         
         resolver = dns.resolver.Resolver()
         
-        # Configure resolver with nameservers if provided
-        if nameservers:
-            # Filter to only IPv6 addresses
-            ipv6_ns = [ns for ns in nameservers if ':' in ns]
-            if ipv6_ns:
-                resolver.nameservers = ipv6_ns
-            else:
-                # If no IPv6 nameservers provided, use defaults
-                logger.warning("No IPv6 nameservers provided, using defaults")
-                resolver.nameservers = self.get_default_nameservers()
-        else:
-            resolver.nameservers = self.get_default_nameservers()
+        # Require nameservers and validate they are IPv6 (contain colons)
+        if not nameservers:
+            raise ValueError("IPv6 nameservers must be provided, no fallbacks available")
+        
+        ipv6_ns = [ns for ns in nameservers if ':' in ns]
+        if not ipv6_ns:
+            raise ValueError("No valid IPv6 nameservers provided (IPv6 addresses must contain colons)")
+        
+        # Set the nameservers
+        resolver.nameservers = ipv6_ns
         
         # Set timeout
         resolver.timeout = timeout
@@ -80,35 +79,17 @@ class IPv6Resolver:
         
         # Perform the resolution
         return resolver.resolve(hostname, record_type, tcp=use_tcp)
-    
-    def get_default_nameservers(self) -> List[str]:
-        """
-        Get a list of reliable IPv6 DNS servers
-        
-        Returns:
-            List of IPv6 nameserver addresses
-        """
-        return [
-            # Cloudflare
-            "2606:4700:4700::1111",
-            "2606:4700:4700::1001",
-            
-            # Google DNS
-            "2001:4860:4860::8888",
-            "2001:4860:4860::8844",
-            
-            # Quad9
-            "2620:fe::fe",
-            "2620:fe::9",
-            
-            # OpenDNS
-            "2620:119:35::35",
-            "2620:119:53::53"
-        ]
-    
-    def is_available(self) -> bool:
+       
+    def is_available(self, test_servers: Optional[List[str]] = None) -> bool:
         """
         Check if IPv6 is available on this system
+        
+        This method only tests system IPv6 connectivity with common DNS servers
+        for internal functionality checking. It is NOT used for actual DNS resolution.
+        
+        Args:
+            test_servers: Optional list of IPv6 servers to test connectivity with
+                          (only used for availability testing, not DNS resolution)
         
         Returns:
             Boolean indicating if IPv6 is working
@@ -146,10 +127,12 @@ class IPv6Resolver:
             # Continue to next test even if this fails
         
         # Finally, test actual connectivity to an IPv6 DNS server
-        test_servers = [
-            "2606:4700:4700::1111",  # Cloudflare
-            "2001:4860:4860::8888"   # Google
-        ]
+        # These servers are used ONLY for testing connectivity, not for actual DNS resolution
+        if test_servers is None:
+            test_servers = [
+                "2606:4700:4700::1111",  # Cloudflare
+                "2001:4860:4860::8888"   # Google
+            ]
         
         for server in test_servers:
             try:
@@ -193,17 +176,18 @@ class IPv6Resolver:
         ])
         return has_loopback and not has_global
     
-    def resolve_with_fallback(self, hostname: str, record_type: str, 
-                             nameservers: Optional[List[str]] = None,
-                             timeout: float = 5.0,
-                             use_tcp: bool = False) -> dns.resolver.Answer:
+    def resolve_with_multiple_servers(self, hostname: str, record_type: str, 
+                         nameservers: List[str],
+                         timeout: float = 5.0,
+                         use_tcp: bool = False) -> dns.resolver.Answer:
         """
-        Resolve DNS with automatic fallback between IPv6 nameservers
+        Try multiple nameservers in sequence without fallback to defaults
         
         Args:
             hostname: The hostname to query
             record_type: The type of DNS record (A, MX, TXT, etc.)
-            nameservers: List of nameserver IP addresses to use
+            nameservers: List of IPv6 nameserver addresses (REQUIRED) - must contain colons
+                        (no fallback to defaults)
             timeout: Timeout in seconds
             use_tcp: Whether to use TCP instead of UDP
             
@@ -211,7 +195,7 @@ class IPv6Resolver:
             dns.resolver.Answer object
             
         Raises:
-            ValueError: If IPv6 is not available
+            ValueError: If IPv6 is not available or no valid nameservers provided
             dns.resolver.NXDOMAIN: If the domain does not exist
             dns.resolver.NoAnswer: If the domain exists but has no records of the requested type
             dns.exception.Timeout: If all nameservers timed out
@@ -219,13 +203,16 @@ class IPv6Resolver:
         # Check IPv6 availability first
         if not self.is_available():
             raise ValueError("IPv6 DNS resolution requested but IPv6 is not available on this system")
-            
-        # Get nameservers to try
-        ns_to_try = nameservers if nameservers else self.get_default_nameservers()
-        ns_to_try = [ns for ns in ns_to_try if ':' in ns]  # Filter to IPv6 only
+        
+        # Validate nameservers
+        if not nameservers:
+            raise ValueError("IPv6 nameservers must be provided, no fallbacks available")
+    
+        # Filter to IPv6 only
+        ns_to_try = [ns for ns in nameservers if ':' in ns]
         
         if not ns_to_try:
-            ns_to_try = self.get_default_nameservers()
+            raise ValueError("No valid IPv6 nameservers provided (IPv6 addresses must contain colons)")
         
         # Try each nameserver
         last_error = None
@@ -245,105 +232,9 @@ class IPv6Resolver:
                 # Log but continue to next nameserver
                 logger.debug(f"IPv6 nameserver {ns} failed: {e}")
                 last_error = e
-        
+    
         # If we get here, all nameservers failed
         if last_error:
             raise last_error
         else:
             raise dns.resolver.Timeout("All IPv6 nameservers timed out or failed")
-    
-    def clear_availability_cache(self):
-        """Clear the cached IPv6 availability status to force a fresh check"""
-        IPv6Resolver._ipv6_available = None
-        logger.debug("IPv6 availability cache cleared")
-    
-    def compare_to_ipv4(self, hostname: str, record_type: str = "A") -> Dict[str, Any]:
-        """
-        Compare IPv6 vs IPv4 DNS resolution performance
-        
-        Args:
-            hostname: The hostname to query
-            record_type: The DNS record type to query
-            
-        Returns:
-            Dictionary with comparison results
-        """
-        from src.helpers.ipv4_resolver import IPv4Resolver
-        
-        results = {
-            "ipv4": {"success": False, "time_ms": None, "error": None},
-            "ipv6": {"success": False, "time_ms": None, "error": None},
-            "faster": None
-        }
-        
-        # Only proceed with IPv6 test if it's available
-        if not self.is_available():
-            results["ipv6"]["error"] = "IPv6 not available on this system"
-            results["faster"] = "ipv4"  # IPv4 wins by default
-            
-            # Still do the IPv4 test
-            ipv4_resolver = IPv4Resolver()
-            try:
-                import time
-                start = time.time()
-                answers = ipv4_resolver.resolve(hostname, record_type)
-                elapsed_ms = (time.time() - start) * 1000
-                
-                results["ipv4"] = {
-                    "success": True,
-                    "time_ms": elapsed_ms,
-                    "answers": len(answers),
-                    "error": None
-                }
-            except Exception as e:
-                results["ipv4"]["error"] = str(e)
-                
-            return results
-            
-        # Test IPv4
-        ipv4_resolver = IPv4Resolver()
-        try:
-            import time
-            start = time.time()
-            answers = ipv4_resolver.resolve(hostname, record_type)
-            elapsed_ms = (time.time() - start) * 1000
-            
-            results["ipv4"] = {
-                "success": True,
-                "time_ms": elapsed_ms,
-                "answers": len(answers),
-                "error": None
-            }
-        except Exception as e:
-            results["ipv4"]["error"] = str(e)
-            
-        # Test IPv6
-        try:
-            import time
-            start = time.time()
-            answers = self.resolve(hostname, record_type)
-            elapsed_ms = (time.time() - start) * 1000
-            
-            results["ipv6"] = {
-                "success": True,
-                "time_ms": elapsed_ms, 
-                "answers": len(answers),
-                "error": None
-            }
-        except Exception as e:
-            results["ipv6"]["error"] = str(e)
-            
-        # Determine which was faster
-        if results["ipv4"]["success"] and results["ipv6"]["success"]:
-            if results["ipv4"]["time_ms"] < results["ipv6"]["time_ms"]:
-                results["faster"] = "ipv4"
-                results["time_diff_ms"] = results["ipv6"]["time_ms"] - results["ipv4"]["time_ms"]
-            else:
-                results["faster"] = "ipv6"
-                results["time_diff_ms"] = results["ipv4"]["time_ms"] - results["ipv6"]["time_ms"]
-        elif results["ipv4"]["success"]:
-            results["faster"] = "ipv4"
-        elif results["ipv6"]["success"]:
-            results["faster"] = "ipv6"
-            
-        return results

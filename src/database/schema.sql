@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS users (
     accepts_LICENS BOOLEAN NOT NULL                  
 );
 
+-- user settings // To be made later
+CREATE TABLE IF NOT EXISTS user_settings (
+    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    role TEXT NOT NULL
+
+);
+
 -- audit_log
 CREATE TABLE IF NOT EXISTS audit_log (
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -58,10 +65,10 @@ INSERT INTO email_validation_functions (function_name, display_name, description
 ('email_format_resaults', 'Email Format Check', 'Validates email format syntax and structure', 10, True, 'src.engine.formatcheck', 'email_format_resaults'),
 ('blacklist_check', 'Black/White List Check', 'Checks if domain is whitelisted, blacklisted, or temporarily blocked', 20, true, 'src.engine.functions.bw', 'check_black_white'),
 ('mx_records', 'MX Records', 'Checks for valid mail exchanger records', 30, True, 'src.engine.functions.mx', 'fetch_mx_records'),
-('whois_info', 'WHOIS Information', 'Retrieves domain registration information', 35, true, 'src.engine.functions.mx', 'fetch_whois_info'), -- wrong whois..
-('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_smtp')
+('whois_info', 'WHOIS Information', 'Retrieves domain registration information', 35, true, 'src.engine.functions.mx', 'fetch_whois_info'), --whois.py not done
+('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_smtp'),
+('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.spf', 'spf_check')
 -- not implementet yet
--- ('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.1', '1'),
 -- ('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.2', '2'),
 -- ('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.3', '3'),
 -- ('catch_all_check', 'Catch-All Detection', 'Checks if domain accepts all emails', 80, true, 'src.engine.functions.4', '4'),
@@ -84,7 +91,7 @@ INSERT INTO email_validation_function_dependencies (function_name, depends_on) V
 ('mx_records', 'email_format_resaults'),
 ('whois_info', 'email_format_resaults'),
 ('smtp_validation', 'mx_records'),
--- ('spf_check', 'mx_records'),
+('spf_check', 'mx_records'),
 -- ('dkim_check', 'mx_records'),
 -- ('dmarc_check', 'mx_records'),
 -- ('catch_all_check', 'smtp_validation'),
@@ -146,6 +153,7 @@ CREATE TABLE IF NOT EXISTS email_validation_records (
     pop3_info TEXT,
     pop3_security TEXT,
     spf_status TEXT,
+    spf_details JSONB,
     dkim_status TEXT,
     dmarc_status TEXT,
     server_policies TEXT,
@@ -177,7 +185,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 INSERT INTO app_settings (category, sub_category, name, value, description) VALUES
 ('http', 'user_agent', 'name', 'EmailVerificationEngine', 'Name for User-Agent'),
-('http', 'user_agent', 'version', '0.3', 'Version for User-Agent'),
+('http', 'user_agent', 'version', '0.4', 'Version for User-Agent'),
 ('http', 'user_agent', 'url', 'https://github.com/Ranrar/Email-Verification-Engine', 'URL for User-Agent contact'),
 -- ('http', 'user_agent', 'email', 'verification@example.com', 'email for User-Agent contact'),
 ('email', 'defaults', 'sender email', 'EmailVerificationEngine@example.com', 'Default sender email address for SMTP verification'),
@@ -623,8 +631,8 @@ ON CONFLICT (name) DO NOTHING;
 -- email_filter_regex_settings
 CREATE TABLE IF NOT EXISTS email_filter_regex_settings (
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    nr INTEGER NOT NULL,
-    name TEXT NOT NULL UNIQUE,
+    nr INTEGER NOT NULL UNIQUE,
+    name TEXT NOT NULL,
     main_settings JSONB NOT NULL,
     validation_steps JSONB NOT NULL,
     pattern_checks JSONB NOT NULL,
@@ -633,25 +641,27 @@ CREATE TABLE IF NOT EXISTS email_filter_regex_settings (
     domain_options JSONB NOT NULL,
     idna_options JSONB NOT NULL,
     regex_pattern JSONB NOT NULL,
+    description TEXT,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMPTZ NOT NULL           
+    created_at TIMESTAMPTZ NOT NULL
 );
 
-INSERT INTO email_filter_regex_settings (nr, name, main_settings, validation_steps, pattern_checks, format_options, local_part_options, domain_options, idna_options, regex_pattern, created_at) VALUES
-(
-1,     
-'Standard Configuration',
-'{"strict_mode": false, "max_local_length": 64, "max_domain_length": 255, "max_total_length": 320, "basic_format_pattern": "basic"}',
-'{"basic_format": true, "normalization": true, "length_limits": true, "local_part": true, "domain": true, "idna": true}',
-'{"empty_parts": true, "whitespace": true, "consecutive_dots": true}',
-'{"check_empty_parts": true, "check_whitespace": true, "check_pattern": true}',
-'{"check_consecutive_dots": true, "check_chars_strict": true, "allowed_chars": "!--$%&''*+-/=?^_`{|}~."}',
-'{"require_dot": true, "check_hyphens": true, "check_chars": true, "check_consecutive_dots": true, "allowed_chars": ".-"}',
-'{"encode_unicode": true, "validate_idna": true}',
-'{"basic": "^.+@.+\\..+$", "rfc5322": "(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$)", "local_too_long": "^.{64,}@", "empty_parts": "^@|@$|@\\.|\\.$", "whitespace": "\\s+", "consecutive_dots": "\\.{2,}"}',
-'2025-04-30T00:00:00Z'
+INSERT INTO email_filter_regex_settings (nr, name, main_settings, validation_steps, pattern_checks, format_options, local_part_options, domain_options, idna_options, regex_pattern, description, created_at) VALUES (
+    1,
+    'Standard Configuration',
+    '{"strict_mode": false, "max_local_length": 64, "max_domain_length": 255, "max_total_length": 320, "basic_format_pattern": "basic"}',
+    '{"basic_format": true, "normalization": true, "length_limits": true, "local_part": true, "domain": true, "idna": true}',
+    '{"empty_parts": true, "whitespace": true, "consecutive_dots": true}',
+    '{"check_empty_parts": true, "check_whitespace": true, "check_pattern": true}',
+    '{"check_consecutive_dots": true, "check_chars_strict": true, "allowed_chars": "!--$%&''*+-/=?^_`{|}~."}',
+    '{"require_dot": true, "check_hyphens": true, "check_chars": true, "check_consecutive_dots": true, "allowed_chars": ".-"}',
+    '{"encode_unicode": true, "validate_idna": true}',
+    '{"basic": "^.+@.+\\..+$", "rfc5322": "(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$)", "local_too_long": "^.{64,}@", "empty_parts": "^@|@$|@\\.|\\.$", "whitespace": "\\s+", "consecutive_dots": "\\.{2,}"}',
+    'Standard email validation configuration based on RFC standards',
+    '2025-04-30T00:00:00Z'
 )
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT (nr) DO NOTHING;
+
 
 -- black and white list
 CREATE TABLE IF NOT EXISTS black_white (
@@ -831,6 +841,35 @@ CREATE TABLE IF NOT EXISTS smtp_temporary_blocklist (
     block_count INTEGER DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(domain)
+);
+
+-- Detailed SPF validation results
+CREATE TABLE IF NOT EXISTS spf_validation_statistics (
+    id SERIAL PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    raw_record TEXT,
+    result TEXT NOT NULL,
+    mechanism_matched TEXT,
+    dns_lookups INTEGER DEFAULT 0,
+    processing_time_ms FLOAT,
+    explanation TEXT,
+    error_message TEXT,
+    timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_spf_validation_trace FOREIGN KEY (trace_id) 
+        REFERENCES email_validation_records(trace_id)
+);
+
+-- Detailed DNS lookup tracking for SPF mechanisms
+CREATE TABLE IF NOT EXISTS spf_dns_lookup_log (
+    id SERIAL PRIMARY KEY,
+    spf_validation_id INTEGER NOT NULL,
+    mechanism TEXT NOT NULL,
+    lookups_used INTEGER NOT NULL,
+    total_lookups INTEGER NOT NULL,
+    timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_spf_dns_lookup_validation FOREIGN KEY (spf_validation_id) 
+        REFERENCES spf_validation_statistics(id)
 );
 
 -- =============================================
@@ -1030,6 +1069,12 @@ CREATE INDEX IF NOT EXISTS idx_smtp_domain_stats_provider ON smtp_domain_stats(d
 CREATE INDEX IF NOT EXISTS idx_smtp_attempt_history_trace ON smtp_domain_attempt_history(trace_id);
 CREATE INDEX IF NOT EXISTS idx_smtp_attempt_history_time ON smtp_domain_attempt_history(attempt_time);
 CREATE INDEX IF NOT EXISTS idx_smtp_attempt_history_success ON smtp_domain_attempt_history(success, attempt_time);
+
+--SPF
+CREATE INDEX IF NOT EXISTS idx_spf_validation_trace_id ON spf_validation_statistics(trace_id);
+CREATE INDEX IF NOT EXISTS idx_spf_validation_domain ON spf_validation_statistics(domain);
+CREATE INDEX IF NOT EXISTS idx_spf_validation_result ON spf_validation_statistics(result);
+CREATE INDEX IF NOT EXISTS idx_spf_dns_lookup_validation ON spf_dns_lookup_log(spf_validation_id);
 -- =============================================
 -- View
 -- =============================================
@@ -1242,3 +1287,58 @@ CREATE OR REPLACE VIEW user_agent_email_view AS
 SELECT u.email AS user_email, a.value AS user_agent_email
 FROM users u
 JOIN app_settings a ON a.name = 'user_agent_email';
+
+-- SPF statistics aggregation view
+CREATE OR REPLACE VIEW spf_statistics AS
+WITH domain_stats AS (
+    SELECT
+        domain,
+        COUNT(*) AS total_validations,
+        SUM(CASE WHEN result = 'pass' THEN 1 ELSE 0 END) AS pass_count,
+        SUM(CASE WHEN result = 'fail' THEN 1 ELSE 0 END) AS fail_count,
+        SUM(CASE WHEN result = 'softfail' THEN 1 ELSE 0 END) AS softfail_count,
+        SUM(CASE WHEN result = 'neutral' THEN 1 ELSE 0 END) AS neutral_count,
+        SUM(CASE WHEN result = 'none' THEN 1 ELSE 0 END) AS none_count,
+        SUM(CASE WHEN result = 'permerror' THEN 1 ELSE 0 END) AS permerror_count,
+        SUM(CASE WHEN result = 'temperror' THEN 1 ELSE 0 END) AS temperror_count,
+        AVG(dns_lookups) AS avg_dns_lookups,
+        AVG(processing_time_ms) AS avg_processing_time_ms,
+        MAX(processing_time_ms) AS max_processing_time_ms,
+        MIN(processing_time_ms) AS min_processing_time_ms
+    FROM spf_validation_statistics
+    GROUP BY domain
+),
+mechanism_stats AS (
+    SELECT
+        domain,
+        mechanism_matched,
+        COUNT(*) AS match_count
+    FROM spf_validation_statistics
+    WHERE mechanism_matched IS NOT NULL
+    GROUP BY domain, mechanism_matched
+)
+SELECT
+    ds.domain,
+    ds.total_validations,
+    ds.pass_count,
+    ds.fail_count,
+    ds.softfail_count,
+    ds.neutral_count,
+    ds.none_count,
+    ds.permerror_count,
+    ds.temperror_count,
+    ROUND(((ds.pass_count::float / NULLIF(ds.total_validations, 0)) * 100)::numeric, 2) AS pass_percentage,
+    ROUND(ds.avg_dns_lookups::numeric, 2) AS avg_dns_lookups,
+    ROUND(ds.avg_processing_time_ms::numeric, 2) AS avg_processing_time_ms,
+    ds.max_processing_time_ms,
+    ds.min_processing_time_ms,
+    (
+        SELECT jsonb_agg(jsonb_build_object(
+            'mechanism', mechanism_matched,
+            'count', match_count
+        ))
+        FROM mechanism_stats ms
+        WHERE ms.domain = ds.domain
+    ) AS top_mechanisms
+FROM domain_stats ds
+ORDER BY ds.total_validations DESC;

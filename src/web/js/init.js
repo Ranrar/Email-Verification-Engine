@@ -4,7 +4,7 @@ const asciiLogo = `
 ░░███░░░░░█ ░░███   ░░███  ░░███░░░░░█  
  ░███  █ ░   ░███    ░███   ░███  █ ░
  ░██████     ░███    ░███   ░██████
- ░███░░█     ░░███   ███    ░███░░█
+ ░███░░█     ░░░███   ███    ░███░░█
  ░███ ░   █   ░░░█████░     ░███ ░   █
  ██████████     ░░███       ██████████
 ░░░░░░░░░░       ░░░       ░░░░░░░░░░`;
@@ -16,7 +16,7 @@ const logoElement = document.getElementById('logo');
 logoElement.textContent = asciiLogo;
 logoElement.className = 'ascii-art';
 
-// OS theme detection and application
+// OS theme detection and application (consistent with main.js)
 function detectOSTheme() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
@@ -24,6 +24,11 @@ function detectOSTheme() {
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
+    
+    // Dispatch theme changed event for consistency
+    document.dispatchEvent(new CustomEvent('themeChanged', {
+        detail: { theme: theme }
+    }));
 }
 
 // Check for saved theme or use OS preference

@@ -20,6 +20,23 @@ from src.engine.result import (
 
 logger = Axe()
 
+def to_int_or_none(value: Any) -> Optional[int]:
+    """
+    Convert a value to an integer or return None if the conversion fails.
+    
+    Args:
+        value: The value to convert to an integer
+        
+    Returns:
+        int if conversion succeeds, None otherwise
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
 def log_to_database(result: EmailValidationResult) -> Optional[int]:
     """Log validation result to database with full schema and sanitization."""
     try:
@@ -69,15 +86,22 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
     blacklist_info = data.get("blacklist_info", {})
     domain_info = data.get("domain_check", {})
     infrastructure_info = data.get("infrastructure_info", {})
-
-    def to_int_or_none(value):
-        if value is None or value == "":
-            return None
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return None
-
+    spf_details = data.get("spf_details", {})
+    
+    # Make sure it includes full SPF details from the validation
+    if isinstance(spf_details, dict) and data.get("spf_result"):
+        # Ensure we have a full set of SPF details
+        spf_details.update({
+            "spf_result": data.get("spf_result", ""),
+            "spf_record": data.get("spf_record", ""),
+            "spf_mechanism_matched": data.get("spf_mechanism_matched", ""),
+            "spf_dns_lookups": data.get("spf_dns_lookups", 0),
+            "spf_reason": data.get("spf_reason", ""),
+            "errors": data.get("errors", []),
+            "warnings": data.get("warnings", []),
+            "dns_lookup_log": data.get("dns_lookup_log", [])
+        })
+    
     return {
         "trace_id": trace_id,
         "timestamp": datetime.now(timezone.utc),
@@ -134,6 +158,7 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
 
         # SPF/DKIM/DMARC/server policies
         "spf_status": data.get("spf_status", ""),
+        "spf_details": json.dumps(spf_details) if spf_details else None,
         "dkim_status": data.get("dkim_status", ""),
         "dmarc_status": data.get("dmarc_status", ""),
         "server_policies": json.dumps(data.get("server_policies", {})) if data.get("server_policies") else None,
@@ -185,7 +210,7 @@ def _insert_validation_record(db, values: Dict[str, Any]) -> Optional[int]:
         "email_provider_id", "email_provider_info", "reverse_dns", "whois_info",
         "catch_all", "imap_status", "imap_info", "imap_security",
         "pop3_status", "pop3_info", "pop3_security",
-        "spf_status", "dkim_status", "dmarc_status", "server_policies",
+        "spf_status", "spf_details", "dkim_status", "dmarc_status", "server_policies",
         "disposable", "blacklist_info", "error_message",
         "is_valid", "confidence_score", "execution_time", "timing_details",
         "check_count", "batch_id", "raw_result", "validation_complete"

@@ -1,165 +1,151 @@
 :root {
-    /* Light theme variables */
+    /* Core colors */
+    --primary-color: #5cb85c;
+    --primary-hover: #4cae4c;
+    --primary-light: #d4edda;
+    
+    --success-color: #2e7d32;
+    --error-color: #c62828;
+    --warning-color: #ff9800;
+    --info-color: #1565c0;
+    
+    /* Base theme colors */
     --bg-color: #f4f4f4;
     --text-color: #333;
-    --menu-bg: #aaaaaa;
-    --menu-text: #000000;
-    --dropdown-bg: #888888;
-    --dropdown-text: #ffffff;
-    --container-bg: #fff;
-    --button-bg: #5cb85c;
-    --button-hover: #4cae4c;
-    --button-text: #fff;
+    --text-muted: #777;
+    --border-color: #ddd;
     
-    /* Missing variables - ADD THESE */
-    --border-color: #fff;
-    --active-tab: #fff;  /* Light green to match button */
-    --primary-color: #5cb85c; /* Match button-bg for consistency */
-    --text-muted: #777777;
+    /* Surface colors */
+    --surface-bg: #fff;
+    --surface-alt: #f9f9f9;
+    --surface-border: #eee;
     
-    /* Toggle switch colors for light theme */
-    --toggle-bg: #ccc;
-    --toggle-active-bg: #5cb85c;
-    --toggle-button: white;
-    --toggle-active-button: white;
+    /* Interactive colors */
+    --hover-bg: rgba(0, 0, 0, 0.05);
+    --active-bg: var(--primary-color);
     
-    /* ASCII Logo color for light theme */
-    --logo-color: #5cb85c;
-    --logo-shadow: rgba(0, 0, 0, 0.3);
+    /* Menu colors */
+    --menu-bg: #aaa;
+    --menu-text: #000;
+    --dropdown-bg: #888;
+    --dropdown-text: #fff;
     
-    /* Results container */
-    --results-container-bg: #f9f9f9;
-    --results-container-border: #ddd;
-    --results-heading-color: #333;
-    --results-row-border: #eee;
-    --valid-result-color: #2e7d32;
-    --invalid-result-color: #c62828;
-    
-    /* Message colors */
-    --message-error-bg: #ffebee;
-    --message-error-color: #c62828;
-    --message-error-border: #ffcdd2;
-    --message-success-bg: #e8f5e9;
-    --message-success-color: #2e7d32;
-    --message-success-border: #c8e6c9;
-    --message-info-bg: #e3f2fd;
-    --message-info-color: #1565c0;
-    --message-info-border: #bbdefb;
-    
-    /* Theme switch specific variables for light mode */
-    --theme-switch-bg: #4cae4c;
-    --theme-switch-active-bg: #4cae4c;
-    
-    /* Domain management specific colors */
-    --domain-btn-text: #333;
-    --domain-btn-hover-bg: rgba(0, 0, 0, 0.05);
-    --domain-btn-danger-text: #ff6666;
-    --domain-btn-danger-bg: rgba(255, 0, 0, 0.1);
-    --domain-btn-danger-hover: rgba(255, 0, 0, 0.2);
-    
-    /* Add markdown link colors for light theme */
-    --markdown-link-color: #000000;
-    --markdown-link-hover-decoration: underline;
+    /* Shadow and overlay */
+    --shadow: rgba(0, 0, 0, 0.1);
+    --overlay: rgba(0, 0, 0, 0.7);
+    --backdrop-blur: blur(5px);
 }
 
 [data-theme="dark"] {
-    /* Dark theme variables */
+    /* Core colors - dark variants */
+    --primary-color: #cc0000;
+    --primary-hover: #990000;
+    --primary-light: #2a4a2a;
+    
+    --success-color: #4caf50;
+    --error-color: #ef5350;
+    --warning-color: #e65100;
+    --info-color: #64b5f6;
+    
+    /* Base theme colors */
     --bg-color: #222;
     --text-color: #eee;
+    --text-muted: #999;
+    --border-color: #444;
+    
+    /* Surface colors */
+    --surface-bg: #333;
+    --surface-alt: #2a2a2a;
+    --surface-border: #444;
+    
+    /* Interactive colors */
+    --hover-bg: rgba(255, 255, 255, 0.1);
+    --active-bg: var(--primary-color);
+    
+    /* Menu colors */
     --menu-bg: #444;
-    --menu-text: #ffffff;
+    --menu-text: #fff;
     --dropdown-bg: #555;
-    --dropdown-text: #ffffff;
-    --container-bg: #333;
-    --button-bg: #cc0000;
-    --button-hover: #990000;
-    --button-text: #fff;
+    --dropdown-text: #fff;
     
-    /* Missing variables - ADD THESE */
-    --border-color: #333;
-    --active-tab: #333;  /* Darker red to match theme */
-    --primary-color: #cc0000; /* Match button-bg for dark theme */
-    --text-muted: #999999;
-    
-    /* Toggle switch colors for dark theme */
-    --toggle-bg: #555;
-    --toggle-active-bg: #990000;
-    --toggle-button: #ddd;
-    --toggle-active-button: white;
-    
-    /* ASCII Logo color for dark theme */
-    --logo-color: #cc0000;
-    --logo-shadow: #990000(255, 255, 255, 0.1);
-    
-    /* Results container in dark mode */
-    --results-container-bg: #2a2a2a;
-    --results-container-border: #444;
-    --results-heading-color: #eee;
-    --results-row-border: #444;
-    --valid-result-color: #4caf50;
-    --invalid-result-color: #ef5350;
-    
-    /* Message colors for dark mode */
-    --message-error-bg: #311b1b;
-    --message-error-color: #ef5350;
-    --message-error-border: #842029;
-    --message-success-bg: #1b311d;
-    --message-success-color: #4caf50;
-    --message-success-border: #2a5834;
-    --message-info-bg: #1a2733;
-    --message-info-color: #64b5f6;
-    --message-info-border: #0d47a1;
-    
-    /* Theme switch specific variables for dark mode */
-    --theme-switch-bg: #990000;
-    --theme-switch-active-bg: #990000;
-    
-    /* Domain management specific colors */
-    --domain-btn-text: #eee;
-    --domain-btn-hover-bg: rgba(255, 255, 255, 0.1);
-    --domain-btn-danger-text: #ff8080;
-    --domain-btn-danger-bg: rgba(255, 0, 0, 0.2);
-    --domain-btn-danger-hover: rgba(255, 0, 0, 0.3);
-    
-    /* Add markdown link colors for dark theme */
-    --markdown-link-color: #ffffff;
-    --markdown-link-hover-decoration: underline;
+    /* Shadow and overlay */
+    --shadow: rgba(0, 0, 0, 0.3);
+    --overlay: rgba(0, 0, 0, 0.8);
 }
 
-/* Theme Switch - completely rebuilt to match toggle switch */
+/* Semantic color mappings */
+:root {
+    /* Button colors */
+    --button-bg: var(--primary-color);
+    --button-hover: var(--primary-hover);
+    --button-text: #fff;
+    
+    /* Container colors */
+    --container-bg: var(--surface-bg);
+    --results-container-bg: var(--surface-alt);
+    --results-container-border: var(--border-color);
+    
+    /* Input focus colors */
+    --input-focus-border: var(--primary-color);
+    --input-focus-shadow: rgba(92, 184, 92, 0.15);
+    --input-hover-border: var(--primary-hover);
+    
+    /* Message colors */
+    --message-success-color: var(--success-color);
+    --message-error-color: var(--error-color);
+    --message-info-color: var(--info-color);
+    --message-warning-color: var(--warning-color);
+    
+    /* Toast colors */
+    --toast-success: var(--success-color);
+    --toast-error: var(--error-color);
+    --toast-info: var(--info-color);
+    --toast-warning: var(--warning-color);
+    --toast-special: #9C27B0;
+    --toast-text: white;
+    
+    /* State colors */
+    --valid-color: var(--success-color);
+    --invalid-color: var(--error-color);
+    
+    /* Code colors */
+    --code-bg: rgba(175, 184, 193, 0.2);
+    --code-text: var(--text-color);
+}
+
+[data-theme="dark"] {
+    /* Input focus colors for dark theme */
+    --input-focus-shadow: rgba(204, 0, 0, 0.2);
+    --code-bg: rgba(100, 100, 100, 0.3);
+    --toast-special: #7b1fa2;
+}
+
+/* Theme Switch Styles */
 .theme-switch-wrapper {
     display: flex;
     align-items: center;
     padding: 0 16px 0 0;
-    justify-content: center;
     gap: 8px;
 }
 
 .theme-switch-wrapper span {
     color: var(--menu-text);
     font-size: 14px;
-    padding: 0;
-    margin: 0;
 }
 
-/* Make theme-switch exactly match toggle-switch */
 .theme-switch {
     position: relative;
     display: inline-block;
     width: 50px;
     height: 24px;
-    margin: 0;
 }
 
 .theme-switch input {
     opacity: 0;
     width: 0;
     height: 0;
-    margin: 0;
-    padding: 0;
 }
 
-/* Update the theme switch slider to use the custom variables */
 .slider {
     position: absolute;
     cursor: pointer;
@@ -167,8 +153,8 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: var(--theme-switch-bg);
-    transition: .4s;
+    background-color: var(--primary-hover);
+    transition: 0.4s;
     border-radius: 24px;
 }
 
@@ -179,16 +165,15 @@
     width: 18px;
     left: 3px;
     bottom: 3px;
-    background-color: var(--toggle-button);
-    transition: .4s;
+    background-color: white;
+    transition: 0.4s;
     border-radius: 50%;
 }
 
 input:checked + .slider {
-    background-color: var(--theme-switch-active-bg);
+    background-color: var(--primary-color);
 }
 
 input:checked + .slider:before {
     transform: translateX(26px);
-    background-color: var(--toggle-active-button);
 }

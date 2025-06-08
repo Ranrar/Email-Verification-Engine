@@ -9,102 +9,103 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
+    <!-- Improved nav section -->
     <nav class="menu-bar">
-        <ul>
-            <li>
-                <a href="#">File</a>
-                <ul class="dropdown">
-                    <li><a href="#" data-action="exit">Exit</a></li>
-                </ul>
-            </li>
-            <li>
-                <a href="#">Validation</a>
-                <ul class="dropdown">
-                    <li><a href="#" data-action="command-line">Command Line</a></li>
-                    <li class="has-submenu">
-                        <a href="#">Batch</a>
-                        <ul class="submenu">
-                            <li><a href="#" data-action="new-batch">New Batch Validation</a></li>
-                            <li><a href="#" data-action="batch-history">View Batch History</a></li>
-                        </ul>
-                    </li>
-                </ul>
-            </li>
-            <li>
-                <a href="#">Validation Records</a>
-                <ul class="dropdown">
-                    <li><a href="#" data-action="show-records">Show All Records</a></li>
-                    <li><a href="#" data-action="custom-filter">Custom Filter View</a></li>
-                </ul>
-            </li>
-            <li>
-                <a href="#">Export</a>
-                <ul class="dropdown">
-                    <li><a href="#" data-action="export-all">Export All Records</a></li>
-                    <li><a href="#" data-action="export-date">Export by Date Range</a></li>
-                    <li><a href="#" data-action="export-batch">Export by Batch</a></li>
-                    <li><a href="#" data-action="export-domain">Export by Domain</a></li>
-                    <li><a href="#" data-action="export-confidence">Export by Confidence Level</a></li>
-                    <li><a href="#" data-action="export-field">Export by Field Categories</a></li>
-                </ul>
-            </li>
-            <li>
-                <a href="#">More</a>
-                <ul class="dropdown">
-                    <li><a href="#" data-action="more-statistics">Statistics</a></li>
-                    <li><a href="#" data-action="more-performance">Performance</a></li>
-                    <li><a href="#" data-action="more-resources">System Resources</a></li>
-                </ul>
-            </li>
-            <li>
-                <a href="#">Help</a>
-                <ul class="dropdown">
-                    <li><a href="#" data-action="help-docs">Documentation</a></li>
-                    <li><a href="#" data-action="help-shortcuts">Keyboard Shortcuts</a></li>
-                    <li><a href="#" data-action="help-about">About</a></li>
-                </ul>
-            </li>
-        </ul>
-        <div class="theme-switch-wrapper">
-            <button id="settingsButton" class="settings-button">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
-                Settings
-            </button>
-            <span>Light</span>
-            <label class="theme-switch">
-                <input type="checkbox" id="theme-toggle">
-                <span class="slider round"></span>
-            </label>
-            <span>Dark</span>
-        </div>
-    </nav>
+    <ul>
+        <li>
+            <a href="#">File</a>
+            <ul class="dropdown">
+                <li><a href="#" data-action="exit">Exit</a></li>
+            </ul>
+        </li>
+        <li>
+            <a href="#">Validation</a>
+            <ul class="dropdown">
+                <li><a href="#" data-action="command-line">Command Line</a></li>
+                <li class="has-submenu">
+                    <a href="#">Batch</a>
+                    <ul class="submenu">
+                        <li><a href="#" data-action="new-batch">New Batch Validation</a></li>
+                        <li><a href="#" data-action="batch-history">View Batch History</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+        <li>
+            <a href="#">Records</a>
+            <ul class="dropdown">
+                <li><a href="#" data-action="show-records">Show All Records</a></li>
+                <li><a href="#" data-action="custom-filter">Custom Filter View</a></li>
+            </ul>
+        </li>
+        <li>
+            <a href="#">Export</a>
+            <ul class="dropdown">
+                <li><a href="#" data-action="export-all">Export All Records</a></li>
+                <li><a href="#" data-action="export-date">Export by Date Range</a></li>
+                <li><a href="#" data-action="export-batch">Export by Batch</a></li>
+                <li><a href="#" data-action="export-domain">Export by Domain</a></li>
+                <li><a href="#" data-action="export-confidence">Export by Confidence Level</a></li>
+                <li><a href="#" data-action="export-field">Export by Field Categories</a></li>
+            </ul>
+        </li>
+        <li>
+            <a href="#">More</a>
+            <ul class="dropdown">
+                <li><a href="#" data-action="more-statistics">Statistics</a></li>
+                <li><a href="#" data-action="more-performance">Performance</a></li>
+                <li><a href="#" data-action="more-resources">System Resources</a></li>
+            </ul>
+        </li>
+        <li>
+            <a href="#">Help</a>
+            <ul class="dropdown">
+                <li><a href="#" data-action="help-docs">Documentation</a></li>
+                <li><a href="#" data-action="help-shortcuts">Keyboard Shortcuts</a></li>
+                <li><a href="#" data-action="help-about">About</a></li>
+            </ul>
+        </li>
+    </ul>
+    <div class="theme-switch-wrapper">
+        <button id="settingsButton" class="btn btn-secondary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            Settings
+        </button>
+        <span>Light</span>
+        <label class="theme-switch">
+            <input type="checkbox" id="theme-toggle">
+            <span class="slider"></span>
+        </label>
+        <span>Dark</span>
+    </div>
+</nav>
 
     <div class="container">
         <h1>Email Verification</h1>
-        <div class="form-group">
-            <label for="emailInput">Enter your email:</label>
-            <input type="email" id="emailInput" name="email" required>
-            <button type="button" id="verifyButton">Verify Email</button>
-        </div>
-
-        <!-- New loading bar (hidden by default) -->
-        <div id="validationProgress" class="progress-container" style="display: none;">
-            <div class="step-info">
-                <span id="validation-step">Validating email...</span>
-                <span id="validation-percent">0%</span>
-            </div>
-            <div class="progress-bar">
-                <div class="progress-fill" id="validation-progress-fill"></div>
-            </div>
-        </div>
-
-        <div id="result" class="message"></div>
         
-        <!-- New detailed results container (hidden by default) -->
-        <div id="detailedResults" class="results-container" style="display: none;">
+        <div class="email-input-container mb-20">
+            <div class="input-group-horizontal">
+                <label for="emailInput">Enter your email:</label>
+                <div class="email-input-wrapper">
+                    <input type="email" id="emailInput" name="email" required>
+                    <button type="button" id="verifyButton" class="btn">Verify Email</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress container -->
+        <div id="validationProgress" class="progress-container mb-20" style="display: none;">
+            <div class="flex justify-space-between mb-10">
+            </div>
+        </div>
+
+        <div id="result" class="message mb-20"></div>
+        
+        <!-- Detailed results container -->
+        <div id="detailedResults" class="results-container mb-20" style="display: none;">
             <h2>Validation Details</h2>
             <table class="results-table">
                 <tr>
@@ -133,21 +134,19 @@
                 </tr>
             </table>
 
-            <!-- Show More button -->
-            <div class="show-more-container">
-                <button id="showMoreButton" class="show-more-button">Show More Details</button>
+            <div class="text-center mt-15">
+                <button id="showMoreButton" class="btn btn-secondary">Show More Details</button>
             </div>
         </div>
 
-        <!-- Expanded details section (hidden by default) -->
-        <div id="expandedDetails" style="display: none;">
-            <div class="expanded-details-header">
-                <button id="collapseAllButton" class="collapse-button">Collapse All</button>
-                <button id="expandAllButton" class="collapse-button">Expand All</button>
+        <!-- Expanded details section -->
+        <div id="expandedDetails" class="mb-20" style="display: none;">
+            <div class="flex justify-end mb-15 flex-gap-10">
+                <button id="collapseAllButton" class="btn btn-secondary">Collapse All</button>
+                <button id="expandAllButton" class="btn btn-secondary">Expand All</button>
             </div>
             
             <div class="accordion">
-                <!-- DNS Information -->
                 <div class="accordion-item">
                     <div class="accordion-header">DNS Information</div>
                     <div class="accordion-content">
@@ -155,7 +154,6 @@
                     </div>
                 </div>
                 
-                <!-- SMTP Details -->
                 <div class="accordion-item">
                     <div class="accordion-header">SMTP Details</div>
                     <div class="accordion-content">
@@ -163,7 +161,6 @@
                     </div>
                 </div>
                 
-                <!-- MX Records -->
                 <div class="accordion-item">
                     <div class="accordion-header">MX Infrastructure</div>
                     <div class="accordion-content">
@@ -171,7 +168,6 @@
                     </div>
                 </div>
                 
-                <!-- IP Information -->
                 <div class="accordion-item">
                     <div class="accordion-header">IP Information</div>
                     <div class="accordion-content">
@@ -179,7 +175,6 @@
                     </div>
                 </div>
                 
-                <!-- Security & Authentication -->
                 <div class="accordion-item">
                     <div class="accordion-header">Security & Authentication</div>
                     <div class="accordion-content">
@@ -187,7 +182,6 @@
                     </div>
                 </div>
                 
-                <!-- Timing & Performance -->
                 <div class="accordion-item">
                     <div class="accordion-header">Timing & Performance</div>
                     <div class="accordion-content">
@@ -197,7 +191,7 @@
             </div>
         </div>
 
-        <!-- SMTP Results Section (hidden by default) -->
+        <!-- SMTP Results Section -->
         <div id="smtpResults" class="smtp-results" style="display: none;">
             <!-- SMTP results will be populated here -->
         </div>
@@ -208,91 +202,62 @@
         <div class="settings-container">
             <div class="settings-header">
                 <h2>Settings</h2>
-                <button id="closeSettingsBtn" class="close-button">&times;</button>
+                <button id="closeSettingsBtn" class="btn btn-danger">&times;</button>
             </div>
             
             <div id="settings-menu" class="settings-content">
-                <!-- Settings Navigation Tabs -->
                 <div class="settings-tabs">
                     <button class="settings-tab-btn" data-tab="general">General</button>
                     <button class="settings-tab-btn" data-tab="rate-limits">Rate Limits</button>  
                     <button class="settings-tab-btn" data-tab="dns">DNS Settings</button>
                     <button class="settings-tab-btn" data-tab="executor">Executor Pool</button>
-                    <button class="settings-tab-btn" data-tab="validation-scoring">validation and Confidence</button>
+                    <button class="settings-tab-btn" data-tab="validation-scoring">Validation and Confidence</button>
                     <button class="settings-tab-btn" data-tab="ports">Ports</button>
                     <button class="settings-tab-btn" data-tab="email-filter">Email Filter</button>
                     <button class="settings-tab-btn" data-tab="black-white-list">Black and White List</button>
                 </div>
                 
-                <!-- Loading Indicator -->
-                <div id="settings-loader" class="loader" style="display: none;">Loading...</div>
+                <div id="settings-loader" class="loader text-center" style="display: none;">Loading...</div>
                 
-                <!-- Settings Content Area -->
                 <div class="settings-content-area">
-                    <!-- General Settings Tab -->
                     <div id="general-settings" class="settings-tab-content" style="display: block;">
-
-                        <div id="general-settings-content" class="settings-form">
-                            <!-- Content loaded dynamically -->
-                        </div>
+                        <div id="general-settings-content" class="settings-form"></div>
                     </div>
                     
-                    <!-- Rate Limits Tab -->
                     <div id="rate-limits-settings" class="settings-tab-content" style="display: none;">
-                        <div id="rate-limits-settings-content" class="settings-form">
-                            <!-- Content loaded dynamically -->
-                        </div>
+                        <div id="rate-limits-settings-content" class="settings-form"></div>
                     </div>
                     
-                    <!-- DNS Settings Tab -->
                     <div id="dns-settings" class="settings-tab-content" style="display: none;">
-                        <div id="dns-settings-content" class="settings-form">
-                            <!-- Content loaded dynamically -->
-                        </div>
+                        <div id="dns-settings-content" class="settings-form"></div>
                     </div>
                     
-                    <!-- Executor Pool Settings Tab -->
                     <div id="executor-settings" class="settings-tab-content" style="display: none;">
-                        <div id="executor-settings-content" class="settings-form">
-                            <!-- Content loaded dynamically -->
-                        </div>
-                        <div style="margin-top: 20px; text-align: right;">
-                            <button id="run-autotune-btn" class="btn btn-primary">Run Autotune</button>
+                        <div id="executor-settings-content" class="settings-form"></div>
+                        <div class="text-center mt-20">
+                            <button id="run-autotune-btn" class="btn">Run Autotune</button>
                         </div>
                     </div>
                     
-                    <!-- Validation Scoring Tab -->
                     <div id="validation-scoring-settings" class="settings-tab-content" style="display: none;">
-                        <div id="validation-scoring-content" class="settings-form">
-                            <!-- Content loaded dynamically -->
-                        </div>
+                        <div id="validation-scoring-content" class="settings-form"></div>
                     </div>
                     
-                    <!-- Ports Configuration Tab -->
                     <div id="ports-settings" class="settings-tab-content" style="display: none;">
-                        <div id="ports-configuration-content" class="settings-form">
-                            <!-- Content loaded dynamically -->
-                        </div>
+                        <div id="ports-configuration-content" class="settings-form"></div>
                     </div>
                     
-                    <!-- Email Filter Regex Tab -->
                     <div id="email-filter-settings" class="settings-tab-content" style="display: none;">
-                        <div id="email-filter-regex-content" class="settings-form">
-                            <!-- Content loaded dynamically -->
-                        </div>
+                        <div id="email-filter-regex-content" class="settings-form"></div>
                     </div>
                     
-                    <!-- Domain Black/White List Tab -->
                     <div id="black-white-list-settings" class="settings-tab-content" style="display: none;">
-                        <div id="black-white-list-content" class="settings-form">
-                            <!-- Content loaded dynamically -->
-                        </div>
+                        <div id="black-white-list-content" class="settings-form"></div>
                     </div>
                 </div>
                 
-                <!-- Action Buttons -->
                 <div class="settings-actions">
-                    <button id="save-settings-btn" class="btn btn-primary">Save Changes</button>
+                    <button id="save-settings-btn" class="btn">Save Changes</button>
                     <button id="reset-settings-btn" class="btn btn-secondary">Reset</button>
                 </div>
             </div>

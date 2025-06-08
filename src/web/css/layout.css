@@ -1,8 +1,8 @@
-/* Menu Bar Styles */
+/* Menu Bar */
 .menu-bar {
     background-color: var(--menu-bg);
     width: 100%;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 4px var(--shadow);
     position: fixed;
     top: 0;
     left: 0;
@@ -10,200 +10,191 @@
     z-index: 1000;
     display: flex;
     justify-content: space-between;
+    align-items: center;
+    padding: 0;
+    min-height: 48px;
 }
 
 .menu-bar ul {
-    list-style-type: none;
+    list-style: none;
     margin: 0;
     padding: 0;
-}
-
-.menu-bar > ul {
     display: flex;
+    align-items: center;
 }
 
-.menu-bar > ul > li {
+.menu-bar li {
     position: relative;
 }
 
-.menu-bar a {
+.menu-bar > ul > li > a {
     display: block;
     color: var(--menu-text);
-    text-align: center;
     padding: 14px 16px;
     text-decoration: none;
+    white-space: nowrap;
+    transition: background-color 0.2s ease;
+    cursor: pointer;
 }
 
-.menu-bar > ul > li:hover {
-    background-color: var(--container-bg);
+.menu-bar li:hover > a {
+    background-color: var(--hover-bg);
 }
 
-/* Dropdown Menu */
+/* Fix dropdown positioning and visibility - IMPORTANT CHANGES */
 .dropdown, .submenu {
-    display: none;
+    display: none !important; /* Force hidden by default */
     position: absolute;
     background-color: var(--dropdown-bg);
     min-width: 200px;
-    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    box-shadow: 0 8px 16px var(--shadow);
     z-index: 200;
-}
-
-.dropdown {
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
     top: 100%;
     left: 0;
 }
 
-.dropdown a, .submenu a {
-    color: var(--dropdown-text);
-    padding: 10px 16px;
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: block;
-    line-height: 1.4;
-}
-
-.dropdown a:hover, .submenu a:hover {
-    background-color: rgba(0,0,0,0.1);
-}
-
-.menu-bar > ul > li:hover > .dropdown {
-    display: block;
-}
-
-/* Submenu positioning and display */
-.has-submenu {
-    position: relative;
-}
-
 .submenu {
-    min-width: 100%;
     left: 100%;
     top: 0;
     z-index: 300;
 }
 
+.dropdown a, .submenu a {
+    color: var(--dropdown-text);
+    padding: 12px 16px;
+    display: block;
+    white-space: nowrap;
+    transition: background-color 0.2s ease;
+    border-bottom: 1px solid var(--surface-border);
+    text-decoration: none;
+}
+
+.dropdown a:hover, .submenu a:hover {
+    background-color: var(--hover-bg);
+}
+
+.dropdown li:last-child a, .submenu li:last-child a {
+    border-bottom: none;
+}
+
+/* Show dropdowns on click - Changed from hover to click */
+.dropdown.show,
+.submenu.show {
+    display: block !important;
+}
+
+/* Remove hover-based display */
+/* .menu-bar li:hover > .dropdown,
 .has-submenu:hover > .submenu {
     display: block;
+} */
+
+/* Fix submenu positioning for nested menus */
+.has-submenu {
+    position: relative;
 }
 
-.dropdown.show, .submenu.show {
-    display: block;
+.has-submenu > a::after {
+    content: ' ▶';
+    float: right;
+    margin-left: 10px;
 }
 
-/* Main Container */
+/* Theme switch wrapper positioning */
+.theme-switch-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px;
+    color: var(--menu-text);
+}
+
+/* Adjust body top margin to account for fixed menu */
+body {
+    margin-top: 48px;
+}
+
+/* Main Layout */
 .container {
     max-width: 600px;
     margin: 20px auto;
     background: var(--container-bg);
     padding: 20px;
     border-radius: 5px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 0 10px var(--shadow);
     position: relative;
     z-index: 50;
-    transition: background-color 0.3s ease;
-    padding-top: 15px;
 }
 
-/* Results container */
+/* Results */
 .results-container {
     margin-top: 20px;
-    border: 1px solid var(--results-container-border);
+    border: 1px solid var(--border-color);
     border-radius: 5px;
     padding: 15px;
-    background-color: var(--results-container-bg);
-    transition: background-color 0.3s ease, border-color 0.3s ease;
+    background-color: var(--surface-alt);
 }
 
 .results-container h2 {
-    margin-top: 0;
-    margin-bottom: 15px;
+    margin: 0 0 15px 0;
     font-size: 18px;
-    color: var(--results-heading-color);
-    transition: color 0.3s ease;
 }
 
-.results-table {
+/* Tables */
+.results-table, .details-table, .domain-table {
     width: 100%;
     border-collapse: collapse;
 }
 
-.results-table tr {
-    border-bottom: 1px solid var(--results-row-border);
-    transition: border-color 0.3s ease;
+.results-table td, .details-table td, .domain-table td, .domain-table th {
+    padding: 8px;
+    border-bottom: 1px solid var(--surface-border);
 }
 
-.results-table tr:last-child {
-    border-bottom: none;
-}
-
-.results-table td {
-    padding: 8px 5px;
-    color: var(--text-color);
-    transition: color 0.3s ease;
-}
-
-.results-table td:first-child {
+.results-table td:first-child, .details-table td:first-child {
     font-weight: bold;
-    width: 40%;
+    width: 30%;
 }
 
+.domain-table {
+    background-color: var(--surface-alt);
+    border-radius: 5px;
+}
+
+.domain-table th {
+    text-align: left;
+}
+
+/* Result states */
 .valid-result {
-    color: var(--valid-result-color);
-    transition: color 0.3s ease;
+    color: var(--success-color);
 }
 
 .invalid-result {
-    color: var(--invalid-result-color);
-    transition: color 0.3s ease;
+    color: var(--error-color);
 }
 
-/* Details table */
-.details-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.details-table tr {
-    border-bottom: 1px solid var(--results-container-border);
-}
-
-.details-table tr:last-child {
-    border-bottom: none;
-}
-
-.details-table td {
-    padding: 8px;
-    vertical-align: top;
-}
-
-.details-table td:first-child {
-    font-weight: bold;
-    width: 30%;
-    color: var(--results-heading-color);
-}
-
-/* JSON display area */
+/* JSON display */
 .json-display {
-    background-color: var(--results-container-bg);
+    background-color: var(--surface-alt);
     padding: 10px;
     border-radius: 4px;
     overflow: auto;
     max-height: 400px;
-    color: var(--text-color);
     font-family: monospace;
     white-space: pre-wrap;
-    border: 1px solid var(--results-container-border);
+    border: 1px solid var(--border-color);
 }
 
-/* Initialization page layout */
+/* Initialization page */
 .init-page {
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    padding-top: 0;
 }
 
 .loading-container {
@@ -212,19 +203,18 @@
     background-color: var(--container-bg);
     padding: 20px;
     border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.2);
-    color: var(--text-color);
+    box-shadow: 0 0 10px var(--shadow);
     margin: 0 auto;
 }
 
-/* Settings Panel Layout */
+/* Settings Panel */
 .settings-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.7);
+    background-color: var(--overlay);
     z-index: 1000;
     display: flex;
     justify-content: center;
@@ -234,17 +224,14 @@
 
 .settings-container {
     background-color: var(--container-bg);
-    color: var(--text-color);
-    width: 90%;
+    width: 100%;
     max-width: 1000px;
     max-height: 90vh;
-    height: 90%;
     border-radius: 8px;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 5px 15px var(--shadow);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .settings-header {
@@ -252,7 +239,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 15px 20px;
-    background-color: var(--button-bg);
+    background-color: var(--primary-color);
     color: white;
 }
 
@@ -262,58 +249,49 @@
 }
 
 .settings-content {
-    padding: 20px;
+    padding: 0px 20px 20px 20px; /* Reduced top padding from 20px to 0px */
+    justify-content: space-between;
     overflow-y: auto;
-    max-height: calc(90vh - 60px);
-}
-
-.settings-tabs::-webkit-scrollbar {
-    display: none; /* Hide scrollbar in Chrome/Safari/Edge */
+    flex: 0;
 }
 
 .settings-tabs {
-    scrollbar-width: none; /* Hide scrollbar in Firefox */
     display: flex;
-    border-bottom: 1px solid var(--results-container-border);
     margin-bottom: 20px;
     gap: 5px;
     overflow-x: auto;
-    padding-bottom: 2px;
+    scrollbar-width: none; /* Firefox */
+    justify-content: center; /* Center the tabs */
+    margin-top: 0; /* Remove any top margin */
+    padding-top: 0; /* Remove any top padding */
+    border-bottom: 10px solid var(--container-bg); /* Add space under the red header */
+}
+
+.settings-tabs::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
 }
 
 .settings-tab-btn {
-    background-color: var(--active-color);
-    border: 1px solid var(--border-color);
-    border-bottom: none;
-    border-radius: 4px 4px 0 0;
-    padding: 10px 15px;
-    margin-right: 3px;
+    background-color: var(--surface-bg);
+    border: 0px solid var(--border-color);
+    border-bottom: 2px solid transparent;
+    border-radius: 0px 0px 0 0;
+    padding: 10px 15px; /* Moderate increase */
     cursor: pointer;
-    transition: background-color 0.2s;
     white-space: nowrap;
-    flex-shrink: 0;
     color: var(--text-color);
-    font-weight: normal;
-    border-bottom: 2px solid var(--active-tab);
+    font-size: 14px; /* Ensure consistent font size */
+    line-height: 1.3; /* Tighter line height */
 }
 
-.settings-tab-btn:hover {
-    background-color:var(--active-tab);
-    border-bottom: 2px solid var(--primary-color);
-}
-
+.settings-tab-btn:hover,
 .settings-tab-btn.active {
-    background-color: var(--active-tab);
-    border-bottom: 2px solid var(--primary-color);
-    color: var(--text-color);
+    background-color: var(--surface-bg);
+    border-bottom-color: var(--primary-color);
 }
 
 .settings-tab-content {
     margin-bottom: 30px;
-}
-
-.settings-form {
-    margin-top: 15px;
 }
 
 .settings-actions {
@@ -321,21 +299,30 @@
     justify-content: flex-end;
     padding: 15px 0;
     gap: 10px;
-    border-top: 1px solid var(--results-container-border);
+    border-top: 1px solid var(--border-color);
     margin-top: 20px;
 }
 
-.loader {
-    text-align: center;
-    padding: 20px;
-    font-style: italic;
-    color: var(--text-color);
+/* Domain management */
+.domain-input-container {
+    display: flex;
+    gap: 10px;
+    margin: 15px 0;
+    padding: 15px;
+    background-color: var(--surface-alt);
+    border-radius: 5px;
 }
 
-/* Other layout components */
-.show-more-container {
+.domain-table-container {
+    margin-top: 10px;
+}
+
+/* Utility layouts */
+.show-more-container,
+.empty-list-message {
     text-align: center;
     margin: 15px 0;
+    padding: 20px;
 }
 
 .expanded-details-header {
@@ -348,42 +335,30 @@
     display: none;
 }
 
-/* Domain management layout */
-.domain-input-container {
-    display: flex;
-    gap: 10px;
-    margin: 15px 0;
-    padding: 15px;
-    background-color: var(--results-container-bg);
-    border-radius: 5px;
-}
-
-.domain-table-container {
-    margin-top: 10px;
-}
-
-.domain-table {
-    width: 100%;
-    border-collapse: collapse;
-    background-color: var(--results-container-bg);
-    border-radius: 5px;
-}
-
-.domain-table th,
-.domain-table td {
-    padding: 12px;
-    border-bottom: 1px solid var(--results-container-border);
-}
-
-.domain-table th {
-    text-align: left;
-}
-
-.domain-table .text-center {
-    text-align: center;
-}
-
-.empty-list-message {
+.loader {
     text-align: center;
     padding: 20px;
+    font-style: italic;
+}
+
+.email-input-container {
+    width: 100%;
+}
+
+.input-group-horizontal {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.email-input-wrapper {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    align-items: center;
+}
+
+.email-input-wrapper input {
+    flex: 1; /* This makes the input take all available space */
+    min-width: 0; /* Prevents input from overflowing */
 }

@@ -2,8 +2,10 @@
 /.cache
 /.venv
 /logs
+/dev
 /__pycache__
 /other/pg_tools.7z
+/src/test/__pycache__
 /src/database/__pycache__
 /src/database/key.env
 /src/database/backups

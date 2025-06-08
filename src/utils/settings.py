@@ -453,20 +453,68 @@ def apply_email_filter_regex_preset(preset_id: int):
                 "error": f"Preset with ID {preset_id} not found"
             }
         
-        # Update the current settings with the preset
+        # Check if current nr=1 configuration exists and is not a preset
+        current_config = sync_db.fetchrow(
+            "SELECT name, main_settings, validation_steps, pattern_checks, format_options, "
+            "local_part_options, domain_options, idna_options, regex_pattern "
+            "FROM email_filter_regex_settings WHERE nr = 1"
+        )
+        
+        # If current config exists and is not the same as a preset, backup to next available nr
+        if current_config:
+            # Check if this configuration matches any preset (to avoid duplicating presets)
+            preset_exists = sync_db.fetchrow(
+                """SELECT id FROM email_filter_regex_presets WHERE 
+                   name = $1 AND main_settings_config = $2""",
+                current_config['name'], current_config['main_settings']
+            )
+            
+            if not preset_exists:
+                # Find next available nr
+                max_nr = sync_db.fetchval(
+                    "SELECT COALESCE(MAX(nr), 1) FROM email_filter_regex_settings"
+                )
+                next_nr = max_nr + 1
+                
+                # Backup current configuration before overwriting
+                sync_db.execute(
+                    """INSERT INTO email_filter_regex_settings 
+                       (nr, name, main_settings, validation_steps, pattern_checks, format_options,
+                        local_part_options, domain_options, idna_options, regex_pattern, created_at)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)""",
+                    next_nr, f"Backup of {current_config['name']}", current_config['main_settings'],
+                    current_config['validation_steps'], current_config['pattern_checks'], 
+                    current_config['format_options'], current_config['local_part_options'],
+                    current_config['domain_options'], current_config['idna_options'], 
+                    current_config['regex_pattern']
+                )
+        
+        # Apply the preset to nr=1 (always overwrite the active configuration)
         sync_db.execute(
-            """UPDATE email_filter_regex_settings SET 
-               name = $1, main_settings = $2, validation_steps = $3, pattern_checks = $4,
-               format_options = $5, local_part_options = $6, domain_options = $7,
-               idna_options = $8, regex_pattern = $9, updated_at = NOW() 
-               WHERE nr = 1""",  # Always update the active configuration
+            """INSERT INTO email_filter_regex_settings 
+               (nr, name, main_settings, validation_steps, pattern_checks, format_options,
+                local_part_options, domain_options, idna_options, regex_pattern, created_at)
+               VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+               ON CONFLICT (nr) DO UPDATE SET
+                   name = EXCLUDED.name,
+                   main_settings = EXCLUDED.main_settings,
+                   validation_steps = EXCLUDED.validation_steps,
+                   pattern_checks = EXCLUDED.pattern_checks,
+                   format_options = EXCLUDED.format_options,
+                   local_part_options = EXCLUDED.local_part_options,
+                   domain_options = EXCLUDED.domain_options,
+                   idna_options = EXCLUDED.idna_options,
+                   regex_pattern = EXCLUDED.regex_pattern,
+                   updated_at = CURRENT_TIMESTAMP""",
             preset['name'], preset['main_settings_config'], preset['validation_steps_config'], 
             preset['pattern_checks_config'], preset['format_options_config'], 
             preset['local_part_options_config'], preset['domain_options_config'],
             preset['idna_options_config'], preset['regex_pattern_config']
         )
         
+        logger.info(f"Applied email filter regex preset '{preset['name']}' to active configuration")
         return {"success": True}
+        
     except Exception as e:
         logger.error(f"Error applying email filter regex preset (id={preset_id}): {str(e)}")
         return {
@@ -606,6 +654,102 @@ def get_executor_presets():
         }
     except Exception as e:
         logger.error(f"Error fetching executor presets: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@eel.expose
+def create_new_email_filter_regex_configuration(config_data: Dict[str, Any]):
+    """Create a new email filter regex configuration"""
+    try:
+        import json
+        
+        # Get the next available nr
+        max_nr = sync_db.fetchval(
+            "SELECT COALESCE(MAX(nr), 1) FROM email_filter_regex_settings"
+        )
+        next_nr = max_nr + 1
+        
+        # Convert configuration sections to JSON
+        main_settings_json = json.dumps(config_data['main_settings'])
+        validation_steps_json = json.dumps(config_data['validation_steps'])
+        pattern_checks_json = json.dumps(config_data['pattern_checks'])
+        format_options_json = json.dumps(config_data['format_options'])
+        local_part_options_json = json.dumps(config_data['local_part_options'])
+        domain_options_json = json.dumps(config_data['domain_options'])
+        idna_options_json = json.dumps(config_data['idna_options'])
+        regex_pattern_json = json.dumps(config_data['regex_patterns'])
+        
+        # Insert the new configuration
+        sync_db.execute(
+            """INSERT INTO email_filter_regex_settings 
+               (nr, name, main_settings, validation_steps, pattern_checks, format_options,
+                local_part_options, domain_options, idna_options, regex_pattern, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)""",
+            next_nr, config_data['name'], main_settings_json, validation_steps_json,
+            pattern_checks_json, format_options_json, local_part_options_json,
+            domain_options_json, idna_options_json, regex_pattern_json
+        )
+        
+        logger.info(f"Created new email filter regex configuration '{config_data['name']}' with nr={next_nr}")
+        return {"success": True, "nr": next_nr}
+        
+    except Exception as e:
+        logger.error(f"Error creating new email filter regex configuration: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@eel.expose
+def apply_custom_email_filter_regex(config_id: int):
+    """Apply a custom email filter regex configuration as the active configuration"""
+    try:
+        # Get the custom configuration
+        custom_config = sync_db.fetchrow(
+            """SELECT id, nr, name, main_settings, validation_steps, pattern_checks, format_options,
+               local_part_options, domain_options, idna_options, regex_pattern, description
+               FROM email_filter_regex_settings WHERE id = $1""",
+            config_id
+        )
+        
+        if not custom_config:
+            return {
+                "success": False,
+                "error": f"Custom configuration with ID {config_id} not found"
+            }
+        
+        # Apply the custom config to nr=1 (active configuration)
+        sync_db.execute(
+            """INSERT INTO email_filter_regex_settings 
+               (nr, name, description, main_settings, validation_steps, pattern_checks, format_options,
+                local_part_options, domain_options, idna_options, regex_pattern, created_at)
+               VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+               ON CONFLICT (nr) DO UPDATE SET
+                   name = EXCLUDED.name,
+                   description = EXCLUDED.description,
+                   main_settings = EXCLUDED.main_settings,
+                   validation_steps = EXCLUDED.validation_steps,
+                   pattern_checks = EXCLUDED.pattern_checks,
+                   format_options = EXCLUDED.format_options,
+                   local_part_options = EXCLUDED.local_part_options,
+                   domain_options = EXCLUDED.domain_options,
+                   idna_options = EXCLUDED.idna_options,
+                   regex_pattern = EXCLUDED.regex_pattern,
+                   updated_at = CURRENT_TIMESTAMP""",
+            custom_config['name'], custom_config['description'], custom_config['main_settings'], 
+            custom_config['validation_steps'], custom_config['pattern_checks'], 
+            custom_config['format_options'], custom_config['local_part_options'],
+            custom_config['domain_options'], custom_config['idna_options'], 
+            custom_config['regex_pattern']
+        )
+        
+        logger.info(f"Applied custom email filter configuration '{custom_config['name']}' to active configuration")
+        return {"success": True}
+        
+    except Exception as e:
+        logger.error(f"Error applying custom email filter regex (id={config_id}): {str(e)}")
         return {
             "success": False,
             "error": str(e)

@@ -261,29 +261,42 @@ class DNSManager:
         elif not force_ipv4:
             # Check IPv6 preference if not explicitly using IPv4
             use_ipv6 = self.get_prefer_ipv6()
+    
+        # Get appropriate nameservers from database based on IP version
+        if use_ipv6:
+            # Get IPv6 nameservers specifically
+            nameservers_data = self.get_nameservers_from_db(include_ipv6=True, active_only=True)
+            # Filter to ensure only IPv6 addresses (containing colons)
+            nameserver_ips = [ns['ip_address'] for ns in nameservers_data if ':' in ns['ip_address']]
+            logger.debug(f"Selected {len(nameserver_ips)} IPv6 nameservers from database")
+        else:
+            # Get IPv4 nameservers specifically
+            nameservers_data = self.get_nameservers_from_db(include_ipv6=False, active_only=True)
+            # Filter to ensure only IPv4 addresses (no colons)
+            nameserver_ips = [ns['ip_address'] for ns in nameservers_data if ':' not in ns['ip_address']]
+            logger.debug(f"Selected {len(nameserver_ips)} IPv4 nameservers from database")
         
-        # Get configured nameservers
-        selected_nameservers = self.select_nameservers(count=2)
-        nameserver_used = selected_nameservers[0] if selected_nameservers else None
+        # Use first nameserver for stats tracking
+        nameserver_used = nameserver_ips[0] if nameserver_ips else None
         
         start_time = time.time()
         try:
             if use_ipv6:
-                # Use IPv6 resolver
+                # Use IPv6 resolver with pre-filtered IPv6 nameservers
                 answers = self.ipv6_resolver.resolve(
                     hostname, 
                     record_type,
-                    nameservers=selected_nameservers,
+                    nameservers=nameserver_ips,
                     timeout=self.get_timeout(),
                     use_tcp=self.get_use_tcp(),
                     use_edns=self.get_use_edns()
                 )
             else:
-                # Use IPv4 resolver
+                # Use IPv4 resolver with pre-filtered IPv4 nameservers
                 answers = self.ipv4_resolver.resolve(
                     hostname, 
                     record_type,
-                    nameservers=selected_nameservers,
+                    nameservers=nameserver_ips,
                     timeout=self.get_timeout(),
                     use_tcp=self.get_use_tcp(),
                     use_edns=self.get_use_edns()
@@ -310,18 +323,20 @@ class DNSManager:
                 str(e)
             )
             
+            logger.error(f"DNS resolution failed for {hostname} ({record_type}): {e}")
+
             # Propagate the exception
             raise
 
     def get_nameservers_from_db(self, include_ipv6=None, filter_provider=None, active_only=True) -> List[Dict[str, Any]]:
         """
         Get nameservers from the dns_nameservers table
-    
+
         Args:
             include_ipv6: If True, include IPv6 servers. If False, exclude them. If None, use prefer_ipv6 setting.
             filter_provider: Optional provider name to filter by
             active_only: If True, only return active nameservers
-        
+    
         Returns:
             List of nameserver dictionaries with all their properties
         """
@@ -329,32 +344,35 @@ class DNSManager:
             # Determine IPv6 preference if not specified
             if include_ipv6 is None:
                 include_ipv6 = self.get_prefer_ipv6()
-        
+    
             # Build query conditions
             conditions = []
             params = []
-        
+    
             if active_only:
                 conditions.append("is_active = TRUE")
             
-            if not include_ipv6:
-                conditions.append("version = 'IPv4'")
-            
+            # Set version filter based on IPv6 preference
+            if include_ipv6 is True:
+                conditions.append("version = 'IPv6'")  # Only IPv6
+            elif include_ipv6 is False:
+                conditions.append("version = 'IPv4'")  # Only IPv4
+        
             if filter_provider:
                 conditions.append("provider = $" + str(len(params) + 1))
                 params.append(filter_provider)
-            
+        
             # Build the full query
             query = "SELECT * FROM dns_nameservers"
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
-        
+    
             query += " ORDER BY priority, id"
-        
+    
             # Execute query
             nameservers = sync_db.fetch(query, *params)
-            logger.debug(f"Retrieved {len(nameservers)} nameservers from database")
-        
+            logger.debug(f"Retrieved {len(nameservers)} nameservers from database for version={include_ipv6}")
+    
             return nameservers
         except Exception as e:
             logger.error(f"Failed to retrieve nameservers from database: {e}")
@@ -491,6 +509,3 @@ class DNSManager:
                 raise
             logger.warning(f"Error retrieving setting '{setting_name}', using default: {default_value}")
             return default_value
-    
-    # Prefetch methods and other methods would go here
-    # [Additional prefetch methods, cleanup methods, etc. from the original file]
