@@ -394,6 +394,7 @@ class SMTPValidator:
                 if starttls_response.startswith("220"):
                     # Upgrade to TLS
                     context = ssl.create_default_context()
+                    context.minimum_version = ssl.TLSVersion.TLSv1_2
                     sock = context.wrap_socket(sock, server_hostname=mx_host)
                     
                     # Need to send EHLO again after STARTTLS
