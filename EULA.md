@@ -9,14 +9,22 @@ Contact: kim@skovrasmussen.com
 
 ## 1. License Grant
 
-This software is licensed, **not sold**.  
-You are granted a **non-exclusive, non-transferable, revocable license** to use the software under the following conditions:
+This software is licensed, **not sold**. You are granted a **non-exclusive, non-transferable, revocable license** to use the software under the following conditions:
 
-- **Permitted use**: Academic, and research purposes only.
-- **Prohibited use**: Any commercial use is strictly forbidden without prior written permission from the author.
+**Permitted use**:
+
+- Educational institutions and learning projects  
+- Academic and research purposes only  
+- Internal testing of your own email infrastructure for system-admins  
+
+**Note:** Although this software is free for non-commercial academic use, the author kindly asks that you reach out for written permission before using it. This helps keep track of usage and ensures the software is being used as intended.
+
+**Prohibited use**:
+
+- Any commercial use is strictly forbidden without prior written permission from the author.
 
 ---
-
+ 
 ## 2. Restrictions
 
 You **may not**:
@@ -70,6 +78,7 @@ In no event shall the author be liable for any damages arising out of the use or
 
 ## Summary
 
-**Non-commercial academic use only**  
+**Non-commercial academic use allowed**  
+**Please consider contacting the author before using**  
 **Commercial use requires permission**  
 **No modifications or redistribution of altered versions**

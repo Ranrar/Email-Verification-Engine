@@ -34,6 +34,7 @@ A simple development roadmap for the Email Verification Engine.
 - [ ] POP3 check
 - [ ] Catch-all check
 - [ ] Disposable detection
+- [ ] Encrypt database connection file
 - [ ] Automatic blacklist domain checking
 - [ ] Batch job support (bulk processing)
 
@@ -47,12 +48,12 @@ A simple development roadmap for the Email Verification Engine.
 - [x] Debug and test
 - [x] Light and dark theme
 - [x] Email regex filter configurator
-- [x] Single mail validation (works with all implementet functions above) 
-- [x] system logs
+- [x] Single mail validation (works with all implemented functions above) 
+- [x] System logs
 - [x] Cache stats and hit rates
 - [x] Notification
 - [ ] Statistics page
-- [ ] Server preformense informations page
+- [ ] Server performance information page
 - [ ] Validation report export
 - [ ] Batch job support (bulk processing)
 - [ ] File import for batch

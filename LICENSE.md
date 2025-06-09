@@ -3,7 +3,13 @@
 This software is released under the **Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)** license.
 
 You are free to:
-- **Share** — copy and redistribute the software in **unmodified form** for **academic and research purposes only**.
+
+**Share** — copy and redistribute the software in **unmodified form** for:
+- Educational institutions and learning projects
+- academic and research purposes only
+- Internal testing of your own email infrastructure for system-admins
+
+**Note:** Although this software is free for non-commercial academic use, the author kindly asks that you reach out for written permission before using it. This helps keep track of usage and ensures the software is being used as intended.
 
 You are **not allowed** to:
 - Use this software **for any commercial purposes** (including internal business tools, SaaS, paid consulting, etc.).
