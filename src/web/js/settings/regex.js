@@ -103,7 +103,24 @@ async function loadEmailFilterRegexSettings() {
 }
 
 /**
- * Render email filter regex settings
+ * Escape HTML to prevent XSS attacks
+ * @param {string} unsafe - The unsafe string to escape
+ * @return {string} The escaped string
+ */
+function escapeHtml(unsafe) {
+    if (unsafe === null || unsafe === undefined) {
+        return '';
+    }
+    return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+/**
+ * Render email filter regex settings with proper HTML escaping
  */
 function renderEmailFilterRegexSettings() {
     const container = document.getElementById('email-filter-regex-content');
@@ -117,14 +134,14 @@ function renderEmailFilterRegexSettings() {
                     <option value="">Select filter</option>
                     <optgroup label="Preset filters:">
                         ${emailFilterState.presets.map(preset => 
-                            `<option value="${preset.id}">${preset.name} - ${preset.description || ''}</option>`
+                            `<option value="${escapeHtml(preset.id)}">${escapeHtml(preset.name)} - ${escapeHtml(preset.description || '')}</option>`
                         ).join('')}
                     </optgroup>
                     <optgroup label="Custom filter:">
                         ${emailFilterState.settings
                             .filter(setting => setting.nr >= 2)
                             .map(setting => 
-                                `<option value="custom-${setting.id}">${setting.name}${setting.description ? ' - ' + setting.description : ''}</option>`
+                                `<option value="custom-${escapeHtml(setting.id)}">${escapeHtml(setting.name)}${setting.description ? ' - ' + escapeHtml(setting.description) : ''}</option>`
                             ).join('')}
                     </optgroup>
                 </select>
@@ -140,12 +157,12 @@ function renderEmailFilterRegexSettings() {
                 <h2>Current Active Email Filter Configuration</h2>
                 <div class="email-filter-config-display">
                     <h3 class="email-filter-config-header">
-                        ${activeConfig ? activeConfig.name : 'No active configuration'} 
+                        ${activeConfig ? escapeHtml(activeConfig.name) : 'No active configuration'} 
                         <span class="email-filter-readonly-badge">Read-only</span>
                     </h3>
                     ${activeConfig ? renderConfigurationStructure(activeConfig, true) : '<p>No active configuration found</p>'}
                     <div class="email-filter-config-footer">
-                        Last updated: ${activeConfig ? formatDate(activeConfig.updated_at) : 'N/A'}
+                        Last updated: ${activeConfig ? escapeHtml(formatDate(activeConfig.updated_at)) : 'N/A'}
                     </div>
                 </div>
             </div>`;
@@ -177,6 +194,7 @@ function renderEmailFilterRegexSettings() {
             </div>
         </div>`;
     
+    // Set HTML content safely after escaping all dynamic values
     container.innerHTML = html;
     
     // Apply theme-specific classes after DOM insertion
@@ -209,7 +227,7 @@ function applyThemeClasses() {
 }
 
 /**
- * Render configuration structure using CSS classes
+ * Render configuration structure using CSS classes with proper HTML escaping
  */
 function renderConfigurationStructure(config, readOnly = false) {
     const suffix = readOnly ? '-readonly' : '-new';
@@ -245,11 +263,11 @@ function renderConfigurationStructure(config, readOnly = false) {
     
     return `
         <!-- Main Settings -->
-        <div class="${containerClass}" data-theme="${theme}">
+        <div class="${containerClass}" data-theme="${escapeHtml(theme)}">
             <h4 class="email-filter-section-title">Main Settings</h4>
             <div class="email-filter-grid-2col">
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="strict-mode${suffix}" ${mainSettings.strict_mode ? 'checked' : ''} ${disabled}>
                         <span>Strict Mode</span>
                     </label>
@@ -257,7 +275,7 @@ function renderConfigurationStructure(config, readOnly = false) {
                 </div>
                 <div class="email-filter-field-container">
                     <label class="email-filter-field-label">Basic Format Pattern</label>
-                    <select id="basic-format-pattern${suffix}" ${disabled} class="${inputClass}" data-theme="${theme}">
+                    <select id="basic-format-pattern${suffix}" ${disabled} class="${inputClass}" data-theme="${escapeHtml(theme)}">
                         <option value="basic" ${mainSettings.basic_format_pattern === 'basic' ? 'selected' : ''}>Basic</option>
                         <option value="rfc5322" ${mainSettings.basic_format_pattern === 'rfc5322' ? 'selected' : ''}>RFC 5322</option>
                     </select>
@@ -265,66 +283,66 @@ function renderConfigurationStructure(config, readOnly = false) {
                 </div>
                 <div class="email-filter-field-container">
                     <label class="email-filter-field-label">Max Local Length</label>
-                    <input type="number" id="max-local-length${suffix}" value="${mainSettings.max_local_length || 64}" ${disabled}
-                           class="${inputClass}" data-theme="${theme}">
+                    <input type="number" id="max-local-length${suffix}" value="${escapeHtml(mainSettings.max_local_length || 64)}" ${disabled}
+                           class="${inputClass}" data-theme="${escapeHtml(theme)}">
                     <small class="email-filter-help-text">Maximum characters before @ sign (RFC standard is 64)</small>
                 </div>
                 <div class="email-filter-field-container">
                     <label class="email-filter-field-label">Max Domain Length</label>
-                    <input type="number" id="max-domain-length${suffix}" value="${mainSettings.max_domain_length || 255}" ${disabled}
-                           class="${inputClass}" data-theme="${theme}">
+                    <input type="number" id="max-domain-length${suffix}" value="${escapeHtml(mainSettings.max_domain_length || 255)}" ${disabled}
+                           class="${inputClass}" data-theme="${escapeHtml(theme)}">
                     <small class="email-filter-help-text">Maximum domain length in characters (RFC standard is 255)</small>
                 </div>
                 <div class="email-filter-field-container">
                     <label class="email-filter-field-label">Max Total Length</label>
-                    <input type="number" id="max-total-length${suffix}" value="${mainSettings.max_total_length || 320}" ${disabled}
-                           class="${inputClass}" data-theme="${theme}">
+                    <input type="number" id="max-total-length${suffix}" value="${escapeHtml(mainSettings.max_total_length || 320)}" ${disabled}
+                           class="${inputClass}" data-theme="${escapeHtml(theme)}">
                     <small class="email-filter-help-text">Maximum total email length (RFC standard is 320)</small>
                 </div>
             </div>
         </div>
 
         <!-- Validation Steps -->
-        <div class="${containerClass}" data-theme="${theme}">
+        <div class="${containerClass}" data-theme="${escapeHtml(theme)}">
             <h4 class="email-filter-section-title">Validation Steps</h4>
             <div class="email-filter-grid-3col">
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="basic-format${suffix}" ${validationSteps.basic_format !== false ? 'checked' : ''} ${disabled}>
                         <span>Basic Format</span>
                     </label>
                     <small class="email-filter-help-text">Validates presence of @ symbol and basic structure</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="normalization${suffix}" ${validationSteps.normalization !== false ? 'checked' : ''} ${disabled}>
                         <span>Normalization</span>
                     </label>
                     <small class="email-filter-help-text">Converts to lowercase and removes unnecessary spaces</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="length-limits${suffix}" ${validationSteps.length_limits !== false ? 'checked' : ''} ${disabled}>
                         <span>Length Limits</span>
                     </label>
                     <small class="email-filter-help-text">Enforces length limits on local part, domain, and total email</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="local-part${suffix}" ${validationSteps.local_part !== false ? 'checked' : ''} ${disabled}>
                         <span>Local Part</span>
                     </label>
                     <small class="email-filter-help-text">Validates the part before @ using specified character rules</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="domain${suffix}" ${validationSteps.domain !== false ? 'checked' : ''} ${disabled}>
                         <span>Domain</span>
                     </label>
                     <small class="email-filter-help-text">Validates domain structure including dots and character limits</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="idna${suffix}" ${validationSteps.idna !== false ? 'checked' : ''} ${disabled}>
                         <span>IDNA</span>
                     </label>
@@ -334,25 +352,25 @@ function renderConfigurationStructure(config, readOnly = false) {
         </div>
 
         <!-- Pattern Checks -->
-        <div class="${containerClass}" data-theme="${theme}">
+        <div class="${containerClass}" data-theme="${escapeHtml(theme)}">
             <h4 class="email-filter-section-title">Pattern Checks</h4>
             <div class="email-filter-grid-3col">
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="empty-parts${suffix}" ${patternChecks.empty_parts !== false ? 'checked' : ''} ${disabled}>
                         <span>Empty Parts</span>
                     </label>
                     <small class="email-filter-help-text">Rejects emails with empty local part or domain (e.g., @domain.com)</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="whitespace${suffix}" ${patternChecks.whitespace !== false ? 'checked' : ''} ${disabled}>
                         <span>Whitespace</span>
                     </label>
                     <small class="email-filter-help-text">Detects and rejects emails containing whitespace characters</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="consecutive-dots${suffix}" ${patternChecks.consecutive_dots !== false ? 'checked' : ''} ${disabled}>
                         <span>Consecutive Dots</span>
                     </label>
@@ -362,25 +380,25 @@ function renderConfigurationStructure(config, readOnly = false) {
         </div>
 
         <!-- Format Options -->
-        <div class="${containerClass}" data-theme="${theme}">
+        <div class="${containerClass}" data-theme="${escapeHtml(theme)}">
             <h4 class="email-filter-section-title">Format Options</h4>
             <div class="email-filter-grid-3col">
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="check-empty-parts${suffix}" ${formatOptions.check_empty_parts !== false ? 'checked' : ''} ${disabled}>
                         <span>Check Empty Parts</span>
                     </label>
                     <small class="email-filter-help-text">Verifies both local and domain parts exist and aren't empty</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="check-whitespace${suffix}" ${formatOptions.check_whitespace !== false ? 'checked' : ''} ${disabled}>
                         <span>Check Whitespace</span>
                     </label>
                     <small class="email-filter-help-text">Controls whether to allow or reject whitespace in email address</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="check-pattern${suffix}" ${formatOptions.check_pattern !== false ? 'checked' : ''} ${disabled}>
                         <span>Check Pattern</span>
                     </label>
@@ -390,18 +408,18 @@ function renderConfigurationStructure(config, readOnly = false) {
         </div>
 
         <!-- Local Part Options -->
-        <div class="${containerClass}" data-theme="${theme}">
+        <div class="${containerClass}" data-theme="${escapeHtml(theme)}">
             <h4 class="email-filter-section-title">Local Part Options</h4>
             <div class="email-filter-grid-2col">
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="check-consecutive-dots-local${suffix}" ${localPartOptions.check_consecutive_dots !== false ? 'checked' : ''} ${disabled}>
                         <span>Check Consecutive Dots</span>
                     </label>
                     <small class="email-filter-help-text">Rejects local parts with consecutive dots (..) which are invalid</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="check-chars-strict${suffix}" ${localPartOptions.check_chars_strict ? 'checked' : ''} ${disabled}>
                         <span>Check Characters Strict</span>
                     </label>
@@ -410,32 +428,32 @@ function renderConfigurationStructure(config, readOnly = false) {
                 <div class="email-filter-field-container email-filter-text-input">
                     <label class="email-filter-field-label">Allowed Characters</label>
                     <input type="text" id="allowed-chars-local${suffix}" value="${localPartOptions.allowed_chars || '!#$%&\'*+-/=?^_`{|}~.'}" ${disabled}
-                           class="${inputClass}" data-theme="${theme}">
+                           class="${inputClass}" data-theme="${escapeHtml(theme)}">
                     <small class="email-filter-help-text">Special characters permitted in local part per RFC 5322</small>
                 </div>
             </div>
         </div>
 
         <!-- Domain Options -->
-        <div class="${containerClass}" data-theme="${theme}">
+        <div class="${containerClass}" data-theme="${escapeHtml(theme)}">
             <h4 class="email-filter-section-title">Domain Options</h4>
             <div class="email-filter-grid-2col">
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="require-dot${suffix}" ${domainOptions.require_dot !== false ? 'checked' : ''} ${disabled}>
                         <span>Require Dot</span>
                     </label>
                     <small class="email-filter-help-text">Requires at least one dot in domain (example.com vs localhost)</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="check-hyphens${suffix}" ${domainOptions.check_hyphens !== false ? 'checked' : ''} ${disabled}>
                         <span>Check Hyphens</span>
                     </label>
                     <small class="email-filter-help-text">Prevents domains from starting or ending with hyphens</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="check-consecutive-dots-domain${suffix}" ${domainOptions.check_consecutive_dots !== false ? 'checked' : ''} ${disabled}>
                         <span>Check Consecutive Dots</span>
                     </label>
@@ -444,25 +462,25 @@ function renderConfigurationStructure(config, readOnly = false) {
                 <div class="email-filter-field-container">
                     <label class="email-filter-field-label">Allowed Characters</label>
                     <input type="text" id="allowed-chars-domain${suffix}" value="${domainOptions.allowed_chars || '.-'}" ${disabled}
-                           class="${inputClass}" data-theme="${theme}">
+                           class="${inputClass}" data-theme="${escapeHtml(theme)}">
                     <small class="email-filter-help-text">Characters permitted in domain besides alphanumeric</small>
                 </div>
             </div>
         </div>
 
         <!-- IDNA Options -->
-        <div class="${containerClass}" data-theme="${theme}">
+        <div class="${containerClass}" data-theme="${escapeHtml(theme)}">
             <h4 class="email-filter-section-title">IDNA Options</h4>
             <div class="email-filter-grid-2col">
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="encode-unicode${suffix}" ${idnaOptions.encode_unicode !== false ? 'checked' : ''} ${disabled}>
                         <span>Encode Unicode</span>
                     </label>
                     <small class="email-filter-help-text">Converts international domain names to Punycode (xn--) format</small>
                 </div>
                 <div class="email-filter-field-container">
-                    <label class="${labelClass}" data-theme="${theme}">
+                    <label class="${labelClass}" data-theme="${escapeHtml(theme)}">
                         <input type="checkbox" id="validate-idna${suffix}" ${idnaOptions.validate_idna !== false ? 'checked' : ''} ${disabled}>
                         <span>Validate IDNA</span>
                     </label>

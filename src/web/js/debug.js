@@ -822,7 +822,12 @@ function initializeLogViewer(dialog, today) {
                         // Re-format entry...
                     } else {
                         // Show raw view
-                        this.innerHTML = `<pre class="json-display" style="margin: 0;">${JSON.stringify(rawData, null, 2)}</pre>`;
+                        this.textContent = ''; // Clear existing content
+                        const preElement = document.createElement('pre');
+                        preElement.className = 'json-display';
+                        preElement.style.margin = '0';
+                        preElement.textContent = JSON.stringify(rawData, null, 2);
+                        this.appendChild(preElement);
                         this.classList.add('raw-view');
                     }
                 } catch (e) {
@@ -998,4 +1003,16 @@ async function updateLogMonitoringButton() {
     } catch (error) {
         console.error('Error checking log monitoring status:', error);
     }
+}
+
+/**
+ * Sanitize string for safe display in the UI
+ * @param {string} unsafe - String that might contain unsafe content
+ * @return {string} - Sanitized string safe for textContent
+ */
+function sanitizeContent(unsafe) {
+    if (unsafe === null || unsafe === undefined) {
+        return '';
+    }
+    return String(unsafe);
 }

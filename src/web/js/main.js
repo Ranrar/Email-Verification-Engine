@@ -847,6 +847,23 @@ async function showMarkdownFile(filename) {
 }
 
 /**
+ * Sanitize a string to prevent XSS attacks
+ * @param {string} unsafe - The string to sanitize
+ * @return {string} - Sanitized string safe for insertion into HTML
+ */
+function sanitizeHtml(unsafe) {
+    if (unsafe === null || unsafe === undefined) {
+        return '';
+    }
+    return String(unsafe)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+/**
  * Show message notification - exposed to Python backend
  * @param {string} type_name - The notification type: 'success', 'error', 'warning', 'info'
  * @param {string} message - The message to display
@@ -873,25 +890,36 @@ function show_message(type_name, message, persistent = false, details = null) {
     
     // Create toast element with standard CSS classes
     const toast = document.createElement('div');
-    toast.className = `toast generic-${type_name}`;
+    toast.className = `toast generic-${sanitizeHtml(type_name)}`;
     toast.style.opacity = '1';
     
     if (persistent) {
         toast.setAttribute('data-persistent', 'true');
     }
     
-    // Add message content
-    let content = `<div class="toast-message">${message}</div>`;
+    // Create elements properly instead of using innerHTML
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'toast-message';
+    messageDiv.textContent = message; // Using textContent instead of innerHTML
+    toast.appendChild(messageDiv);
+    
     if (details) {
-        content += `<div class="toast-details" style="font-size: 0.9em; opacity: 0.8; margin-top: 5px;">${details}</div>`;
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'toast-details';
+        detailsDiv.style.fontSize = '0.9em';
+        detailsDiv.style.opacity = '0.8';
+        detailsDiv.style.marginTop = '5px';
+        detailsDiv.textContent = details; // Using textContent instead of innerHTML
+        toast.appendChild(detailsDiv);
     }
     
     // Add close button for persistent toasts
     if (persistent) {
-        content += `<div class="close-icon"></div>`;
+        const closeIcon = document.createElement('div');
+        closeIcon.className = 'close-icon';
+        toast.appendChild(closeIcon);
     }
     
-    toast.innerHTML = content;
     toastContainer.appendChild(toast);
     
     // Handle removal
