@@ -135,6 +135,10 @@ def process_validation_results(result: EmailValidationResult, validation_results
         # Update basic SPF status
         result.spf_status = spf_data.get('spf_result', '')
         
+        # Add error message logging here
+        if spf_data.get("error"):
+            logger.error(f"[{result.trace_id}] SPF permerror: {spf_data['error']}")
+        
         # Store detailed SPF information
         result.spf_details = {
             'valid': spf_data.get('valid', False),
@@ -154,9 +158,18 @@ def process_validation_results(result: EmailValidationResult, validation_results
         elif result.spf_status == 'softfail':
             # Log softfails as debug instead of warning
             logger.debug(f"[{result.trace_id}] SPF {result.spf_status}: {spf_data.get('spf_reason', '')}")
-        elif result.spf_status in ['fail', 'permerror']:
-            # Keep actual failures as warnings
-            logger.warning(f"[{result.trace_id}] SPF {result.spf_status}: {spf_data.get('spf_reason', '')}")
+        elif result.spf_status == 'fail':
+            # SPF fail is a normal result, not a warning - log as info
+            error_msg = spf_data.get('spf_reason', '') or spf_data.get('error', '')
+            logger.info(f"[{result.trace_id}] SPF {result.spf_status}: {error_msg}")
+        elif result.spf_status == 'permerror':
+            # Only permerror should be logged as warning (actual configuration issues)
+            error_msg = spf_data.get('spf_reason', '') or spf_data.get('error', '')
+            logger.warning(f"[{result.trace_id}] SPF {result.spf_status}: {error_msg}")
+        elif result.spf_status in ['temperror', 'none']:
+            # Log these as debug - they're informational
+            error_msg = spf_data.get('spf_reason', '') or spf_data.get('error', '')
+            logger.debug(f"[{result.trace_id}] SPF {result.spf_status}: {error_msg}")
     
     # Legacy DNS security processing
     if 'dns_security' in validation_results:

@@ -22,6 +22,7 @@ Supported SPF Results:
 
 import ipaddress
 import time
+import dns.resolver
 from typing import Dict, List, Any, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -229,41 +230,35 @@ class SPFValidator:
     
     def _get_spf_record(self, domain: str, trace_id: Optional[str] = None) -> Tuple[Optional[str], int]:
         """
-        Get SPF record from DNS TXT records
-        
-        Args:
-            domain: Domain to query
-            trace_id: Optional trace ID for logging
-            
-        Returns:
-            Tuple of (spf_record_string, dns_lookup_count)
+        Get SPF record from DNS TXT records using centralized DNS manager
         """
         # Check cache first
         cache_key = CacheKeys.spf(domain)
         cached_spf = cache_manager.get(cache_key)
         
         if cached_spf:
-            # Verify it's not expired (belt and suspenders approach)
             expires_at = cached_spf.get('expires_at')
             if expires_at:
                 expires_datetime = from_iso8601(expires_at)
                 if expires_datetime and expires_datetime > now_utc():
                     logger.debug(f"[{trace_id}] Cache hit for SPF record of {domain}")
-                    return cached_spf.get('record'), 0  # No DNS lookup needed for cache hit
+                    return cached_spf.get('record'), 0
             logger.debug(f"[{trace_id}] Expired cache entry for {domain}")
         
         # Check rate limits
         is_exceeded, limit_info = self.rate_limit_manager.check_rate_limit('dns', domain, 'txt_lookup')
-        # When rate limit is exceeded:
         if is_exceeded:
-            backoff_time = min(limit_info.get('backoff_seconds', 5), 30)  # Cap at 30 seconds
+            backoff_time = min(limit_info.get('backoff_seconds', 5), 30)
             logger.warning(f"[{trace_id}] Rate limit exceeded for {domain}, backing off for {backoff_time}s")
-            # Consider implementing exponential backoff
             raise Exception(f"Rate limit exceeded for {domain}")
         
         try:
             with EnhancedOperationTimer("spf_dns_lookup", metadata={"domain": domain}) as timer:
-                # Use DNS manager to resolve TXT records
+                # Use the centralized DNS manager which handles:
+                # - IPv4/IPv6 preference
+                # - Nameserver selection from database
+                # - Performance optimization
+                # - Error handling and stats
                 answers = self.dns_manager.resolve(domain, 'TXT')
                 
                 spf_record = None
@@ -271,12 +266,26 @@ class SPFValidator:
                 
                 # Look for SPF record in TXT records
                 for rdata in answers:
-                    # Handle TXT record data - convert to string and clean up
                     txt_data = str(rdata).strip().strip('"')
                     
-                    # Remove any extra quotes or whitespace that might be present
+                    # Clean up the TXT data
                     if txt_data.startswith('"') and txt_data.endswith('"'):
                         txt_data = txt_data[1:-1]
+                    
+                    # Handle multiple quoted strings (concatenate them)
+                    if '" "' in txt_data:
+                        txt_data = txt_data.replace('" "', '')
+                    
+                    # Handle escaped quotes and other malformed content
+                    txt_data = txt_data.replace('\\"', '"')
+                    txt_data = txt_data.strip()
+                    
+                    # Validate that this looks like a legitimate TXT record
+                    if not txt_data or len(txt_data) > 512:
+                        logger.debug(f"[{trace_id}] Skipping invalid TXT record for {domain}: too long or empty")
+                        continue
+                    
+                    logger.debug(f"[{trace_id}] Cleaned TXT record for {domain}: '{txt_data}'")
                     
                     # Check if this is an SPF record
                     if txt_data.lower().startswith('v=spf1'):
@@ -285,7 +294,6 @@ class SPFValidator:
                 # RFC 7208: Multiple SPF records is an error
                 if len(spf_records) > 1:
                     logger.warning(f"[{trace_id}] Multiple SPF records found for {domain}")
-                    # Cache the error result
                     cache_data = {'record': None, 'error': 'Multiple SPF records'}
                     cache_manager.set(cache_key, cache_data, ttl=self.spf_cache_ttl)
                     raise Exception("Multiple SPF records found (RFC 7208 violation)")
@@ -632,50 +640,45 @@ class SPFValidator:
             return False, 1
     
     def _check_mx_record(self, domain: str, ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
-                    trace_id: Optional[str] = None) -> Tuple[bool, int]:
-        """Check if IP matches any MX record IPs for domain""" 
+                        trace_id: Optional[str] = None) -> Tuple[bool, int]:
+        """Check if IP matches any MX record IPs for domain using existing MX infrastructure""" 
         
-        # Check if we already have the result cached
+        # Check cache first
         cache_key = f"spf_mx_check:{domain}:{ip}"
         cached_result = cache_manager.get(cache_key)
         if cached_result is not None:
             logger.debug(f"[{trace_id}] Cache hit for MX check {domain}:{ip}")
-            return cached_result["matches"], 0  # No lookups needed
-        
-        # Consider adding port configuration here if needed:
-        dns_ports = port_manager.get_dns_only_ports()
-        for port_config in dns_ports:
-            if not port_config['enabled']:
-                continue
-            # Use port in DNS resolution if needed
+            return cached_result["matches"], 0
         
         try:
-            # Use MXCacher to leverage existing cached MX records
-            mx_cacher = MXCacher()
-            mx_result = mx_cacher.fetch_and_cache_mx(domain)
+            # Use existing MX infrastructure instead of manual resolution
+            from src.engine.functions.mx import fetch_mx_records
             
-            # Count this as one DNS lookup
+            mx_context = {"email": f"test@{domain}", "trace_id": trace_id}
+            mx_result = fetch_mx_records(mx_context)
+            
+            # Count as one DNS lookup (the MX lookup)
             dns_lookups = 1
-            mx_records = mx_result.get("mx_records", [])
             
-            # Check A/AAAA records for each MX host
-            for mx_record in mx_records:
-                mx_host = mx_record.get('exchange')
-                
-                # Check if we're hitting lookup limit
-                if dns_lookups >= self.max_dns_lookups:
-                    break
-                
-                # Check A/AAAA records for this MX host
-                matches, lookups = self._check_a_record(mx_host, ip, trace_id)
-                dns_lookups += lookups
-                
-                if matches:
-                    # Cache positive result
-                    cache_manager.set(cache_key, {"matches": True}, ttl=300)
-                    return True, dns_lookups
+            if not mx_result.get("valid"):
+                cache_manager.set(cache_key, {"matches": False}, ttl=300)
+                return False, dns_lookups
             
-            # Cache negative result
+            # Check if our IP matches any of the resolved MX IPs
+            ip_addresses = mx_result.get("ip_addresses", {})
+            all_ips = ip_addresses.get("ipv4", []) + ip_addresses.get("ipv6", [])
+            
+            for mx_ip_str in all_ips:
+                try:
+                    mx_ip = ipaddress.ip_address(mx_ip_str)
+                    if mx_ip == ip:
+                        cache_manager.set(cache_key, {"matches": True}, ttl=300)
+                        logger.debug(f"[{trace_id}] SPF MX check: IP {ip} matches MX record IP {mx_ip}")
+                        return True, dns_lookups
+                except ValueError:
+                    continue
+            
+            # No match found
             cache_manager.set(cache_key, {"matches": False}, ttl=300)
             return False, dns_lookups
             
@@ -720,7 +723,15 @@ class SPFValidator:
         """Check PTR record (deprecated mechanism)"""
         try:
             # Get PTR record for IP
-            ptr_name = ip.reverse_pointer
+            if isinstance(ip, ipaddress.IPv4Address):
+                # For IPv4: reverse octets and add .in-addr.arpa
+                octets = str(ip).split('.')
+                ptr_name = '.'.join(reversed(octets)) + '.in-addr.arpa'
+            else:
+                expanded = ip.exploded.replace(':', '')
+                nibbles = [expanded[i] for i in range(len(expanded))]
+                ptr_name = '.'.join(reversed(nibbles)) + '.ip6.arpa'
+            
             ptr_answers = self.dns_manager.resolve(ptr_name, 'PTR')
             dns_lookups = 1
             
@@ -772,6 +783,84 @@ class SPFValidator:
             'lookup_count': lookup_count
         }
 
+def _extract_sender_ip_from_dns(email: str, trace_id: Optional[str] = None) -> Optional[str]:
+    """
+    Extract sender IP from DNS using existing MX infrastructure
+    
+    Args:
+        email: Email address to extract domain from
+        trace_id: Optional trace ID for logging
+        
+    Returns:
+        IP address string or None if not available
+    """
+    try:
+        # Extract domain from email
+        if '@' not in email:
+            return None
+            
+        domain = email.split('@')[-1].lower().strip()
+        
+        logger.debug(f"[{trace_id}] Extracting sender IP from DNS for domain: {domain}")
+        
+        # Use existing MX infrastructure instead of manual DNS resolution
+        from src.engine.functions.mx import fetch_mx_records
+        
+        mx_context = {"email": email, "trace_id": trace_id}
+        mx_result = fetch_mx_records(mx_context)
+        
+        # Check if domain exists
+        if not mx_result.get("valid") and mx_result.get("error") == "Domain does not exist":
+            logger.warning(f"[{trace_id}] Domain {domain} does not exist")
+            return None
+        
+        # Extract IP addresses from MX result
+        ip_addresses = mx_result.get("ip_addresses", {})
+        
+        # Prefer IPv4, fallback to IPv6
+        ipv4_addresses = ip_addresses.get("ipv4", [])
+        if ipv4_addresses:
+            sender_ip = ipv4_addresses[0]
+            logger.info(f"[{trace_id}] Found sender IP from MX infrastructure (IPv4): {sender_ip}")
+            return sender_ip
+        
+        ipv6_addresses = ip_addresses.get("ipv6", [])
+        if ipv6_addresses:
+            sender_ip = ipv6_addresses[0]
+            logger.info(f"[{trace_id}] Found sender IP from MX infrastructure (IPv6): {sender_ip}")
+            return sender_ip
+        
+        # If no MX IPs found, try direct domain resolution
+        dns_manager = DNSManager()
+        
+        # Try A record for domain
+        try:
+            answers = dns_manager.resolve(domain, 'A')
+            if answers:
+                sender_ip = str(answers[0])
+                logger.info(f"[{trace_id}] Found sender IP from direct A record: {sender_ip}")
+                return sender_ip
+        except Exception as e:
+            logger.debug(f"[{trace_id}] Failed to get A record for {domain}: {e}")
+        
+        # Try AAAA record for domain
+        try:
+            answers = dns_manager.resolve(domain, 'AAAA')
+            if answers:
+                sender_ip = str(answers[0])
+                logger.info(f"[{trace_id}] Found sender IP from direct AAAA record: {sender_ip}")
+                return sender_ip
+        except Exception as e:
+            logger.debug(f"[{trace_id}] Failed to get AAAA record for {domain}: {e}")
+        
+        # All methods failed
+        logger.warning(f"[{trace_id}] No sender IP could be extracted from DNS for {domain}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"[{trace_id}] Error extracting sender IP from DNS for {email}: {e}")
+        return None
+
 # Main SPF check function for the validation engine
 def spf_check(context: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -781,7 +870,6 @@ def spf_check(context: Dict[str, Any]) -> Dict[str, Any]:
         context: Dictionary containing:
             - email: Email address being validated
             - trace_id: Optional trace ID for logging
-            - sender_ip: Optional sender IP (defaults to a test IP)
             - helo_domain: Optional HELO domain
     
     Returns:
@@ -789,7 +877,6 @@ def spf_check(context: Dict[str, Any]) -> Dict[str, Any]:
     """
     email = context.get("email", "")
     trace_id = context.get("trace_id", "")
-    sender_ip = context.get("sender_ip", "203.0.113.1")  # RFC 5737 test IP
     helo_domain = context.get("helo_domain", "")
     
     if not email or '@' not in email:
@@ -801,47 +888,61 @@ def spf_check(context: Dict[str, Any]) -> Dict[str, Any]:
             "execution_time": 0
         }
     
-    # Create SPF validator
+    # Extract domain from email BEFORE using it
+    domain = email.split('@')[-1].lower().strip()
+    
+    # Extract sender IP from DNS nameserver response
+    sender_ip = _extract_sender_ip_from_dns(email, trace_id)
+    
+    # Hard fail if no sender IP is available from DNS
+    if not sender_ip:
+        logger.error(f"[{trace_id}] SPF validation failed: No sender IP available from DNS for {email}")
+        return {
+            "valid": False,
+            "error": f"No sender IP available from DNS nameserver response for domain {domain} - SPF validation cannot proceed",
+            "spf_result": "permerror",
+            "spf_record": None,
+            "spf_domain": domain,
+            "execution_time": 0,
+            "dns_lookups": 0,
+            "dns_methods_tried": ["mx_records", "a_record", "aaaa_record"]
+
+        }
+    
+    # Log the sender IP (only in logs, not returned to frontend)
+    logger.info(f"[{trace_id}] Using sender IP from DNS for SPF validation: {sender_ip}")
+    
+    # Initialize SPF validator
     validator = SPFValidator()
     
     # Perform SPF validation
-    result = validator.validate_spf(
-        ip=sender_ip,
-        sender=email,
-        helo=helo_domain,
-        trace_id=trace_id
-    )
-    
-    # Record SPF statistics if we have a trace ID
-    if trace_id:
-        stats = DNSServerStats()  # Get an instance of your statistics class
-        stats.record_spf_statistics(
-            trace_id=trace_id,
-            domain=result.domain,
-            result=result.result,
-            mechanism_matched=result.mechanism_matched,
-            dns_lookups=result.dns_lookups,
-            processing_time_ms=result.processing_time_ms,
-            raw_record=result.record,
-            explanation=result.explanation,
-            error_message="\n".join(result.errors) if result.errors else None,
-            dns_lookup_log=result.dns_lookup_log
-        )
-    
-    # Format result for validation engine
-    return {
-        "valid": result.result == "pass",
-        "spf_result": result.result,
-        "spf_record": result.record,
-        "spf_reason": result.reason,
-        "spf_mechanism_matched": result.mechanism_matched,
-        "spf_dns_lookups": result.dns_lookups,
-        "spf_explanation": result.explanation,
-        "spf_domain": result.domain,
-        "execution_time": result.processing_time_ms,
-        "errors": result.errors,
-        "warnings": result.warnings
-    }
-
-# Export the main function for the validation engine
-__all__ = ['spf_check', 'SPFValidator', 'SPFResult', 'SPFRecord']
+    start_time = time.time()
+    try:
+        spf_result = validator.validate_spf(sender_ip, email, helo_domain, trace_id)
+        execution_time = (time.time() - start_time) * 1000
+        
+        return {
+            "valid": spf_result.result == "pass",
+            "spf_result": spf_result.result,
+            "spf_record": spf_result.record,
+            "spf_reason": spf_result.reason,
+            "spf_mechanism_matched": spf_result.mechanism_matched,
+            "spf_dns_lookups": spf_result.dns_lookups,
+            "spf_explanation": spf_result.explanation,
+            "spf_domain": spf_result.domain,
+            "execution_time": execution_time,
+            "errors": spf_result.errors,
+            "warnings": spf_result.warnings,
+            "dns_lookup_log": spf_result.dns_lookup_log
+        }
+    except Exception as e:
+        execution_time = (time.time() - start_time) * 1000
+        logger.error(f"[{trace_id}] SPF validation error: {str(e)}")
+        return {
+            "valid": False,
+            "error": f"SPF validation error: {str(e)}",
+            "spf_result": "temperror",
+            "spf_record": None,
+            "spf_domain": domain,  # Now domain is properly defined
+            "execution_time": execution_time
+        }
