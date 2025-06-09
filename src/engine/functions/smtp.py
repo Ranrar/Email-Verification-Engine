@@ -337,6 +337,7 @@ class SMTPValidator:
                 # Wrap with SSL if needed
                 if use_ssl:
                     context = ssl.create_default_context()
+                    context.minimum_version = ssl.TLSVersion.TLSv1_2
                     sock = context.wrap_socket(sock, server_hostname=mx_host)
                 
                 # Set default read timeout
