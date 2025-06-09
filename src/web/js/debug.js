@@ -728,7 +728,11 @@ function initializeLogViewer(dialog, today) {
     // Load logs by level and date
     async function loadLogByLevelAndDate() {
         try {
-            logContent.innerHTML = `<p class="text-center text-muted">Loading ${currentLevel} logs for ${currentDate}...</p>`;
+            const safeMessage = document.createElement('p');
+            safeMessage.className = "text-center text-muted";
+            safeMessage.textContent = `Loading ${currentLevel} logs for ${currentDate}...`;
+            logContent.innerHTML = '';
+            logContent.appendChild(safeMessage);
             
             let filename;
             if (currentLevel === 'all') {
@@ -748,7 +752,11 @@ function initializeLogViewer(dialog, today) {
                 }
                 
                 if (!filename) {
-                    logContent.innerHTML = `<p class="text-center text-muted">No log files found for ${currentDate}</p>`;
+                    const safeMessage = document.createElement('p');
+                    safeMessage.className = "text-center text-muted";
+                    safeMessage.textContent = `No log files found for ${currentDate}`;
+                    logContent.innerHTML = '';
+                    logContent.appendChild(safeMessage);
                     return;
                 }
             } else {
@@ -758,7 +766,11 @@ function initializeLogViewer(dialog, today) {
             const result = await eel.debug_action('get-logs', filename)();
             
             if (result.error) {
-                logContent.innerHTML = `<p class="invalid-result text-center">Error: ${result.error}</p>`;
+                const safeMessage = document.createElement('p');
+                safeMessage.className = "invalid-result text-center";
+                safeMessage.textContent = `Error: ${result.error}`;
+                logContent.innerHTML = '';
+                logContent.appendChild(safeMessage);
                 return;
             }
             
@@ -766,7 +778,11 @@ function initializeLogViewer(dialog, today) {
             formatAndDisplayLogContent(rawLogLines);
             filterLogContent();
         } catch (error) {
-            logContent.innerHTML = `<p class="invalid-result text-center">Error loading log file: ${error.message}</p>`;
+            const safeMessage = document.createElement('p');
+            safeMessage.className = "invalid-result text-center";
+            safeMessage.textContent = `Error loading log file: ${error.message}`;
+            logContent.innerHTML = '';
+            logContent.appendChild(safeMessage);
         }
     }
     
