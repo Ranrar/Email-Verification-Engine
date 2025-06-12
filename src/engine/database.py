@@ -87,6 +87,7 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
     domain_info = data.get("domain_check", {})
     infrastructure_info = data.get("infrastructure_info", {})
     spf_details = data.get("spf_details", {})
+    dmarc_details = data.get("dmarc_details", {})
     
     # Make sure it includes full SPF details from the validation
     if isinstance(spf_details, dict) and data.get("spf_result"):
@@ -100,6 +101,21 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
             "errors": data.get("errors", []),
             "warnings": data.get("warnings", []),
             "dns_lookup_log": data.get("dns_lookup_log", [])
+        })
+    
+    # Make sure it includes full DMARC details from the validation
+    if isinstance(dmarc_details, dict) and data.get("dmarc_status"):
+        # Ensure we have a full set of DMARC details
+        dmarc_details.update({
+            "policy": data.get("dmarc_status", "none"),
+            "has_dmarc": data.get("has_dmarc", False),
+            "policy_strength": data.get("policy_strength", "none"),
+            "alignment_mode": data.get("alignment_mode", ""),
+            "percentage_covered": data.get("percentage_covered", 0),
+            "aggregate_reporting": data.get("aggregate_reporting", False),
+            "forensic_reporting": data.get("forensic_reporting", False),
+            "organizational_domain": data.get("organizational_domain", ""),
+            "recommendations": data.get("recommendations", [])
         })
     
     return {

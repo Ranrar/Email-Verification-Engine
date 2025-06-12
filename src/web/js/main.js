@@ -58,6 +58,18 @@ function initializeModules() {
         }
     }
     
+    // Initialize DmarcAnalyzer
+    if (window.DmarcAnalyzer) {
+        const dmarcAnalyzer = new DmarcAnalyzer();
+        if (dmarcAnalyzer.init()) {
+            console.log('DmarcAnalyzer initialized successfully');
+            // Store the instance
+            window.dmarcAnalyzer = dmarcAnalyzer;
+        } else {
+            console.error('Failed to initialize DmarcAnalyzer');
+        }
+    }
+    
     // Settings module is initialized when needed
 }
 

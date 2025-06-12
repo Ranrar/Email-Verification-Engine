@@ -167,6 +167,9 @@ class ResultsDisplay {
         // Security & Authentication
         this.populateSecurityDetails(data);
         
+        // DMARC Analysis
+        this.populateDMARCAnalysis(data);
+        
         // Timing & Performance
         this.populateTimingDetails(data);
     }
@@ -424,6 +427,52 @@ class ResultsDisplay {
         } else {
             this.addTableRow(securityTable, 'Security Details', 'No security data available');
         }
+    }
+
+    /**
+     * Populate DMARC analysis section
+     * @param {Object} data - Validation details data
+     */
+    populateDMARCAnalysis(data) {
+        // Check if we have domain info
+        if (!data || !data.email_validation_record || !data.email_validation_record.domain) return;
+        
+        const domain = data.email_validation_record.domain;
+        
+        // Initialize DMARC analyzer if needed
+        if (!window.dmarcAnalyzer) {
+            if (window.DmarcAnalyzer) {
+                window.dmarcAnalyzer = new DmarcAnalyzer();
+                window.dmarcAnalyzer.init();
+            } else {
+                console.error('DmarcAnalyzer class not found');
+                return;
+            }
+        }
+        
+        // Set loading state
+        const dmarcLoading = document.getElementById('dmarcLoading');
+        const dmarcDetails = document.getElementById('dmarcDetails');
+        
+        if (dmarcLoading) dmarcLoading.style.display = 'block';
+        if (dmarcDetails) dmarcDetails.innerHTML = '';
+        
+        // Analyze domain and display results
+        window.dmarcAnalyzer.analyzeDomain(domain)
+            .then(dmarcInfo => {
+                window.dmarcAnalyzer.displayResults(dmarcInfo);
+            })
+            .catch(error => {
+                console.error('Error analyzing DMARC:', error);
+                // Display error in DMARC section
+                if (dmarcDetails) {
+                    dmarcDetails.innerHTML = `
+                        <div class="message error">
+                            <strong>Error:</strong> Failed to analyze DMARC
+                        </div>
+                    `;
+                }
+            });
     }
 
     /**

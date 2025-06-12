@@ -1,5 +1,6 @@
 # .gitignore
 /.cache
+/.temp
 /.venv
 /logs
 /dev
@@ -14,3 +15,4 @@
 /src/helpers/__pycache__
 /src/engine/__pycache__
 /src/engine/functions/__pycache__
+src/engine/functions/dkim.py

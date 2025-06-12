@@ -134,6 +134,22 @@ class EmailValidationResult:
             'execution_time': 0
         }
         
+        # Detailed DMARC information
+        self.dmarc_details = {
+            'valid': False,
+            'has_dmarc': False,
+            'policy': 'none',
+            'policy_strength': 'none',
+            'alignment_mode': '',
+            'percentage_covered': 0,
+            'aggregate_reporting': False,
+            'forensic_reporting': False, 
+            'organizational_domain': '',
+            'recommendations': [],
+            'record': '',
+            'execution_time': 0
+        }
+        
         # SMTP validation - update to include all required fields
         self.smtp_result = False      # Overall SMTP validation result
         self.smtp_banner = ''         # SMTP server banner

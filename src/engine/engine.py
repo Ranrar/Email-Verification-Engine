@@ -65,8 +65,10 @@ class EmailValidationEngine:
         logger.debug(f"[{trace_id}] Protected {len(protected_keys)} cache keys for {email}")
         
         try:
-            logger.info(f"[{trace_id}] Starting validation for {email}")
-            
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.info("=" * 20 + "[ Starting validation ]" + "=" * 20)
+            logger.info(f"{trace_id} | {email} | {current_time}")
+                        
             # Check cache for existing validation results
             if use_cache:
                 cache_key = CacheKeys.validation_result(email)  # Use proper CacheKeys method
@@ -172,6 +174,14 @@ class EmailValidationEngine:
                             spf_record = spf_record[:37] + "..."
                         validation_details.append(f"\"spf_record\": \"{spf_record}\"")
                 
+                # Add DMARC details
+                if result.dmarc_status:
+                    validation_details.append(f"\"dmarc\": {{\"policy\": \"{result.dmarc_status}\", \"has_dmarc\": {str(result.dmarc_details.get('has_dmarc', False)).lower()}}}")
+                    
+                    # Add policy strength if available
+                    if result.dmarc_details.get('policy_strength'):
+                        validation_details.append(f"\"dmarc_strength\": \"{result.dmarc_details.get('policy_strength')}\"")
+                
                 if validation_details:
                     logger.info(f"[{trace_id}] VALIDATION_DETAILS {{{', '.join(validation_details)}}}")
                     
@@ -197,8 +207,10 @@ class EmailValidationEngine:
                 result_dict = result.to_dict()
                 cache_manager.set(cache_key, result_dict, ttl=ttl)
                 logger.debug(f"[trace_id] Cached validation result for {email} with TTL {ttl}s")
-            
-                logger.info(f"[{trace_id}] Validation process completed for {email} with score {result.confidence_score}")
+
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                logger.info("=" * 20 + "[ Validation completed ]" + "=" * 20)
+                logger.info(f"{trace_id} | {email} | {current_time} | {result.confidence_score}")
             
             # Log SMTP details - always log them regardless of result
             # Remove the condition that checks for result.smtp_details
@@ -227,7 +239,10 @@ class EmailValidationEngine:
             return result.to_dict()
             
         except Exception as e:
-            logger.error(f"[{trace_id}] Validation failed: {str(e)}", exc_info=True)
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.info("=" * 20 + "[ Validation failed ]" + "=" * 20)
+            logger.info(f"{trace_id} | {email} | {current_time}")
+            logger.info(f"Error: {str(e)}", exc_info=True)
             raise
         finally:
             # Always unprotect keys, even if an error occurred

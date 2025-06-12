@@ -477,3 +477,100 @@ class DNSServerStats:
                     
         except Exception as e:
             logger.warning(f"Failed to update SPF DNS stats for {domain}/{mechanism_type}: {e}")
+
+    def record_dmarc_statistics(self, trace_id: str, domain: str, result: str, 
+                           policy_strength: str, dns_lookups: int, processing_time_ms: float,
+                           raw_record: Optional[str] = None, has_reporting: bool = False,
+                           alignment_mode: str = "relaxed", error_message: Optional[str] = None):
+        """
+        Record DMARC validation statistics
+    
+        Args:
+            trace_id: Validation trace ID
+            domain: The domain that was checked
+            result: DMARC policy result (none, quarantine, reject)
+            policy_strength: Policy strength assessment (none, weak, moderate, strong)
+            dns_lookups: Number of DNS lookups performed
+            processing_time_ms: Processing time in milliseconds
+            raw_record: Raw DMARC record text
+            has_reporting: Whether aggregate or forensic reporting is configured
+            alignment_mode: Alignment mode (relaxed, strict)
+            error_message: Optional error message
+        """
+        try:
+            # Insert main DMARC validation statistics
+            dmarc_validation_id = sync_db.fetchval(
+                """
+                INSERT INTO dmarc_validation_statistics 
+                (trace_id, domain, raw_record, policy, policy_strength, 
+                 dns_lookups, processing_time_ms, has_reporting, alignment_mode, error_message)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                RETURNING id
+                """,
+                trace_id, domain, raw_record, result, policy_strength,
+                dns_lookups, processing_time_ms, has_reporting, alignment_mode, error_message
+            )
+            
+            logger.debug(f"[{trace_id}] DMARC statistics recorded: domain={domain}, "
+                        f"policy={result}, strength={policy_strength}, "
+                        f"dns_lookups={dns_lookups}, time={processing_time_ms}ms")
+    
+        except Exception as e:
+            logger.error(f"[{trace_id}] Failed to record DMARC statistics for {domain}: {str(e)}")
+
+    def store_dmarc_analysis(self, domain: str, result: dict, trace_id: str):
+        """
+        Store DMARC analysis results for reporting and analytics
+        
+        Args:
+            domain: The domain that was checked
+            result: DMARC validation result object
+            trace_id: Validation trace ID
+        """
+        try:
+            # Check if the table exists before trying to insert
+            table_check = sync_db.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'dmarc_validation_history'
+                )
+            """)
+            
+            if table_check and table_check[0][0]:  # Table exists
+                import json
+                from src.managers.time import now_utc
+                
+                sync_db.execute("""
+                    INSERT INTO dmarc_validation_history 
+                    (domain, policy, policy_strength, alignment_mode, percentage_covered,
+                     aggregate_reporting, forensic_reporting, dns_lookups, processing_time_ms,
+                     errors, warnings, recommendations, trace_id, validated_at, validation_date)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_DATE)
+                    ON CONFLICT (domain, validation_date) 
+                    DO UPDATE SET
+                        policy = EXCLUDED.policy,
+                        policy_strength = EXCLUDED.policy_strength,
+                        last_validated_at = EXCLUDED.validated_at
+                """,
+                    domain, 
+                    result.get('policy', 'none'), 
+                    result.get('policy_strength', 'none'), 
+                    result.get('alignment_mode', 'relaxed'),
+                    result.get('percentage_covered', 0), 
+                    result.get('aggregate_reporting', False), 
+                    result.get('forensic_reporting', False),
+                    result.get('dns_lookups', 0), 
+                    result.get('execution_time_ms', 0),
+                    json.dumps(result.get('errors', [])), 
+                    json.dumps(result.get('warnings', [])), 
+                    json.dumps(result.get('recommendations', [])), 
+                    trace_id, 
+                    now_utc()
+                )
+                logger.debug(f"[{trace_id}] DMARC analysis stored in database: {domain} -> {result.get('policy', 'none')}")
+            else:
+                # Table doesn't exist, just log the analysis
+                logger.debug(f"[{trace_id}] DMARC analysis table not found: {domain} -> {result.get('policy', 'none')}")
+                
+        except Exception as e:
+            logger.warning(f"[{trace_id}] Failed to store DMARC analysis: {e}")

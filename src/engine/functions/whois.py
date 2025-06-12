@@ -8,12 +8,14 @@ This module provides functionality to:
 2. Update geographic information for domains
 3. Detect email service providers based on MX patterns
 4. Maintain provider mapping database
+5. Extract organizational domains for DMARC/DKIM validation
 """
 
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 from src.managers.log import Axe
 from src.helpers.dbh import sync_db
+from src.managers.cache import cache_manager
 
 # Initialize logging
 logger = Axe()
@@ -35,8 +37,169 @@ class DomainInfoExtractor:
         'mail.ru': r'mail\.ru'
     }
     
+    # Known public domain services where subdomains are organizational domains
+    PUBLIC_SERVICES = {
+        'github.io': 3,      # user.github.io
+        'herokuapp.com': 3,  # app.herokuapp.com
+        'azurewebsites.net': 3,  # app.azurewebsites.net
+        'appspot.com': 3,    # app.appspot.com
+        'cloudfront.net': 3, # distribution.cloudfront.net
+        'amazonaws.com': 3,  # bucket.s3.amazonaws.com (simplified)
+        'netlify.app': 3,    # site.netlify.app
+        'vercel.app': 3,     # app.vercel.app
+        'surge.sh': 3,       # site.surge.sh
+        'now.sh': 3,         # app.now.sh
+        'firebaseapp.com': 3 # app.firebaseapp.com
+    }
+    
+    def __init__(self):
+        """Initialize the domain info extractor with PSL cache"""
+        self._psl_cache = set()  # Initialize as an empty set to match return type
+        self._psl_loaded = False
+        
+        # Fallback multi-part TLDs (used if database lookup fails)
+        self._fallback_tlds = {
+            'co.uk', 'org.uk', 'com.au', 'co.nz', 'co.jp', 'co.kr', 
+            'co.in', 'co.za', 'com.br', 'com.mx', 'com.ar', 'com.co',
+            'org.pl', 'com.sg'
+        }
+
+    def _load_public_suffix_list(self) -> Set[str]:
+        """
+        Load the Public Suffix List from the database with caching
+        
+        Returns:
+            Set of public suffixes
+        """
+        # Check if already loaded in memory
+        if self._psl_loaded and self._psl_cache:
+            return self._psl_cache
+            
+        # Try to get from cache first
+        cache_key = "public_suffix_list:all"
+        cached_suffixes = cache_manager.get(cache_key)
+        if cached_suffixes:
+            self._psl_cache = cached_suffixes
+            self._psl_loaded = True
+            logger.debug(f"Loaded {len(cached_suffixes)} public suffixes from cache")
+            return cached_suffixes
+        
+        # If not in cache, load from database
+        try:
+            suffixes = set()
+            
+            # Query all suffixes from database
+            results = sync_db.fetch(
+                """
+                SELECT suffix, is_wildcard, is_exception
+                FROM public_suffix_list
+                """
+            )
+            
+            for row in results:
+                suffix = row['suffix']
+                # Handle wildcard entries (like *.uk)
+                if row['is_wildcard']:
+                    # Store without the *. prefix for easier matching
+                    suffix = suffix[2:] if suffix.startswith("*.") else suffix
+                    
+                # Exception rules are handled separately
+                if not row['is_exception']:
+                    suffixes.add(suffix)
+            
+            # Store in cache
+            cache_manager.set(cache_key, suffixes, ttl=3600*24)  # 24 hours cache
+            
+            self._psl_cache = suffixes
+            self._psl_loaded = True
+            logger.info(f"Loaded {len(suffixes)} public suffixes from database")
+            return suffixes
+            
+        except Exception as e:
+            logger.warning(f"Failed to load public suffix list from database: {e}")
+            self._psl_loaded = False
+            return self._fallback_tlds
+
+    def extract_organizational_domain(self, domain: str) -> str:
+        """
+        Extract the organizational domain for DMARC/DKIM purposes using Public Suffix List
+        
+        This method determines the organizational domain (the domain at which
+        DMARC and DKIM policies should be published) according to RFC 7489.
+        
+        Examples:
+        - mail.example.com → example.com
+        - subdomain.example.co.uk → example.co.uk
+        - app.github.io → app.github.io (special case)
+        
+        Args:
+            domain: Full domain name
+            
+        Returns:
+            Organizational domain suitable for DMARC/DKIM policy lookup
+        """
+        try:
+            if not domain:
+                return domain
+                
+            # Normalize domain
+            domain = domain.lower().strip()
+            parts = domain.split('.')
+            
+            if len(parts) < 2:
+                return domain
+            
+            # Handle single-label domains (shouldn't happen in practice)
+            if len(parts) == 1:
+                return domain
+            
+            # Special handling for public domain services
+            special_domain = self._get_special_domain_rules(domain, parts)
+            if special_domain:
+                return special_domain
+                
+            # Load public suffix list if needed
+            public_suffixes = self._load_public_suffix_list()
+            
+            # Iterate through the domain parts to find matching TLD
+            for i in range(len(parts)):
+                # Try increasingly longer suffix combinations
+                potential_suffix = '.'.join(parts[i:])
+                if potential_suffix in public_suffixes:
+                    # If we found a match and there's at least one label before it
+                    if i > 0:
+                        # Return the registrable domain (domain + public suffix)
+                        return '.'.join(parts[i-1:])
+            
+            # Default case: return domain.tld format (last two parts)
+            return '.'.join(parts[-2:])
+            
+        except Exception as e:
+            logger.warning(f"Error extracting organizational domain from {domain}: {e}")
+            return domain
+    
+    def _get_special_domain_rules(self, domain: str, parts: List[str]) -> Optional[str]:
+        """
+        Handle special cases for public domain services where subdomains
+        should be treated as organizational domains
+        
+        Examples:
+        - user.github.io → user.github.io (not github.io)
+        - app.herokuapp.com → app.herokuapp.com (not herokuapp.com)
+        """
+        # Check if domain matches a public service pattern
+        if len(parts) >= 3:
+            service_domain = '.'.join(parts[-2:])  # e.g., github.io
+            if service_domain in self.PUBLIC_SERVICES:
+                required_parts = self.PUBLIC_SERVICES[service_domain]
+                if len(parts) >= required_parts:
+                    return '.'.join(parts[-(required_parts):])
+        
+        return None
+    
     def update_geographic_info(self, domain: str, country_code=None, region=None, provider=None):
         """Update geographic information for a domain"""
+        # Method implementation remains unchanged
         if not (country_code or region or provider):
             return
         
@@ -74,15 +237,8 @@ class DomainInfoExtractor:
             logger.warning(f"Failed to update geographic info for {domain}: {e}")
     
     def extract_provider_info(self, mx_records: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Extract provider information from MX records
-        
-        Args:
-            mx_records: List of MX record dictionaries with 'exchange' field
-            
-        Returns:
-            Dictionary with provider information
-        """
+        """Extract provider information from MX records"""
+        # Method implementation remains unchanged
         result = {
             'provider': None,
             'is_custom_domain': True,
@@ -110,15 +266,8 @@ class DomainInfoExtractor:
         return result
     
     def detect_provider_from_mx(self, mx_host: str) -> Optional[str]:
-        """
-        Detect email provider from MX hostname
-        
-        Args:
-            mx_host: MX server hostname
-            
-        Returns:
-            Provider name if detected, None otherwise
-        """
+        """Detect email provider from MX hostname"""
+        # Method implementation remains unchanged
         mx_host = mx_host.lower()
         
         # Check against known patterns
@@ -144,7 +293,7 @@ class DomainInfoExtractor:
             logger.warning(f"Error detecting provider from database: {e}")
             
         return None
-        
+
 def _extract_geographic_info(validator, context: Dict[str, Any], domain: str, mx_records: List[Dict[str, Any]]) -> None:
     """Extract and update geographic information from MX records"""
     # Type checking using runtime isinstance instead of static typing

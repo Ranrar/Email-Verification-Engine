@@ -67,10 +67,10 @@ INSERT INTO email_validation_functions (function_name, display_name, description
 ('mx_records', 'MX Records', 'Checks for valid mail exchanger records', 30, True, 'src.engine.functions.mx', 'fetch_mx_records'),
 ('whois_info', 'WHOIS Information', 'Retrieves domain registration information', 35, true, 'src.engine.functions.mx', 'fetch_whois_info'), --whois.py not done
 ('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_smtp'),
-('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.spf', 'spf_check')
+('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.spf', 'spf_check'),
+('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.dmarc', 'dmarc_check')
 -- not implementet yet
 -- ('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.2', '2'),
--- ('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.3', '3'),
 -- ('catch_all_check', 'Catch-All Detection', 'Checks if domain accepts all emails', 80, true, 'src.engine.functions.4', '4'),
 -- ('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.5', '5'),
 -- ('pop3_check', 'POP3 Verification', 'Checks if domain has POP3 service', 100, true, 'src.engine.functions.6', '6'),
@@ -92,8 +92,8 @@ INSERT INTO email_validation_function_dependencies (function_name, depends_on) V
 ('whois_info', 'email_format_resaults'),
 ('smtp_validation', 'mx_records'),
 ('spf_check', 'mx_records'),
+('dmarc_check', 'mx_records'),
 -- ('dkim_check', 'mx_records'),
--- ('dmarc_check', 'mx_records'),
 -- ('catch_all_check', 'smtp_validation'),
 -- ('imap_check', 'mx_records'),
 -- ('pop3_check', 'mx_records'),
@@ -156,7 +156,8 @@ CREATE TABLE IF NOT EXISTS email_validation_records (
     spf_details JSONB,
     dkim_status TEXT,
     dmarc_status TEXT,
-    server_policies TEXT,
+    dmarc_details JSONB,
+    server_policies JSONB,
     disposable TEXT, --change to booleen
     blacklist_info TEXT, -- rename?
     error_message TEXT, --maby What error?
@@ -212,6 +213,8 @@ INSERT INTO validation_scoring (check_name, score_value, is_penalty, description
 ('disposable', 10, TRUE, 'Email is from a disposable provider'),
 ('blacklisted', 15, TRUE, 'Domain is blacklisted'),
 ('mx_records', 20, FALSE, 'Domain has valid MX records'),
+('dmarc_found', 5, FALSE, 'Domain has DMARC record'),
+('dmarc_strong_policy', 5, FALSE, 'Domain has strong DMARC policy'),
 ('spf_found', 5, FALSE, 'Domain has SPF record'),
 ('dkim_found', 5, FALSE, 'Domain has DKIM record'),
 ('smtp_connection', 30, FALSE, 'SMTP connection successful'),
@@ -565,6 +568,43 @@ CREATE TABLE IF NOT EXISTS dns_server_stats (
     UNIQUE(nameserver, query_type)
 );
 
+CREATE TABLE IF NOT EXISTS dmarc_validation_statistics (
+    id SERIAL PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    domain VARCHAR(255) NOT NULL,
+    raw_record TEXT,
+    policy VARCHAR(20) NOT NULL,
+    policy_strength VARCHAR(20) NOT NULL,
+    dns_lookups INTEGER DEFAULT 0,
+    processing_time_ms NUMERIC(10,3) DEFAULT 0,
+    has_reporting BOOLEAN DEFAULT FALSE,
+    alignment_mode VARCHAR(10) DEFAULT 'relaxed',
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Table for storing DMARC validation history with daily granularity per domain
+CREATE TABLE IF NOT EXISTS dmarc_validation_history (
+    id SERIAL PRIMARY KEY,
+    domain VARCHAR(255) NOT NULL,
+    policy VARCHAR(20) NOT NULL,
+    policy_strength VARCHAR(20) NOT NULL,
+    alignment_mode VARCHAR(10),
+    percentage_covered INTEGER,
+    aggregate_reporting BOOLEAN DEFAULT FALSE,
+    forensic_reporting BOOLEAN DEFAULT FALSE,
+    dns_lookups INTEGER DEFAULT 0,
+    processing_time_ms NUMERIC(10,3) DEFAULT 0,
+    errors JSONB,
+    warnings JSONB,
+    recommendations JSONB,
+    trace_id TEXT,
+    validated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    validation_date DATE DEFAULT CURRENT_DATE,
+    last_validated_at TIMESTAMPTZ,
+    CONSTRAINT unique_domain_daily UNIQUE(domain, validation_date)
+);
+
 -- email_filter_regex_presets
 CREATE TABLE IF NOT EXISTS email_filter_regex_presets (
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -872,6 +912,50 @@ CREATE TABLE IF NOT EXISTS spf_dns_lookup_log (
         REFERENCES spf_validation_statistics(id)
 );
 
+-- Table for storing Public Suffix List entries
+CREATE TABLE IF NOT EXISTS public_suffix_list (
+    id SERIAL PRIMARY KEY,
+    suffix TEXT NOT NULL,              -- The domain suffix itself (e.g., "com.ac")
+    is_wildcard BOOLEAN DEFAULT FALSE, -- Whether it's a wildcard entry (e.g., "*.ck")
+    is_exception BOOLEAN DEFAULT FALSE,-- Whether it's an exception entry (e.g., "!www.ck")
+    category TEXT NOT NULL,            -- 'ICANN' or 'PRIVATE' domain
+    country_code TEXT,                 -- Country code if applicable (e.g., "ac" for Ascension Island)
+    organization TEXT,                 -- Organization maintaining the domain
+    source_url TEXT,                   -- Source URL mentioned in comments
+    description TEXT,                  -- Additional information from comments
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(suffix)
+);
+
+-- Create indexes for efficient lookups
+CREATE INDEX IF NOT EXISTS idx_public_suffix_list_suffix ON public_suffix_list(suffix);
+CREATE INDEX IF NOT EXISTS idx_public_suffix_list_category ON public_suffix_list(category);
+CREATE INDEX IF NOT EXISTS idx_public_suffix_list_country ON public_suffix_list(country_code);
+
+-- Version tracking table to manage updates from the official source
+CREATE TABLE IF NOT EXISTS public_suffix_list_version (
+    id SERIAL PRIMARY KEY,
+    version TEXT,
+    import_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    source_url TEXT NOT NULL DEFAULT 'https://publicsuffix.org/list/public_suffix_list.dat',
+    entry_count INTEGER NOT NULL
+);
+
+-- Function to update timestamp when record is updated
+CREATE OR REPLACE FUNCTION update_psl_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to update timestamp
+CREATE TRIGGER update_public_suffix_list_timestamp
+BEFORE UPDATE ON public_suffix_list
+FOR EACH ROW EXECUTE FUNCTION update_psl_timestamp();
+
 -- =============================================
 -- Functions
 -- =============================================
@@ -1075,9 +1159,44 @@ CREATE INDEX IF NOT EXISTS idx_spf_validation_trace_id ON spf_validation_statist
 CREATE INDEX IF NOT EXISTS idx_spf_validation_domain ON spf_validation_statistics(domain);
 CREATE INDEX IF NOT EXISTS idx_spf_validation_result ON spf_validation_statistics(result);
 CREATE INDEX IF NOT EXISTS idx_spf_dns_lookup_validation ON spf_dns_lookup_log(spf_validation_id);
+
+--DMARC
+CREATE INDEX IF NOT EXISTS idx_dmarc_validation_stats_domain ON dmarc_validation_statistics(domain);
+CREATE INDEX IF NOT EXISTS idx_dmarc_validation_stats_trace_id ON dmarc_validation_statistics(trace_id);
+CREATE INDEX IF NOT EXISTS idx_dmarc_validation_stats_created_at ON dmarc_validation_statistics(created_at);
+CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_domain ON dmarc_validation_history(domain);
+CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_policy ON dmarc_validation_history(policy);
+CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_strength ON dmarc_validation_history(policy_strength);
+CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_trace ON dmarc_validation_history(trace_id);
+CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_date ON dmarc_validation_history(validated_at);
+
 -- =============================================
 -- View
 -- =============================================
+
+-- View for DMARC trend analysis
+CREATE OR REPLACE VIEW dmarc_policy_analysis AS
+SELECT 
+    d.domain,
+    d.policy,
+    d.policy_strength,
+    d.alignment_mode,
+    d.percentage_covered,
+    d.aggregate_reporting,
+    d.forensic_reporting,
+    d.dns_lookups,
+    d.processing_time_ms,
+    COUNT(*) OVER (PARTITION BY d.domain) as validation_count,
+    FIRST_VALUE(d.validated_at) OVER (PARTITION BY d.domain ORDER BY d.validated_at DESC) as last_validation,
+    FIRST_VALUE(d.validated_at) OVER (PARTITION BY d.domain ORDER BY d.validated_at ASC) as first_validation,
+    CASE 
+        WHEN d.policy = 'reject' AND d.percentage_covered = 100 THEN 'Excellent'
+        WHEN d.policy = 'quarantine' AND d.percentage_covered >= 75 THEN 'Good'
+        WHEN d.policy = 'none' OR d.percentage_covered < 50 THEN 'Needs Improvement'
+        ELSE 'Fair'
+    END as security_rating
+FROM dmarc_validation_history d
+ORDER BY d.domain, d.validated_at DESC;
 
 -- Validation Pipeline View
 CREATE OR REPLACE VIEW validation_pipeline AS

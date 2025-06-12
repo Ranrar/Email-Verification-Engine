@@ -605,6 +605,7 @@ def start_initialization_process():
         q.add(initialize_email_format_check, "Initializing Email Format Check")
         q.add(initialize_dynamic_queue, "Initializing Validation Queue")
         q.add(initialize_engine_components, "Initializing Engine Components")
+        q.add(initialize_public_suffix_list, "Initializing Public Suffix List")
         
         # Run all initialization steps
         q.run()
@@ -645,5 +646,23 @@ def initialize_dns_warmup():
             logger.info("DNS warmup completed, but no statistics were gathered")
     else:
         logger.info(f"DNS warmup not needed: {result.get('reason', 'unknown')}")
+    
+    return result
+
+def initialize_public_suffix_list():
+    """Initialize the Public Suffix List in the database."""
+    from src.helpers.psl import initialize_suffix_list
+    
+    logger.info("Initializing Public Suffix List...")
+    result = initialize_suffix_list()
+    
+    if not result or not result.get("success"):
+        logger.error(f"Failed to initialize Public Suffix List: {result.get('error', 'Unknown error')}")
+    elif result.get("updated", False):
+        version = result.get('version', '')
+        version_display = version[:8] if version else 'unknown'
+        logger.info(f"Updated Public Suffix List to version {version_display} with {result.get('entries')} entries")
+    else:
+        logger.info(f"Public Suffix List is up to date: {result.get('reason', 'No update needed')}")
     
     return result

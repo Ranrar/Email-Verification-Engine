@@ -91,7 +91,7 @@ def verify_email(email):
                 "is_disposable": validation_result.get("is_disposable", False),
                 "catch_all": validation_result.get("catch_all", False),
                 
-                # DNS security with enhanced SPF details
+                # DNS security with enhanced SPF and DMARC details
                 "dns_security": {
                     "spf": validation_result.get("spf_status", ""),
                     "dkim": validation_result.get("dkim_status", ""),
@@ -106,6 +106,23 @@ def verify_email(email):
                         "warnings": validation_result.get("spf_details", {}).get("warnings", []),
                         "errors": validation_result.get("spf_details", {}).get("errors", []),
                         "dns_lookup_log": validation_result.get("spf_details", {}).get("dns_lookup_log", [])
+                    },
+                    # Add detailed DMARC information
+                    "dmarc_details": {
+                        "has_dmarc": validation_result.get("dmarc_details", {}).get("has_dmarc", False),
+                        "policy": validation_result.get("dmarc_details", {}).get("policy", "none"),
+                        "policy_strength": validation_result.get("dmarc_details", {}).get("policy_strength", "none"),
+                        "subdomain_policy": validation_result.get("dmarc_details", {}).get("subdomain_policy", ""),
+                        "alignment_mode": validation_result.get("dmarc_details", {}).get("alignment_mode", ""),
+                        "percentage_covered": validation_result.get("dmarc_details", {}).get("percentage_covered", 0),
+                        "aggregate_reporting": validation_result.get("dmarc_details", {}).get("aggregate_reporting", False),
+                        "forensic_reporting": validation_result.get("dmarc_details", {}).get("forensic_reporting", False),
+                        "organizational_domain": validation_result.get("dmarc_details", {}).get("organizational_domain", ""),
+                        "recommendations": validation_result.get("dmarc_details", {}).get("recommendations", []),
+                        "record": validation_result.get("dmarc_details", {}).get("record", ""),
+                        "execution_time": validation_result.get("dmarc_details", {}).get("execution_time", 0),
+                        "warnings": validation_result.get("dmarc_details", {}).get("warnings", []),
+                        "errors": validation_result.get("dmarc_details", {}).get("errors", [])
                     }
                 },
                 
@@ -166,7 +183,23 @@ def verify_email(email):
                 "dns_security": {
                     "spf": "",
                     "dkim": "",
-                    "dmarc": ""
+                    "dmarc": "",
+                    # Add empty DMARC details structure for consistency
+                    "dmarc_details": {
+                        "has_dmarc": False,
+                        "policy": "none",
+                        "policy_strength": "none",
+                        "alignment_mode": "",
+                        "percentage_covered": 0,
+                        "aggregate_reporting": False,
+                        "forensic_reporting": False,
+                        "organizational_domain": "",
+                        "recommendations": [],
+                        "record": "",
+                        "execution_time": 0,
+                        "warnings": [],
+                        "errors": []
+                    }
                 },
                 "smtp": {  # Add this nested structure 
                     "verified": False,
@@ -342,6 +375,91 @@ def list_documentation_files():
             "success": False,
             "error": str(e)
         }
+
+@eel.expose
+def get_dmarc_info(domain):
+    """Get detailed DMARC information for a domain"""
+    try:
+        # Import directly here to avoid circular imports
+        from src.engine.functions.dmarc import DMARCValidator
+        
+        validator = DMARCValidator()
+        trace_id = f"dmarc_info_{int(time.time() * 1000)}"
+        
+        # Validate DMARC for the domain
+        dmarc_result = validator.validate_dmarc(domain, trace_id)
+        
+        # Create a detailed response
+        response = {
+            "success": True,
+            "domain": domain,
+            "has_dmarc": dmarc_result.has_dmarc,
+            "policy": dmarc_result.policy,
+            "policy_strength": dmarc_result.policy_strength,
+            "subdomain_policy": dmarc_result.subdomain_policy,
+            "alignment_mode": dmarc_result.alignment_mode,
+            "percentage_covered": dmarc_result.percentage_covered,
+            "aggregate_reporting": dmarc_result.aggregate_reporting,
+            "forensic_reporting": dmarc_result.forensic_reporting,
+            "organizational_domain": dmarc_result.organizational_domain,
+            "recommendations": dmarc_result.recommendations,
+            "dns_lookups": dmarc_result.dns_lookups,
+            "execution_time_ms": dmarc_result.execution_time_ms,
+            "trace_id": trace_id
+        }
+        
+        # Include record details if available
+        if dmarc_result.record:
+            response["record"] = {
+                "raw": dmarc_result.record.raw_record,
+                "version": dmarc_result.record.version,
+                "rua_addresses": dmarc_result.record.rua_addresses,
+                "ruf_addresses": dmarc_result.record.ruf_addresses,
+                "failure_options": dmarc_result.record.failure_options,
+                "report_format": dmarc_result.record.report_format,
+                "report_interval": dmarc_result.record.report_interval
+            }
+            
+        # Include any errors or warnings
+        if dmarc_result.errors:
+            response["errors"] = dmarc_result.errors
+        if dmarc_result.warnings:
+            response["warnings"] = dmarc_result.warnings
+            
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting DMARC info for {domain}: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "domain": domain,
+            "error": str(e)
+        }
+
+@eel.expose
+def get_dmarc_explanation():
+    """Get an explanation of DMARC for users"""
+    return {
+        "title": "Understanding DMARC",
+        "sections": [
+            {
+                "title": "What is DMARC?",
+                "content": "DMARC (Domain-based Message Authentication, Reporting & Conformance) is an email authentication protocol that helps protect email domains from unauthorized use. It builds on SPF and DKIM to provide domain-level protection and reporting."
+            },
+            {
+                "title": "DMARC Policies",
+                "content": "DMARC has three policy options: 'none' (monitor only), 'quarantine' (treat suspicious emails with caution), and 'reject' (block suspicious emails). These determine what happens when an email fails DMARC checks."
+            },
+            {
+                "title": "Policy Strength",
+                "content": "DMARC policy strength is evaluated as 'none', 'weak', 'moderate', or 'strong' based on the policy type, coverage percentage, alignment settings, and reporting configuration."
+            },
+            {
+                "title": "Reporting",
+                "content": "DMARC provides two types of reporting: aggregate reports (rua) give statistical data about email traffic, while forensic reports (ruf) provide details about specific authentication failures."
+            }
+        ]
+    }
 
 # Main function - Non-async for better multiprocessing compatibility
 def main():

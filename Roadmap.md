@@ -29,7 +29,7 @@ A simple development roadmap for the Email Verification Engine.
 - [x] WHOIS lookup
 - [X] SPF
 - [ ] DKIM
-- [ ] DMARC
+- [X] DMARC
 - [ ] IMAP check
 - [ ] POP3 check
 - [ ] Catch-all check

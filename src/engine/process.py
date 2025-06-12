@@ -171,6 +171,43 @@ def process_validation_results(result: EmailValidationResult, validation_results
             error_msg = spf_data.get('spf_reason', '') or spf_data.get('error', '')
             logger.debug(f"[{result.trace_id}] SPF {result.spf_status}: {error_msg}")
     
+    # DMARC check processing
+    if 'dmarc_check' in validation_results:
+        dmarc_data = validation_results.get('dmarc_check', {})
+        
+        # Update basic DMARC status
+        result.dmarc_status = dmarc_data.get('policy', '')
+        
+        # Store detailed DMARC information
+        result.dmarc_details = {
+            'valid': dmarc_data.get('valid', False),
+            'has_dmarc': dmarc_data.get('has_dmarc', False),
+            'policy': dmarc_data.get('policy', 'none'),
+            'policy_strength': dmarc_data.get('policy_strength', 'none'),
+            'alignment_mode': dmarc_data.get('alignment_mode', ''),
+            'percentage_covered': dmarc_data.get('percentage_covered', 0),
+            'aggregate_reporting': dmarc_data.get('aggregate_reporting', False),
+            'forensic_reporting': dmarc_data.get('forensic_reporting', False),
+            'organizational_domain': dmarc_data.get('organizational_domain', ''),
+            'recommendations': dmarc_data.get('recommendations', []),
+            'record': dmarc_data.get('record_details', {}).get('raw_record', ''),
+            'execution_time': dmarc_data.get('execution_time', 0)
+        }
+        
+        # Log DMARC validation result
+        logger.info(f"[{result.trace_id}] DMARC validation result: {result.dmarc_status}")
+        if result.dmarc_details['has_dmarc']:
+            logger.debug(f"[{result.trace_id}] DMARC policy: {result.dmarc_details['policy']}, "
+                        f"strength: {result.dmarc_details['policy_strength']}")
+            
+            # Log reporting configuration
+            if result.dmarc_details['aggregate_reporting'] or result.dmarc_details['forensic_reporting']:
+                logger.debug(f"[{result.trace_id}] DMARC reporting: "
+                            f"aggregate={str(result.dmarc_details['aggregate_reporting']).lower()}, "
+                            f"forensic={str(result.dmarc_details['forensic_reporting']).lower()}")
+        else:
+            logger.debug(f"[{result.trace_id}] No DMARC record found for domain {result.domain}")
+    
     # Legacy DNS security processing
     if 'dns_security' in validation_results:
         dns_sec = validation_results.get('dns_security', {})
@@ -258,6 +295,8 @@ def calculate_validity_and_confidence(result: EmailValidationResult, validation_
         'vrfy_confirmed': (result.smtp_banner != '') or result.smtp_flow_success,
         'imap_available': result.imap_status == "available",
         'pop3_available': result.pop3_status == "available",
+        'dmarc_found': bool(result.dmarc_status) and result.dmarc_details.get('has_dmarc', False),
+        'dmarc_strong_policy': result.dmarc_details.get('policy_strength', '') in ['strong', 'moderate'],
     }
 
     score = 0

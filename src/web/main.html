@@ -188,6 +188,26 @@
                         <table id="timingDetailsTable" class="details-table"></table>
                     </div>
                 </div>
+
+                <!-- DMARC Analysis Section -->
+                <div class="accordion-item">
+                    <div class="accordion-header">DMARC Analysis</div>
+                    <div class="accordion-content">
+                        <div id="dmarcDetailsContainer" class="dmarc-details-container">
+                            <div id="dmarcLoading" class="validation-animation" style="display: none;">
+                                <div class="text-center">
+                                    <span>Analyzing DMARC</span>
+                                    <div class="dots">
+                                        <span class="dot">.</span>
+                                        <span class="dot">.</span>
+                                        <span class="dot">.</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="dmarcDetails" class="dmarc-details"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -269,5 +289,6 @@
     <script type="module" src="js/Settings.js"></script>
     <script src="js/ValidationEngine.js"></script>
     <script src="js/ResultsDisplay.js"></script>
+    <script src="js/DmarcAnalyzer.js"></script>
 </body>
 </html>
