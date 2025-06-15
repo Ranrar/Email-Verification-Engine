@@ -15,11 +15,11 @@ from typing import Dict, Any, Tuple, Optional, List
 from datetime import datetime, timezone, timedelta
 import decimal
 
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 
 # Initialize logging
-logger = Axe()
+logger = get_logger()
 
 class DomainStats:
     """Manages domain statistics for SMTP operations"""
@@ -574,3 +574,101 @@ class DNSServerStats:
                 
         except Exception as e:
             logger.warning(f"[{trace_id}] Failed to store DMARC analysis: {e}")
+
+    def record_dkim_statistics(self, trace_id: str, domain: str, selector: str,
+                      has_dkim: bool, key_type: str, key_length: int,
+                      security_level: str, dns_lookups: int, processing_time_ms: float,
+                      errors: Optional[str] = None):
+        """
+        Record DKIM validation statistics
+
+        Args:
+            trace_id: Validation trace ID
+            domain: The domain that was checked
+            selector: DKIM selector
+            has_dkim: Whether domain has valid DKIM
+            key_type: Type of key (RSA, Ed25519, etc.)
+            key_length: Length of key in bits
+            security_level: Security assessment (high, medium, low, none)
+            dns_lookups: Number of DNS lookups performed
+            processing_time_ms: Processing time in milliseconds
+            errors: Optional error message
+        """
+        try:
+            # Insert main DKIM validation statistics
+            sync_db.execute(
+                """
+                INSERT INTO dkim_validation_statistics 
+                (trace_id, domain, selector, has_dkim, key_type, key_length,
+                 security_level, dns_lookups, processing_time_ms, errors)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                """,
+                trace_id, domain, selector, has_dkim, key_type, key_length,
+                security_level, dns_lookups, processing_time_ms, errors
+            )
+            
+            logger.debug(f"[{trace_id}] DKIM statistics recorded: domain={domain}, "
+                        f"selector={selector}, has_dkim={has_dkim}, "
+                        f"key_type={key_type}, key_length={key_length}")
+
+        except Exception as e:
+            logger.error(f"[{trace_id}] Failed to record DKIM statistics for {domain}: {str(e)}")
+
+    def store_dkim_analysis(self, domain: str, selector: str, result: dict, trace_id: str):
+        """
+        Store DKIM analysis results for reporting and analytics
+        
+        Args:
+            domain: The domain that was checked
+            selector: DKIM selector
+            result: DKIM validation result object
+            trace_id: Validation trace ID
+        """
+        try:
+            # Check if the table exists before trying to insert
+            table_check = sync_db.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'dkim_validation_history'
+                )
+            """)
+            
+            if table_check and table_check[0][0]:  # Table exists
+                import json
+                from src.managers.time import now_utc
+                
+                sync_db.execute("""
+                    INSERT INTO dkim_validation_history 
+                    (domain, selector, has_dkim, key_type, key_length, security_level,
+                     dns_lookups, processing_time_ms, errors, warnings, recommendations,
+                     trace_id, validated_at, validation_date)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_DATE)
+                    ON CONFLICT (domain, selector, validation_date) 
+                    DO UPDATE SET
+                        has_dkim = EXCLUDED.has_dkim,
+                        key_type = EXCLUDED.key_type,
+                        key_length = EXCLUDED.key_length,
+                        security_level = EXCLUDED.security_level,
+                        last_validated_at = EXCLUDED.validated_at
+                """,
+                    domain, 
+                    selector,
+                    result.get('has_dkim', False), 
+                    result.get('key_type', ''), 
+                    result.get('key_length', 0), 
+                    result.get('security_level', 'none'),
+                    result.get('dns_lookups', 0), 
+                    result.get('execution_time_ms', 0),
+                    json.dumps(result.get('errors', [])), 
+                    json.dumps(result.get('warnings', [])), 
+                    json.dumps(result.get('recommendations', [])), 
+                    trace_id, 
+                    now_utc()
+                )
+                logger.debug(f"[{trace_id}] DKIM analysis stored in database: {domain} -> {result.get('security_level', 'none')}")
+            else:
+                # Table doesn't exist, just log the analysis
+                logger.debug(f"[{trace_id}] DKIM analysis table not found: {domain} -> {result.get('security_level', 'none')}")
+            
+        except Exception as e:
+            logger.warning(f"[{trace_id}] Failed to store DKIM analysis: {e}")

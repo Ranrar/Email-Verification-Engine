@@ -43,9 +43,9 @@ from datetime import datetime
 from pathlib import Path
 
 from src.helpers.dbh import sync_db
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
-logger = Axe()
+logger = get_logger()
 
 # Constants
 PSL_URL = "https://raw.githubusercontent.com/publicsuffix/list/refs/heads/main/public_suffix_list.dat"

@@ -9,10 +9,10 @@ from typing import Dict, Any, List
 
 # Import SPF functionality
 from src.engine.functions.spf import spf_check, SPFValidator, SPFResult
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
 # Initialize logger
-logger = Axe()
+logger = get_logger()
 
 def run_spf_test(test_cases: List[Dict[str, Any]]) -> None:
     """

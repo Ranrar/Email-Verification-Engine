@@ -8,11 +8,11 @@ It uses the consolidated rate_limit table in the PostgreSQL database.
 
 from typing import Any, Dict, Optional
 from src.helpers.dbh import sync_db
-from src.managers.log import Axe
+from src.managers.log import get_logger
 import threading
 import time
 
-logger = Axe()
+logger = get_logger()
 
 # Global lock for domain rate limiting
 _rate_limiter_lock = threading.Lock()

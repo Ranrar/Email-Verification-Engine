@@ -28,7 +28,7 @@ from src.managers.time import EnhancedOperationTimer
 from src.managers.dns import DNSManager
 from src.managers.rate_limit import RateLimitManager
 from src.managers.port import PortManager, port_manager
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 
 # Import our refactored modules
@@ -36,7 +36,7 @@ from src.engine.functions.statistics import DomainStats
 from src.engine.functions.whois import DomainInfoExtractor
 
 # Initialize logging
-logger = Axe()
+logger = get_logger()
 
 # Global rate limiter for SMTP connections
 _rate_limiter_lock = threading.Lock()
@@ -840,19 +840,33 @@ def check_global_rate_limit(self, category: str) -> bool:
     max_allowed = self.get_smtp_limit('max_connections_per_minute')
     return current < max_allowed
 
-def validate_smtp(context: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Validates an email address by checking SMTP server responses.
-    """
-    # Extract key fields from context with defaults
-    email = context.get('email', '')
-    trace_id = context.get('trace_id', '')
-    test_mode = context.get('test_mode', False)
+from src.helpers.tracer import (
+    ensure_trace_id, 
+    ensure_context_has_trace_id, 
+    trace_function, 
+    validate_trace_id
+)
+
+@trace_function("validate_smtp")
+def validate_smtp(context):
+    """Validate email via SMTP connection"""
     
+    # Ensure context has valid trace_id
+    context = ensure_context_has_trace_id(context)
+    trace_id = context['trace_id']
+    
+    # Validate trace_id at entry point
+    if not validate_trace_id(trace_id):
+        logger.error(f"Invalid trace_id received in validate_smtp: {trace_id}")
+        trace_id = ensure_trace_id()
+        context['trace_id'] = trace_id
+
+    # Extract email from context
+    email = context.get('email')
     logger.debug(f"[{trace_id}] Starting SMTP validation for {email}")
     
     # Parse and validate email format
-    parsing_result = _parse_and_validate_email(email)
+    parsing_result = _parse_and_validate_email(email if email is not None else "")
     if not parsing_result["valid"]:
         return parsing_result
     
@@ -906,22 +920,24 @@ def validate_smtp(context: Dict[str, Any]) -> Dict[str, Any]:
     sender_email = _get_sender_email(trace_id)
     
     # Initialize SMTP validator and extract geographic info
+    test_mode = context.get('test_mode', False)
     validator = SMTPValidator(test_mode=test_mode)
     
     # Perform validation with timing
     with EnhancedOperationTimer("smtp_validation", {"email": email}) as timer:
-        result = validator.verify_email(email, domain, mx_records, sender_email, trace_id, context=context)
+        safe_email = email if email is not None else ""
+        result = validator.verify_email(safe_email, domain, mx_records, sender_email, trace_id, context=context)
     
     # Add execution time
     result['execution_time'] = timer.elapsed_ms
     
     # Normalize and standardize the result structure
-    normalized_result = _normalize_validation_result(result, email, trace_id)
+    result = _normalize_validation_result(result, email, trace_id)
     
-    # Cache the normalized result
-    cache_manager.set(cache_key, normalized_result, ttl=validator.cache_ttl)
+    # Cache the result
+    cache_manager.set(cache_key, result, ttl=validator.cache_ttl)
     
-    return normalized_result
+    return result
 
 def _parse_and_validate_email(email: str) -> Dict[str, Any]:
     """Parse and perform basic validation on email format"""
@@ -1041,30 +1057,34 @@ def _get_sender_email(trace_id: str) -> str:
 
 
 
-def _normalize_validation_result(result: Dict[str, Any], email: str, trace_id: str) -> Dict[str, Any]:
-    """Ensure consistent result structure with all required fields"""
+def _normalize_validation_result(validation_data, email, trace_id):
+    """Normalize SMTP validation result"""
+    
+    # Ensure we have a valid trace_id
+    trace_id = ensure_trace_id(trace_id)
+    
     # Create a new normalized result with standard attribute names
     normalized_result = {
-        "valid": result.get("valid", False),
-        "is_deliverable": result.get("is_deliverable", False),
+        "valid": validation_data.get("valid", False),
+        "is_deliverable": validation_data.get("is_deliverable", False),
         "email": email,
     }
     
     # Extract values from either top level or nested details
-    details = result.get("details", {})
+    details = validation_data.get("details", {})
     
     # Copy error information
-    if "error" in result:
-        normalized_result["error_message"] = result["error"]
-    elif "errors" in result and result["errors"]:
-        normalized_result["error_message"] = result["errors"][0]
+    if "error" in validation_data:
+        normalized_result["error_message"] = validation_data["error"]
+    elif "errors" in validation_data and validation_data["errors"]:
+        normalized_result["error_message"] = validation_data["errors"][0]
     elif "error_message" in details:
         normalized_result["error_message"] = details["error_message"]
     elif "errors" in details and details["errors"]:
         normalized_result["error_message"] = details["errors"][0]
     
     # Map all SMTP fields directly to top level with standardized names
-    normalized_result["smtp_result"] = result.get("valid", False)
+    normalized_result["smtp_result"] = validation_data.get("valid", False)
     normalized_result["smtp_banner"] = details.get("smtp_banner", "") or details.get("banner", "")
     
     # Add explicit debug logging to track banner values
@@ -1084,8 +1104,8 @@ def _normalize_validation_result(result: Dict[str, Any], email: str, trace_id: s
     normalized_result["mx_servers_tried"] = details.get("mx_servers_tried", 0)
     
     # Copy execution time if available
-    if "execution_time" in result:
-        normalized_result["execution_time"] = result["execution_time"]
+    if "execution_time" in validation_data:
+        normalized_result["execution_time"] = validation_data["execution_time"]
     
     # Log result summary
     logger.info(f"[{trace_id}] SMTP validation for {email}: {'SUCCESS' if normalized_result['smtp_result'] else 'FAILURE'}")

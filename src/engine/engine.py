@@ -24,13 +24,19 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 
 # Import from refactored modules
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.managers.cache import cache_manager, CacheKeys
 from src.engine.result import EmailValidationResult
 from src.engine.process import process_validation_results
 from src.engine.database import log_to_database, log_validation_operation
+from src.helpers.tracer import (
+    ensure_trace_id, 
+    ensure_context_has_trace_id, 
+    trace_function,
+    TraceableContext
+)
 
-logger = Axe()
+logger = get_logger()
 
 # Global engine instance
 _engine_instance = None
@@ -38,28 +44,17 @@ _engine_instance = None
 class EmailValidationEngine:
     """Main engine for email validation"""
     
-    def __init__(self):
-        logger.info("Initializing EmailValidationEngine")
+    @trace_function("email_validation", inherit_trace=False, log_entry_exit=True)
+    def validate(self, email: str, trace_id: Optional[str] = None, use_cache: bool = True) -> Dict[str, Any]:
+        """Validate an email address with comprehensive checks"""
+        
+        # Ensure we have a valid trace_id (this is now handled by the decorator)
+        trace_id = ensure_trace_id(trace_id)
+        
         # Check if cache is initialized
         if not hasattr(cache_manager, 'mem_cache'):
             logger.warning("Cache manager not properly initialized, some features may be limited")
     
-    def validate(self, email: str, trace_id: Optional[str] = None, use_cache: bool = True) -> Dict[str, Any]:
-        """
-        Validate a single email address
-        
-        Args:
-            email: Email address to validate
-            trace_id: Optional trace ID for tracking
-            use_cache: Whether to use cached results
-            
-        Returns:
-            Dictionary with validation results
-        """
-        # Generate or use provided trace ID
-        if not trace_id:
-            trace_id = str(uuid.uuid4())
-        
         # Protect all cache keys at once to prevent cleanup during validation
         protected_keys = cache_manager.protect_validation_keys(email)
         logger.debug(f"[{trace_id}] Protected {len(protected_keys)} cache keys for {email}")
@@ -115,12 +110,12 @@ class EmailValidationEngine:
             from src.engine.queue import DynamicQueue
             validation_queue = DynamicQueue.get_instance()
             
-            # Prepare context for validation functions
-            context = {
+            # Prepare context for validation functions - ensure it has trace_id
+            context = ensure_context_has_trace_id({
                 "email": email,
-                "trace_id": result.trace_id,
+                "trace_id": trace_id,
                 "track_steps": True  # Add flag to track steps
-            }
+            })
             
             # Start validation timer
             result.validation_start = datetime.now()
@@ -181,6 +176,18 @@ class EmailValidationEngine:
                     # Add policy strength if available
                     if result.dmarc_details.get('policy_strength'):
                         validation_details.append(f"\"dmarc_strength\": \"{result.dmarc_details.get('policy_strength')}\"")
+                
+                # Add DKIM details
+                if result.dkim_status:
+                    validation_details.append(f"\"dkim\": {{\"status\": \"{result.dkim_status}\", \"has_dkim\": {str(result.dkim_details.get('has_dkim', False)).lower()}}}")
+                    
+                    # Add key type and length if available
+                    if result.dkim_details.get('key_type') and result.dkim_details.get('key_length'):
+                        validation_details.append(f"\"dkim_key\": \"{result.dkim_details.get('key_type')}-{result.dkim_details.get('key_length')}\"")
+                    
+                    # Add security level if available
+                    if result.dkim_details.get('security_level'):
+                        validation_details.append(f"\"dkim_security\": \"{result.dkim_details.get('security_level')}\"")
                 
                 if validation_details:
                     logger.info(f"[{trace_id}] VALIDATION_DETAILS {{{', '.join(validation_details)}}}")

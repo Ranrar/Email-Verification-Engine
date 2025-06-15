@@ -3,77 +3,14 @@
  * Coordinates the modular settings components
  */
 
-// Import settings modules
-import {
-    capitalizeFirstLetter,
-    formatSettingName,
-    showNotification,
-    generalState,
-    loadGeneralSettings,
-    renderAppSettings,
-    saveGeneralSettings
-} from './settings/general.js';
-
-import {
-    rateLimitState,
-    loadRateLimitSettings,
-    renderRateLimits,
-    saveRateLimitSettings
-} from './settings/rate_limit.js';
-
-import {
-    dnsState,
-    loadDNSSettings,
-    renderDNSSettings,
-    saveDNSSettings
-} from './settings/dns.js';
-
-import {
-    executorState,
-    loadExecutorSettings,
-    renderExecutorSettings,
-    saveExecutorSettings,
-    applyExecutorPreset,
-    runExecutorAutotune
-} from './settings/exe.js';
-
-import {
-    validationState,
-    loadValidationSettings,
-    renderValidationScoring,
-    saveValidationSettings
-} from './settings/validation.js';
-
-import {
-    portState,
-    loadPortsConfiguration,
-    renderPortsConfiguration,
-    savePortsConfiguration
-} from './settings/port.js';
-
-import {
-    emailFilterState,
-    loadEmailFilterRegexSettings,
-    renderEmailFilterRegexSettings,
-    applyEmailFilterRegexPreset,
-    saveEmailFilterRegexSettings,
-    formatDate
-} from './settings/regex.js';
-
-import {
-    bwState,
-    loadBlackWhiteList,
-    renderBlackWhiteList,
-    addDomainToList,
-    updateDomainCategory,
-    removeDomainFromList
-} from './settings/bw.js';
-
 // Coordinator state
 const settingsState = {
     loading: false,
     currentTab: 'general',
-    initialized: false
+    initialized: false,
+    originalData: {},           // Store original values by section
+    changedSections: new Set(), // Track which sections have changes
+    changedFields: new Map()    // Track individual field changes: Map<fieldId, {original, current, section}>
 };
 
 /**
@@ -115,7 +52,8 @@ async function initSettingsMenu() {
     const saveButton = document.getElementById('save-settings-btn');
     if (saveButton) {
         saveButton.classList.add('btn');
-        saveButton.addEventListener('click', saveAllSettings);
+        saveButton.addEventListener('click', saveChangedSettings);
+        saveButton.disabled = true; // Start disabled
     }
     
     // Initialize reset button with proper CSS classes
@@ -162,6 +100,243 @@ function switchSettingsTab(tabName) {
 }
 
 /**
+ * Store original data for change detection
+ */
+function storeOriginalData(sectionName, data) {
+    settingsState.originalData[sectionName] = JSON.parse(JSON.stringify(data));
+    console.log(`Stored original data for ${sectionName}:`, settingsState.originalData[sectionName]);
+}
+
+/**
+ * Store original field values for all form elements
+ */
+function storeOriginalFieldValues() {
+    const allInputs = document.querySelectorAll('.settings-form input, .settings-form select, .settings-form textarea');
+    
+    allInputs.forEach(element => {
+        const currentValue = getElementValue(element);
+        element.dataset.originalValue = currentValue;
+        
+        // Find which section this element belongs to
+        const section = findElementSection(element);
+        if (section) {
+            const fieldKey = `${section}-${element.id || element.name}`;
+            settingsState.changedFields.set(fieldKey, {
+                original: currentValue,
+                current: currentValue,
+                section: section,
+                element: element
+            });
+        }
+    });
+    
+    console.log('Stored original field values for', settingsState.changedFields.size, 'fields');
+}
+
+/**
+ * Get the value of a form element regardless of type
+ */
+function getElementValue(element) {
+    if (element.type === 'checkbox') {
+        return element.checked;
+    } else if (element.type === 'radio') {
+        return element.checked ? element.value : null;
+    } else {
+        return element.value || '';
+    }
+}
+
+/**
+ * Find which section a form element belongs to
+ */
+function findElementSection(element) {
+    const tabContent = element.closest('.settings-tab-content');
+    if (tabContent) {
+        return tabContent.id.replace('-settings', '');
+    }
+    return null;
+}
+
+/**
+ * Check if a field has changed
+ */
+function hasFieldChanged(fieldKey) {
+    const fieldData = settingsState.changedFields.get(fieldKey);
+    if (!fieldData) return false;
+    
+    const currentValue = getElementValue(fieldData.element);
+    return currentValue !== fieldData.original;
+}
+
+/**
+ * Mark a section as changed and update UI
+ */
+function markSectionChanged(sectionName) {
+    settingsState.changedSections.add(sectionName);
+    updateSaveButtonState();
+    
+    // Add visual indicator to the tab
+    const tabButton = document.querySelector(`[data-tab="${sectionName}"]`);
+    if (tabButton && !tabButton.classList.contains('has-changes')) {
+        tabButton.classList.add('has-changes');
+        // Add a visual indicator (dot or asterisk)
+        if (!tabButton.querySelector('.change-indicator')) {
+            const indicator = document.createElement('span');
+            indicator.className = 'change-indicator';
+            indicator.textContent = ' •';
+            indicator.style.color = 'var(--accent-color, #007bff)';
+            tabButton.appendChild(indicator);
+        }
+    }
+}
+
+/**
+ * Clear changes for a section
+ */
+function clearSectionChanges(sectionName) {
+    settingsState.changedSections.delete(sectionName);
+    updateSaveButtonState();
+    
+    // Remove visual indicator from the tab
+    const tabButton = document.querySelector(`[data-tab="${sectionName}"]`);
+    if (tabButton) {
+        tabButton.classList.remove('has-changes');
+        const indicator = tabButton.querySelector('.change-indicator');
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+    
+    // Update stored original values for this section
+    const sectionFields = Array.from(settingsState.changedFields.entries())
+        .filter(([key, data]) => data.section === sectionName);
+    
+    sectionFields.forEach(([key, data]) => {
+        const currentValue = getElementValue(data.element);
+        data.original = currentValue;
+        data.current = currentValue;
+        data.element.dataset.originalValue = currentValue;
+        settingsState.changedFields.set(key, data);
+    });
+}
+
+/**
+ * Update save button to show change status
+ */
+function updateSaveButtonState() {
+    const saveBtn = document.getElementById('save-settings-btn');
+    if (!saveBtn) return;
+    
+    const changeCount = settingsState.changedSections.size;
+    
+    if (changeCount > 0) {
+        saveBtn.classList.add('btn-has-changes');
+        saveBtn.textContent = `Save Changes (${changeCount})`;
+        saveBtn.disabled = false;
+        saveBtn.style.backgroundColor = 'var(--accent-color, #007bff)';
+    } else {
+        saveBtn.classList.remove('btn-has-changes');
+        saveBtn.textContent = 'Save Settings';
+        saveBtn.disabled = true;
+        saveBtn.style.backgroundColor = '';
+    }
+}
+
+/**
+ * Add comprehensive change detection to form elements
+ */
+function addChangeDetection() {
+    console.log('Setting up change detection...');
+    
+    // Store original values first
+    storeOriginalFieldValues();
+    
+    // Add change listeners to all form inputs
+    const allInputs = document.querySelectorAll('.settings-form input, .settings-form select, .settings-form textarea');
+    
+    allInputs.forEach(element => {
+        // Multiple event types for comprehensive detection
+        const events = ['change', 'input', 'blur'];
+        
+        events.forEach(eventType => {
+            element.addEventListener(eventType, function(event) {
+                handleFieldChange(this, event.type);
+            });
+        });
+    });
+    
+    console.log(`Added change detection to ${allInputs.length} form elements`);
+}
+
+/**
+ * Handle individual field changes
+ */
+function handleFieldChange(element, eventType) {
+    const section = findElementSection(element);
+    if (!section) return;
+    
+    const fieldKey = `${section}-${element.id || element.name}`;
+    const fieldData = settingsState.changedFields.get(fieldKey);
+    
+    if (!fieldData) {
+        console.warn(`No field data found for ${fieldKey}`);
+        return;
+    }
+    
+    const currentValue = getElementValue(element);
+    const originalValue = fieldData.original;
+    const hasChanged = currentValue !== originalValue;
+    
+    // Update current value
+    fieldData.current = currentValue;
+    settingsState.changedFields.set(fieldKey, fieldData);
+    
+    // Check if any field in this section has changes
+    const sectionHasChanges = Array.from(settingsState.changedFields.entries())
+        .filter(([key, data]) => data.section === section)
+        .some(([key, data]) => data.current !== data.original);
+    
+    if (sectionHasChanges) {
+        markSectionChanged(section);
+    } else {
+        clearSectionChanges(section);
+    }
+    
+    // Debug logging
+    if (hasChanged) {
+        console.log(`Field changed: ${fieldKey}`, {
+            original: originalValue,
+            current: currentValue,
+            section: section
+        });
+    }
+}
+
+/**
+ * Get only changed values for a section
+ */
+function getChangedValuesForSection(sectionName) {
+    const changes = {};
+    
+    Array.from(settingsState.changedFields.entries())
+        .filter(([key, data]) => data.section === sectionName && data.current !== data.original)
+        .forEach(([key, data]) => {
+            const element = data.element;
+            const fieldId = element.id || element.name;
+            const settingId = element.dataset.id || fieldId;
+            
+            changes[settingId] = {
+                original: data.original,
+                current: data.current,
+                element: element,
+                fieldId: fieldId
+            };
+        });
+    
+    return changes;
+}
+
+/**
  * Load all settings from the database
  */
 async function loadAllSettings() {
@@ -170,7 +345,7 @@ async function loadAllSettings() {
     
     try {
         // Load all settings modules
-        await Promise.all([
+        const loadResults = await Promise.all([
             loadGeneralSettings(),
             loadRateLimitSettings(),
             loadDNSSettings(),
@@ -181,12 +356,35 @@ async function loadAllSettings() {
             loadBlackWhiteList()
         ]);
         
-        // Show success toast using new CSS classes
-        showToast('Settings loaded successfully', 'success');
+        // Store original data for each section
+        const sectionNames = ['general', 'rate-limits', 'dns', 'executor', 'validation-scoring', 'ports', 'email-filter', 'black-white-list'];
+        loadResults.forEach((result, index) => {
+            if (result && result.success) {
+                storeOriginalData(sectionNames[index], result);
+            }
+        });
+        
+        // Clear all change markers after loading
+        settingsState.changedSections.clear();
+        settingsState.changedFields.clear();
+        
+        // Wait for DOM to update, then setup change detection
+        setTimeout(() => {
+            addChangeDetection();
+            updateSaveButtonState();
+        }, 100);
+        
+        // Use global show_message function directly
+        if (typeof window.show_message === 'function') {
+            window.show_message('success', 'Settings loaded successfully', false, null);
+        }
         
     } catch (error) {
         console.error('Error loading settings:', error);
-        showToast('An error occurred while loading settings', 'error');
+        // Use global show_message function directly
+        if (typeof window.show_message === 'function') {
+            window.show_message('error', 'An error occurred while loading settings', true, error.message);
+        }
     } finally {
         settingsState.loading = false;
         updateLoadingState(false);
@@ -194,7 +392,7 @@ async function loadAllSettings() {
 }
 
 /**
- * Update the UI loading state using CSS classes
+ * Update the UI loading state
  * @param {boolean} isLoading - Whether the UI is in a loading state
  */
 function updateLoadingState(isLoading) {
@@ -229,65 +427,189 @@ function updateLoadingState(isLoading) {
 }
 
 /**
- * Save all modified settings with improved error handling
+ * Save only changed settings sections
  */
-async function saveAllSettings() {
+async function saveChangedSettings() {
+    if (settingsState.changedSections.size === 0) {
+        if (typeof window.show_message === 'function') {
+            window.show_message('info', 'No changes to save', false, null);
+        }
+        return;
+    }
+    
     updateLoadingState(true);
     let successCount = 0;
     let errorCount = 0;
     const errors = [];
+    const changedSectionsArray = Array.from(settingsState.changedSections);
     
     try {
-        // Create array of save operations for better error handling
-        const saveOperations = [
-            { name: 'General Settings', fn: saveGeneralSettings },
-            { name: 'Rate Limits', fn: saveRateLimitSettings },
-            { name: 'DNS Settings', fn: saveDNSSettings },
-            { name: 'Executor Settings', fn: saveExecutorSettings },
-            { name: 'Validation Settings', fn: saveValidationSettings },
-            { name: 'Port Settings', fn: savePortsConfiguration },
-            { name: 'Email Filter Settings', fn: saveEmailFilterRegexSettings }
-        ];
+        console.log(`Saving ${changedSectionsArray.length} changed sections:`, changedSectionsArray);
         
-        // Execute save operations
-        for (const operation of saveOperations) {
+        for (const sectionName of changedSectionsArray) {
             try {
-                const result = await operation.fn();
-                successCount += result.success || 0;
-                errorCount += result.errors || 0;
+                console.log(`Processing section: ${sectionName}`);
+                const changedValues = getChangedValuesForSection(sectionName);
+                const changeCount = Object.keys(changedValues).length;
                 
-                if (result.errors > 0) {
-                    errors.push(`${operation.name}: ${result.errors} errors`);
+                if (changeCount === 0) {
+                    console.log(`No actual changes found in section ${sectionName}, skipping`);
+                    clearSectionChanges(sectionName);
+                    continue;
                 }
+                
+                console.log(`Found ${changeCount} changed fields in ${sectionName}:`, changedValues);
+                
+                // Call the appropriate save function for this section
+                let result;
+                switch (sectionName) {
+                    case 'general':
+                        result = await saveOnlyChangedFields(changedValues, 'general');
+                        break;
+                    case 'rate-limits':
+                        result = await saveOnlyChangedFields(changedValues, 'rate-limits');
+                        break;
+                    case 'dns':
+                        result = await saveOnlyChangedFields(changedValues, 'dns');
+                        break;
+                    case 'executor':
+                        result = await saveOnlyChangedFields(changedValues, 'executor');
+                        break;
+                    case 'validation-scoring':
+                        result = await saveOnlyChangedFields(changedValues, 'validation');
+                        break;
+                    case 'ports':
+                        result = await saveOnlyChangedFields(changedValues, 'ports');
+                        break;
+                    default:
+                        console.warn(`No save handler for section: ${sectionName}`);
+                        result = { success: 0, errors: 1 };
+                }
+                
+                if (result && result.success > 0) {
+                    successCount += result.success;
+                    clearSectionChanges(sectionName);
+                    console.log(`Successfully saved ${result.success} changes in ${sectionName}`);
+                }
+                
+                if (result && result.errors > 0) {
+                    errorCount += result.errors;
+                    errors.push(`${sectionName}: ${result.errors} errors`);
+                }
+                
             } catch (error) {
-                console.error(`Error saving ${operation.name}:`, error);
-                errors.push(`${operation.name}: Failed to save`);
+                console.error(`Error saving section ${sectionName}:`, error);
+                errors.push(`${sectionName}: ${error.message || 'Save failed'}`);
                 errorCount++;
             }
         }
         
-        // Show appropriate notification using new CSS classes
+        // Show result notification
         if (errorCount === 0) {
-            showToast(`Successfully saved ${successCount} settings`, 'success');
+            if (typeof window.show_message === 'function') {
+                window.show_message('success', `Successfully saved ${successCount} changed settings`, false, null);
+            }
         } else {
-            showToast(`Saved ${successCount} settings, but ${errorCount} failed`, 'warning');
+            if (typeof window.show_message === 'function') {
+                const message = `Saved ${successCount} settings, ${errorCount} failed`;
+                window.show_message('warning', message, true, errors.join(', '));
+            }
             console.warn('Save errors:', errors);
         }
         
     } catch (error) {
-        console.error('Error saving settings:', error);
-        showToast('An error occurred while saving settings', 'error');
+        console.error('Error in saveChangedSettings:', error);
+        if (typeof window.show_message === 'function') {
+            window.show_message('error', 'An error occurred while saving settings', true, error.message);
+        }
     } finally {
         updateLoadingState(false);
+        updateSaveButtonState();
     }
 }
+
+/**
+ * Save only the changed fields for a specific section
+ */
+async function saveOnlyChangedFields(changedValues, sectionType) {
+    let successCount = 0;
+    let errorCount = 0;
+    
+    console.log(`Saving changed fields for ${sectionType}:`, changedValues);
+    
+    for (const [settingId, change] of Object.entries(changedValues)) {
+        try {
+            let result;
+            const element = change.element;
+            const value = change.current;
+            
+            console.log(`Saving ${sectionType} setting ${settingId}: ${change.original} → ${value}`);
+            
+            switch (sectionType) {
+                case 'general':
+                    result = await eel.update_app_setting(parseInt(settingId), String(value))();
+                    break;
+                case 'rate-limits':
+                    const enabled = element.type === 'checkbox' ? value : element.closest('div').querySelector('input[type="checkbox"]')?.checked || false;
+                    result = await eel.update_rate_limit(parseInt(settingId), String(value), enabled)();
+                    break;
+                case 'dns':
+                    result = await eel.update_dns_setting(parseInt(settingId), String(value))();
+                    break;
+                case 'executor':
+                    const settingName = element.dataset.setting || element.name;
+                    result = await eel.update_executor_setting(settingName, String(value))();
+                    break;
+                case 'validation':
+                    const isPenalty = element.dataset.penalty === 'true';
+                    result = await eel.update_validation_scoring(parseInt(settingId), parseInt(value), isPenalty)();
+                    break;
+                case 'ports':
+                    const priority = 0; // Keep existing priority
+                    result = await eel.update_port(parseInt(settingId), priority, Boolean(value))();
+                    break;
+                default:
+                    console.warn(`Unknown section type: ${sectionType}`);
+                    result = { success: false };
+            }
+            
+            if (result && result.success !== false) {
+                successCount++;
+                console.log(`✓ Successfully saved ${sectionType} setting ${settingId}`);
+            } else {
+                errorCount++;
+                console.error(`✗ Failed to save ${sectionType} setting ${settingId}:`, result);
+            }
+            
+        } catch (error) {
+            errorCount++;
+            console.error(`Error saving ${sectionType} setting ${settingId}:`, error);
+        }
+    }
+    
+    return { success: successCount, errors: errorCount };
+}
+
+// Enhanced coordinator state with comprehensive change tracking
+const enhancedSettingsState = {
+    loading: false,
+    currentTab: 'general',
+    initialized: false,
+    originalData: {},      // Store original values
+    changedSections: new Set()  // Track which sections have changes
+};
 
 /**
  * Open settings panel with improved CSS handling
  */
 function openSettingsPanel(tabName = 'general') {
+    console.log(`Opening settings panel: ${tabName}`);
+    
     const settingsPanel = document.getElementById('settingsPanel');
-    if (!settingsPanel) return;
+    if (!settingsPanel) {
+        console.error('Settings panel element not found');
+        return;
+    }
     
     // Use CSS classes for display control
     settingsPanel.classList.add('settings-overlay-active');
@@ -296,31 +618,19 @@ function openSettingsPanel(tabName = 'general') {
     // Setup close button with proper styles and event listener
     const closeBtn = document.getElementById('closeSettingsBtn');
     if (closeBtn) {
-        // Apply the CSS class
         closeBtn.classList.add('settings-close-btn');
-        // Add event listener to close settings when clicked
         closeBtn.addEventListener('click', closeSettingsPanel);
-    }
-    
-    // Apply layout improvements using CSS classes
-    const tabsContainer = document.querySelector('.settings-tabs');
-    const contentContainer = document.querySelector('.settings-content');
-    
-    if (tabsContainer && contentContainer) {
-        // Add CSS classes for sticky behavior
-        tabsContainer.classList.add('settings-tabs-sticky');
-        contentContainer.classList.add('settings-content-scrollable');
     }
     
     // Initialize settings if needed
     initSettingsMenu().then(() => {
-        // Switch to the specified tab
         if (tabName) {
             switchSettingsTab(tabName);
         }
+    }).catch(error => {
+        console.error('Error initializing settings menu:', error);
     });
     
-    // Disable body scrolling
     document.body.classList.add('modal-open');
 }
 
@@ -328,55 +638,29 @@ function openSettingsPanel(tabName = 'general') {
  * Close settings panel with CSS classes
  */
 function closeSettingsPanel() {
+    console.log('Closing settings panel');
+    
     const settingsPanel = document.getElementById('settingsPanel');
     if (!settingsPanel) return;
     
-    // Use CSS classes for hiding
     settingsPanel.classList.remove('settings-overlay-active');
     settingsPanel.style.display = 'none';
-    
-    // Re-enable body scrolling
     document.body.classList.remove('modal-open');
 }
 
-/**
- * Show toast notification using the global system
- * @param {string} message - The message to display
- * @param {string} type - The type of toast (success, error, warning, info)
- */
-function showToast(message, type = 'info') {
-    // Use the global showToast function
-    if (typeof window.showToast === 'function') {
-        window.showToast(message, type);
-    } else {
-        console.log(`${type.toUpperCase()}: ${message}`);
-    }
-}
-
-// Export functions for use in main.js
+// ===== EXPOSE FUNCTIONS GLOBALLY =====
+// Make functions available to other modules and main.js
 window.openSettingsPanel = openSettingsPanel;
 window.closeSettingsPanel = closeSettingsPanel;
 window.initSettingsMenu = initSettingsMenu;
 window.switchSettingsTab = switchSettingsTab;
-window.showToast = showToast;
+window.saveChangedSettings = saveChangedSettings;
+window.loadAllSettings = loadAllSettings;
+window.updateLoadingState = updateLoadingState;
 
-// Debugging function to list available tabs and content areas
-window.debugTabs = function() {
-    console.log("Available tabs:");
-    document.querySelectorAll('.settings-tab-btn').forEach(btn => {
-        console.log(`Tab: ${btn.dataset.tab} (Text: ${btn.textContent.trim()})`);
-    });
-    console.log("Available content areas:");
-    document.querySelectorAll('.settings-tab-content').forEach(content => {
-        console.log(`Content ID: ${content.id}, Display: ${content.style.display}`);
-    });
-};
-
-// Re-export utility functions for use by other modules
-export {
-    capitalizeFirstLetter,
-    formatSettingName,
-    showNotification,
-    formatDate,
-    showToast
-};
+console.log('Settings.js functions exposed globally:', {
+    openSettingsPanel: typeof openSettingsPanel,
+    closeSettingsPanel: typeof closeSettingsPanel,
+    initSettingsMenu: typeof initSettingsMenu,
+    switchSettingsTab: typeof switchSettingsTab
+});

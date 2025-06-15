@@ -68,9 +68,9 @@ INSERT INTO email_validation_functions (function_name, display_name, description
 ('whois_info', 'WHOIS Information', 'Retrieves domain registration information', 35, true, 'src.engine.functions.mx', 'fetch_whois_info'), --whois.py not done
 ('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_smtp'),
 ('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.spf', 'spf_check'),
+('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.dkim', 'dkim_check'),
 ('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.dmarc', 'dmarc_check')
 -- not implementet yet
--- ('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.2', '2'),
 -- ('catch_all_check', 'Catch-All Detection', 'Checks if domain accepts all emails', 80, true, 'src.engine.functions.4', '4'),
 -- ('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.5', '5'),
 -- ('pop3_check', 'POP3 Verification', 'Checks if domain has POP3 service', 100, true, 'src.engine.functions.6', '6'),
@@ -80,8 +80,8 @@ ON CONFLICT (function_name) DO NOTHING;
 -- Dependency table: email_validation_function_dependencies
 CREATE TABLE IF NOT EXISTS email_validation_function_dependencies (
     id SERIAL PRIMARY KEY,
-    function_name VARCHAR(255) NOT NULL REFERENCES email_validation_functions(function_name) ON DELETE CASCADE,
-    depends_on VARCHAR(255) NOT NULL REFERENCES email_validation_functions(function_name) ON DELETE CASCADE,
+    function_name VARCHAR(255) NOT NULL REFERENCES email_validation_functions(function_name) ON DELETE SET NULL,
+    depends_on VARCHAR(255) NOT NULL REFERENCES email_validation_functions(function_name) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (function_name, depends_on)
 );
@@ -93,7 +93,7 @@ INSERT INTO email_validation_function_dependencies (function_name, depends_on) V
 ('smtp_validation', 'mx_records'),
 ('spf_check', 'mx_records'),
 ('dmarc_check', 'mx_records'),
--- ('dkim_check', 'mx_records'),
+('dkim_check', 'mx_records'),
 -- ('catch_all_check', 'smtp_validation'),
 -- ('imap_check', 'mx_records'),
 -- ('pop3_check', 'mx_records'),
@@ -125,7 +125,8 @@ CREATE TABLE IF NOT EXISTS batch_info (
 CREATE TABLE IF NOT EXISTS email_validation_records (
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     trace_id TEXT NOT NULL,
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,           
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    lastscan TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,            
     email TEXT NOT NULL,
     domain TEXT NOT NULL,
     smtp_result TEXT, -- maby
@@ -155,6 +156,7 @@ CREATE TABLE IF NOT EXISTS email_validation_records (
     spf_status TEXT,
     spf_details JSONB,
     dkim_status TEXT,
+    dkim_details JSONB,
     dmarc_status TEXT,
     dmarc_details JSONB,
     server_policies JSONB,
@@ -373,6 +375,7 @@ INSERT INTO rate_limit (category, name, value, is_time, enabled, description) VA
 ('dns', 'ns_lookup', 50, FALSE, TRUE, 'Maximum NS record lookups per minute'),
 ('dns', 'soa_lookup', 30, FALSE, TRUE, 'Maximum SOA record lookups per minute'),
 ('dns', 'ip_lookup', 60, FALSE, TRUE, 'Maximum IP lookups per minute for domain hosts'),
+('dns', 'dkim_lookup', 100, FALSE, TRUE, 'Maximum DKIM record lookups per minute'),
 
 -- DNS timeout settings
 ('dns', 'lookup_timeout', 10, TRUE, TRUE, 'DNS query timeout in seconds'),
@@ -580,7 +583,10 @@ CREATE TABLE IF NOT EXISTS dmarc_validation_statistics (
     has_reporting BOOLEAN DEFAULT FALSE,
     alignment_mode VARCHAR(10) DEFAULT 'relaxed',
     error_message TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT fk_dmarc_validation_trace FOREIGN KEY (trace_id) 
+        REFERENCES email_validation_records(trace_id)
+        ON DELETE SET NULL
 );
 
 -- Table for storing DMARC validation history with daily granularity per domain
@@ -602,7 +608,54 @@ CREATE TABLE IF NOT EXISTS dmarc_validation_history (
     validated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     validation_date DATE DEFAULT CURRENT_DATE,
     last_validated_at TIMESTAMPTZ,
-    CONSTRAINT unique_domain_daily UNIQUE(domain, validation_date)
+    CONSTRAINT unique_domain_daily UNIQUE(domain, validation_date),
+    CONSTRAINT fk_dmarc_validation_history_trace FOREIGN KEY (trace_id) 
+        REFERENCES email_validation_records(trace_id)
+        ON DELETE SET NULL
+);
+
+-- Detailed DKIM validation results
+CREATE TABLE IF NOT EXISTS dkim_validation_statistics (
+    id SERIAL PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    selector TEXT,
+    raw_record TEXT,
+    has_dkim BOOLEAN DEFAULT FALSE,
+    key_type TEXT,
+    key_length INTEGER,
+    security_level TEXT,
+    dns_lookups INTEGER DEFAULT 0,
+    processing_time_ms FLOAT,
+    errors TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_dkim_validation_trace FOREIGN KEY (trace_id) 
+        REFERENCES email_validation_records(trace_id)
+        ON DELETE SET NULL
+);
+
+-- Table for storing DKIM validation history with daily granularity per domain
+CREATE TABLE IF NOT EXISTS dkim_validation_history (
+    id SERIAL PRIMARY KEY,
+    domain VARCHAR(255) NOT NULL,
+    selector VARCHAR(100) NOT NULL,
+    has_dkim BOOLEAN DEFAULT FALSE,
+    key_type VARCHAR(20),
+    key_length INTEGER,
+    security_level VARCHAR(20),
+    dns_lookups INTEGER DEFAULT 0,
+    processing_time_ms NUMERIC(10,3) DEFAULT 0,
+    errors JSONB,
+    warnings JSONB,
+    recommendations JSONB,
+    trace_id TEXT,
+    validated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    validation_date DATE DEFAULT CURRENT_DATE,
+    last_validated_at TIMESTAMPTZ,
+    CONSTRAINT unique_domain_selector_daily UNIQUE(domain, selector, validation_date),
+    CONSTRAINT fk_dkim_history_trace FOREIGN KEY (trace_id)
+        REFERENCES email_validation_records(trace_id)
+        ON DELETE SET NULL
 );
 
 -- email_filter_regex_presets
@@ -1109,6 +1162,8 @@ CREATE INDEX IF NOT EXISTS idx_email_validation_trace_id ON email_validation_rec
 CREATE INDEX IF NOT EXISTS idx_email_validation_email ON email_validation_records(email);
 CREATE INDEX IF NOT EXISTS idx_email_validation_domain ON email_validation_records(domain);
 CREATE INDEX IF NOT EXISTS idx_email_validation_timestamp ON email_validation_records(timestamp);
+CREATE INDEX IF NOT EXISTS idx_email_validation_dkim_status ON email_validation_records(dkim_status);
+CREATE INDEX IF NOT EXISTS idx_email_validation_dkim_details ON email_validation_records USING GIN (dkim_details);
 
 -- MX infrastructure indexes
 CREATE INDEX IF NOT EXISTS idx_mx_infrastructure_trace_id ON mx_infrastructure(trace_id);
@@ -1170,6 +1225,11 @@ CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_strength ON dmarc_valida
 CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_trace ON dmarc_validation_history(trace_id);
 CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_date ON dmarc_validation_history(validated_at);
 
+-- DKIM
+CREATE INDEX IF NOT EXISTS idx_dkim_validation_stats_domain ON dkim_validation_statistics(domain);
+CREATE INDEX IF NOT EXISTS idx_dkim_validation_stats_trace_id ON dkim_validation_statistics(trace_id);
+CREATE INDEX IF NOT EXISTS idx_dkim_validation_stats_created_at ON dkim_validation_statistics(created_at);
+
 -- =============================================
 -- View
 -- =============================================
@@ -1197,6 +1257,29 @@ SELECT
     END as security_rating
 FROM dmarc_validation_history d
 ORDER BY d.domain, d.validated_at DESC;
+
+-- View for DKIM trend analysis
+CREATE OR REPLACE VIEW dkim_security_analysis AS
+SELECT 
+    d.domain,
+    d.selector,
+    d.has_dkim,
+    d.key_type,
+    d.key_length,
+    d.security_level,
+    d.dns_lookups,
+    d.processing_time_ms,
+    COUNT(*) OVER (PARTITION BY d.domain, d.selector) as validation_count,
+    FIRST_VALUE(d.validated_at) OVER (PARTITION BY d.domain, d.selector ORDER BY d.validated_at DESC) as last_validation,
+    FIRST_VALUE(d.validated_at) OVER (PARTITION BY d.domain, d.selector ORDER BY d.validated_at ASC) as first_validation,
+    CASE 
+        WHEN d.key_type = 'ed25519' OR (d.key_type = 'rsa' AND d.key_length >= 2048) THEN 'Excellent'
+        WHEN d.key_type = 'rsa' AND d.key_length >= 1024 THEN 'Good'
+        WHEN d.has_dkim = false THEN 'Missing'
+        ELSE 'Weak'
+    END as key_rating
+FROM dkim_validation_history d
+ORDER BY d.domain, d.selector, d.validated_at DESC;
 
 -- Validation Pipeline View
 CREATE OR REPLACE VIEW validation_pipeline AS

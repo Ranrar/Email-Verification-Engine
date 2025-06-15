@@ -105,16 +105,16 @@ def purge_and_exit(selected_options):
                 
                 # Also get the Axe logger if available and close it explicitly
                 try:
-                    from src.managers.log import Axe
-                    logger = Axe()
+                    from src.managers.log import get_logger
+                    logger = get_logger()
                     # Use getattr with default no-op function to handle missing 'close' method
                     getattr(logger, 'close', lambda: None)()
                     
-                    # If your Axe logger uses custom handlers, close them too
-                    if hasattr(logger, 'handlers'):
-                        for handler in logger.handlers:
-                            if hasattr(handler, 'close'):
-                                handler.close()
+                    # Close all handlers of the root logger (standard logging)
+                    root_logger = logging.getLogger()
+                    for handler in root_logger.handlers:
+                        if hasattr(handler, 'close'):
+                            handler.close()
                 except Exception as e:
                     print(f"Error closing Axe logger: {e}")
             

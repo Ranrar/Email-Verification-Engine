@@ -25,7 +25,7 @@ import socket
 import multiprocessing
 import time
 from src.helpers.Initialization import start_initialization_process
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.engine.engine import get_engine
 from src.helpers.dbh import sync_db
 from src.utils.debug import get_setting, debug_action
@@ -34,7 +34,7 @@ from src.utils.notifier import Notifier
 from src.utils import settings
 
 notify = Notifier()
-logger = Axe()
+logger = get_logger()
 
 # Find an available port
 def find_free_port():
@@ -91,7 +91,7 @@ def verify_email(email):
                 "is_disposable": validation_result.get("is_disposable", False),
                 "catch_all": validation_result.get("catch_all", False),
                 
-                # DNS security with enhanced SPF and DMARC details
+                # DNS security with enhanced SPF, DKIM, and DMARC details
                 "dns_security": {
                     "spf": validation_result.get("spf_status", ""),
                     "dkim": validation_result.get("dkim_status", ""),
@@ -106,6 +106,21 @@ def verify_email(email):
                         "warnings": validation_result.get("spf_details", {}).get("warnings", []),
                         "errors": validation_result.get("spf_details", {}).get("errors", []),
                         "dns_lookup_log": validation_result.get("spf_details", {}).get("dns_lookup_log", [])
+                    },
+                    # Add detailed DKIM information
+                    "dkim_details": {
+                        "has_dkim": validation_result.get("dkim_details", {}).get("has_dkim", False),
+                        "selector": validation_result.get("dkim_details", {}).get("selector", ""),
+                        "found_selectors": validation_result.get("dkim_details", {}).get("found_selectors", []),
+                        "key_type": validation_result.get("dkim_details", {}).get("key_type", ""),
+                        "key_length": validation_result.get("dkim_details", {}).get("key_length", 0),
+                        "security_level": validation_result.get("dkim_details", {}).get("security_level", "none"),
+                        "hash_algorithms": validation_result.get("dkim_details", {}).get("hash_algorithms", []),
+                        "testing": validation_result.get("dkim_details", {}).get("testing", False),
+                        "recommendations": validation_result.get("dkim_details", {}).get("recommendations", []),
+                        "execution_time": validation_result.get("dkim_details", {}).get("execution_time", 0),
+                        "warnings": validation_result.get("dkim_details", {}).get("warnings", []),
+                        "errors": validation_result.get("dkim_details", {}).get("errors", [])
                     },
                     # Add detailed DMARC information
                     "dmarc_details": {
@@ -184,6 +199,21 @@ def verify_email(email):
                     "spf": "",
                     "dkim": "",
                     "dmarc": "",
+                    # Add empty DKIM details structure for consistency
+                    "dkim_details": {
+                        "has_dkim": False,
+                        "selector": "",
+                        "found_selectors": [],
+                        "key_type": "",
+                        "key_length": 0,
+                        "security_level": "none",
+                        "hash_algorithms": [],
+                        "testing": False,
+                        "recommendations": [],
+                        "execution_time": 0,
+                        "warnings": [],
+                        "errors": [str(e)]
+                    },
                     # Add empty DMARC details structure for consistency
                     "dmarc_details": {
                         "has_dmarc": False,
@@ -230,74 +260,213 @@ def exit_application():
     print("Exiting application...")
     sys.exit(0)
 
-# Add this function to your main.py file
-
 @eel.expose
 def get_detailed_validation_data(trace_id):
-    """Get detailed validation data for a specific trace ID"""
+    """Get detailed validation data for a trace ID"""
     try:
-        # Dictionary to store results
-        results = {}
+        logger.debug(f"Getting detailed validation data for trace_id: {trace_id}")
         
-        # Get email validation record
-        record = sync_db.fetchrow(
-            "SELECT * FROM email_validation_records WHERE trace_id = $1", 
-            trace_id
-        )
+        from src.helpers.dbh import sync_db
         
-        if record:
-            # Record is already a dictionary from fetchrow
-            results['email_validation_record'] = record
+        # Get validation record from database
+        record = None
+        try:
+            # Try to get email validation record
+            result = sync_db.fetch("""
+                SELECT * FROM email_validation_records 
+                WHERE trace_id = $1 
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """, trace_id)
             
-            # Format JSON fields properly
-            for field in ['mx_analysis', 'email_provider_info', 'raw_result']:
-                if field in results['email_validation_record'] and results['email_validation_record'][field]:
-                    results['email_validation_record'][field] = json.dumps(results['email_validation_record'][field], indent=2)
+            if result and len(result) > 0:
+                record = result[0]
+                logger.debug(f"Found email validation record for {trace_id}")
+            else:
+                logger.warning(f"No validation record found for trace ID: {trace_id}")
+                return {
+                    'success': False,
+                    'error': f"No validation record found for trace ID: {trace_id}"
+                }
+        except Exception as db_error:
+            logger.error(f"Database error retrieving validation record: {db_error}")
+            return {
+                'success': False,
+                'error': f"Database error: {str(db_error)}"
+            }
+        
+        # Get DMARC details
+        try:
+            if record and record.get('domain'):
+                domain = record.get('domain')
+                
+                # Get DMARC validation statistics
+                dmarc_stats = sync_db.fetch("""
+                    SELECT * FROM dmarc_validation_statistics 
+                    WHERE trace_id = $1 OR domain = $2
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, trace_id, domain)
+                
+                if dmarc_stats and len(dmarc_stats) > 0:
+                    dmarc_data = dmarc_stats[0]
+                    
+                    # Add DMARC data to record
+                    if 'dns_security' not in record:
+                        record['dns_security'] = {}
+                    
+                    record['dns_security']['dmarc_details'] = {
+                        'has_dmarc': True if dmarc_data.get('raw_record') else False,
+                        'policy': dmarc_data.get('policy', 'none'),
+                        'policy_strength': dmarc_data.get('policy_strength', 'weak'),
+                        'alignment_mode': dmarc_data.get('alignment_mode', 'relaxed'),
+                        'raw_record': dmarc_data.get('raw_record', ''),
+                        'has_reporting': dmarc_data.get('has_reporting', False),
+                        'dns_lookups': dmarc_data.get('dns_lookups', 0),
+                        'processing_time_ms': dmarc_data.get('processing_time_ms', 0)
+                    }
+                    
+                    logger.debug(f"Added DMARC details from statistics for {domain}")
+        except Exception as dmarc_error:
+            logger.warning(f"Error adding DMARC details: {dmarc_error}")
+        
+        # Get SPF details if available
+        try:
+            if record and record.get('domain'):
+                domain = record.get('domain')
+                
+                # Get SPF validation statistics
+                spf_stats = sync_db.fetch("""
+                    SELECT * FROM spf_validation_statistics 
+                    WHERE trace_id = $1 OR domain = $2
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                """, trace_id, domain)
+                
+                if spf_stats and len(spf_stats) > 0:
+                    spf_data = spf_stats[0]
+                    
+                    # Add SPF data to record
+                    if 'dns_security' not in record:
+                        record['dns_security'] = {}
+                    
+                    record['dns_security']['spf_details'] = {
+                        'has_spf': True if spf_data.get('raw_record') else False,
+                        'result': spf_data.get('result', 'none'),
+                        'mechanism_matched': spf_data.get('mechanism_matched', ''),
+                        'raw_record': spf_data.get('raw_record', ''),
+                        'dns_lookups': spf_data.get('dns_lookups', 0),
+                        'processing_time_ms': spf_data.get('processing_time_ms', 0)
+                    }
+                    
+                    logger.debug(f"Added SPF details from statistics for {domain}")
+        except Exception as spf_error:
+            logger.warning(f"Error adding SPF details: {spf_error}")
+        
+        # Get DKIM details if available
+        try:
+            if record and record.get('domain'):
+                domain = record.get('domain')
+                
+                # Get DKIM validation statistics
+                dkim_stats = sync_db.fetch("""
+                    SELECT * FROM dkim_validation_statistics 
+                    WHERE trace_id = $1 OR domain = $2
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, trace_id, domain)
+                
+                if dkim_stats and len(dkim_stats) > 0:
+                    dkim_data = dkim_stats[0]
+                    
+                    # Add DKIM data to record
+                    if 'dns_security' not in record:
+                        record['dns_security'] = {}
+                    
+                    record['dns_security']['dkim_details'] = {
+                        'has_dkim': True if dkim_data.get('has_dkim', False) else False,
+                        'selector': dkim_data.get('selector', ''),
+                        'key_type': dkim_data.get('key_type', ''),
+                        'key_length': dkim_data.get('key_length', 0),
+                        'security_level': dkim_data.get('security_level', 'none'),
+                        'dns_lookups': dkim_data.get('dns_lookups', 0),
+                        'processing_time_ms': dkim_data.get('processing_time_ms', 0),
+                        'errors': dkim_data.get('errors', None)
+                    }
+                    
+                    logger.debug(f"Added DKIM details from statistics for {domain}")
+        except Exception as dkim_error:
+            logger.warning(f"Error adding DKIM details: {dkim_error}")
         
         # Get MX infrastructure data
-        mx_records = sync_db.fetch(
-            "SELECT * FROM mx_infrastructure WHERE trace_id = $1",
-            trace_id
-        )
-        
-        if mx_records:
-            results['mx_infrastructure'] = mx_records
+        mx_records = []
+        try:
+            mx_records = sync_db.fetch("""
+                SELECT 
+                    id, trace_id, domain, mx_record, is_primary, preference, 
+                    has_failover, load_balanced, provider_name, is_self_hosted
+                FROM mx_infrastructure 
+                WHERE trace_id = $1
+                ORDER BY preference ASC
+            """, trace_id)
             
-            # Format JSON fields properly
-            for mx in results['mx_infrastructure']:
-                for field in ['ip_addresses', 'ptr_records', 'geo_info', 'whois_summary']:
-                    if field in mx and mx[field]:
-                        mx[field] = json.dumps(mx[field], indent=2)
-        
-        # Get IP addresses data
-        ip_records = sync_db.fetch(
-            "SELECT * FROM mx_ip_addresses WHERE trace_id = $1",
-            trace_id
-        )
-        
-        if ip_records:
-            results['mx_ip_addresses'] = ip_records
-        
-        # Get validation steps if you want to include them
-        steps = sync_db.fetch(
-            "SELECT * FROM validation_steps WHERE trace_id = $1 ORDER BY step_order",
-            trace_id
-        )
-        
-        if steps:
-            results['validation_steps'] = steps
+            # Debug output
+            logger.debug(f"MX Query returned {len(mx_records) if mx_records else 0} records for {trace_id}")
             
-            # Format JSON fields properly
-            for step in results['validation_steps']:
-                if 'result' in step and step['result']:
-                    step['result'] = json.dumps(step['result'], indent=2)
+            # Process the mx_records for UI display - USE THE EXPECTED FIELD NAME
+            if mx_records and len(mx_records) > 0:
+                # Use mx_infrastructure instead of mx_records_data to match JS expectations
+                record['mx_infrastructure'] = mx_records
+                logger.debug(f"Added {len(record['mx_infrastructure'])} MX records for {trace_id}")
+            else:
+                # Provide empty array with the expected field name
+                record['mx_infrastructure'] = []
+        except Exception as mx_error:
+            logger.warning(f"Error retrieving MX infrastructure: {mx_error}")
+            record['mx_infrastructure'] = []
         
-        return results
-    
+        # Get IP address data
+        ip_data = []
+        try:
+            ip_data = sync_db.fetch("""
+                SELECT 
+                    id, trace_id, mx_infrastructure_id, ip_address, ip_version, is_private,
+                    ptr_record, country_code, region, provider
+                FROM mx_ip_addresses 
+                WHERE trace_id = $1
+                ORDER BY id
+            """, trace_id)
+            
+            # Debug output
+            logger.debug(f"IP Query returned {len(ip_data) if ip_data else 0} records for {trace_id}")
+            
+            # Process the IP data for UI display - USE THE EXPECTED FIELD NAME
+            if ip_data and len(ip_data) > 0:
+                # Use mx_ip_addresses instead of ip_addresses_data
+                record['mx_ip_addresses'] = ip_data
+                logger.debug(f"Added {len(record['mx_ip_addresses'])} IP addresses for {trace_id}")
+            else:
+                record['mx_ip_addresses'] = []
+        except Exception as ip_error:
+            logger.warning(f"Error retrieving IP addresses: {ip_error}")
+            record['mx_ip_addresses'] = []
+        
+        # Ensure correct data structure for UI
+        return {
+            'email_validation_record': record,
+            'mx_infrastructure': mx_records,
+            'mx_ip_addresses': ip_data,
+            'success': True
+        }
+            
     except Exception as e:
+        logger.error(f"Error in get_detailed_validation_data: {str(e)}")
         import traceback
-        traceback.print_exc()
-        return {"error": str(e)}
+        logger.error(traceback.format_exc())
+        return {
+            'success': False, 
+            'error': str(e)
+        }
 
 @eel.expose
 def read_markdown_file(filename):
@@ -375,91 +544,6 @@ def list_documentation_files():
             "success": False,
             "error": str(e)
         }
-
-@eel.expose
-def get_dmarc_info(domain):
-    """Get detailed DMARC information for a domain"""
-    try:
-        # Import directly here to avoid circular imports
-        from src.engine.functions.dmarc import DMARCValidator
-        
-        validator = DMARCValidator()
-        trace_id = f"dmarc_info_{int(time.time() * 1000)}"
-        
-        # Validate DMARC for the domain
-        dmarc_result = validator.validate_dmarc(domain, trace_id)
-        
-        # Create a detailed response
-        response = {
-            "success": True,
-            "domain": domain,
-            "has_dmarc": dmarc_result.has_dmarc,
-            "policy": dmarc_result.policy,
-            "policy_strength": dmarc_result.policy_strength,
-            "subdomain_policy": dmarc_result.subdomain_policy,
-            "alignment_mode": dmarc_result.alignment_mode,
-            "percentage_covered": dmarc_result.percentage_covered,
-            "aggregate_reporting": dmarc_result.aggregate_reporting,
-            "forensic_reporting": dmarc_result.forensic_reporting,
-            "organizational_domain": dmarc_result.organizational_domain,
-            "recommendations": dmarc_result.recommendations,
-            "dns_lookups": dmarc_result.dns_lookups,
-            "execution_time_ms": dmarc_result.execution_time_ms,
-            "trace_id": trace_id
-        }
-        
-        # Include record details if available
-        if dmarc_result.record:
-            response["record"] = {
-                "raw": dmarc_result.record.raw_record,
-                "version": dmarc_result.record.version,
-                "rua_addresses": dmarc_result.record.rua_addresses,
-                "ruf_addresses": dmarc_result.record.ruf_addresses,
-                "failure_options": dmarc_result.record.failure_options,
-                "report_format": dmarc_result.record.report_format,
-                "report_interval": dmarc_result.record.report_interval
-            }
-            
-        # Include any errors or warnings
-        if dmarc_result.errors:
-            response["errors"] = dmarc_result.errors
-        if dmarc_result.warnings:
-            response["warnings"] = dmarc_result.warnings
-            
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error getting DMARC info for {domain}: {str(e)}", exc_info=True)
-        return {
-            "success": False,
-            "domain": domain,
-            "error": str(e)
-        }
-
-@eel.expose
-def get_dmarc_explanation():
-    """Get an explanation of DMARC for users"""
-    return {
-        "title": "Understanding DMARC",
-        "sections": [
-            {
-                "title": "What is DMARC?",
-                "content": "DMARC (Domain-based Message Authentication, Reporting & Conformance) is an email authentication protocol that helps protect email domains from unauthorized use. It builds on SPF and DKIM to provide domain-level protection and reporting."
-            },
-            {
-                "title": "DMARC Policies",
-                "content": "DMARC has three policy options: 'none' (monitor only), 'quarantine' (treat suspicious emails with caution), and 'reject' (block suspicious emails). These determine what happens when an email fails DMARC checks."
-            },
-            {
-                "title": "Policy Strength",
-                "content": "DMARC policy strength is evaluated as 'none', 'weak', 'moderate', or 'strong' based on the policy type, coverage percentage, alignment settings, and reporting configuration."
-            },
-            {
-                "title": "Reporting",
-                "content": "DMARC provides two types of reporting: aggregate reports (rua) give statistical data about email traffic, while forensic reports (ruf) provide details about specific authentication failures."
-            }
-        ]
-    }
 
 # Main function - Non-async for better multiprocessing compatibility
 def main():

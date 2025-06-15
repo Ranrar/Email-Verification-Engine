@@ -21,10 +21,10 @@ sys.path.insert(0, project_root)
 
 # Now import from the project structure
 from src.engine.functions.mx import fetch_whois_info
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
 # Initialize logger
-logger = Axe()
+logger = get_logger()
 
 def test_whois(email):
     """Test the WHOIS functionality with an email address."""

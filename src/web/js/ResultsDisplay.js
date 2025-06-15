@@ -47,6 +47,29 @@ class ResultsDisplay {
     }
 
     /**
+     * Display validation results
+     * @param {Object} data - Validation result data
+     */
+    displayResults(data) {
+        this.clearResults();
+        
+        // Display validation summary
+        this.displaySummary(data);
+        
+        // Populate tables with details
+        this.populateDetailsTable(data);
+        
+        // Populate DMARC analysis section
+        this.populateDMARCAnalysis(data);
+        
+        // Populate DKIM analysis section
+        this.populateDKIMAnalysis(data);
+        
+        // Show the detailed results
+        document.getElementById('detailedResults').style.display = 'block';
+    }
+
+    /**
      * Display basic validation results with improved CSS integration
      */
     displayResults(details) {
@@ -105,46 +128,55 @@ class ResultsDisplay {
     async handleShowMoreClick() {
         const traceId = document.getElementById('traceId')?.innerText;
         
-        if (!traceId || traceId === '-') return;
+        if (!traceId || traceId === '-') {
+            this.showToast('No trace ID available', 'error');
+            return;
+        }
         
-        // If expandedDetails is already visible, toggle it
+        // Toggle expanded details if already visible
         if (this.expandedDetails.style.display === 'block') {
             this.expandedDetails.style.display = 'none';
             this.showMoreButton.textContent = 'Show More Details';
             this.showMoreButton.className = 'btn btn-secondary';
-        } else {
-            // Show loading state with proper CSS classes
-            this.showMoreButton.textContent = 'Loading...';
-            this.showMoreButton.className = 'btn btn-secondary disabled';
-            this.showMoreButton.disabled = true;
+            return;
+        } 
+        
+        // Show loading state
+        this.showMoreButton.textContent = 'Loading...';
+        this.showMoreButton.className = 'btn btn-secondary disabled';
+        this.showMoreButton.disabled = true;
+        
+        try {
+            // Add debug output to see what's happening
+            console.log(`Fetching details for trace ID: ${traceId}`);
             
-            try {
-                // Call Python function to get detailed data
-                const data = await eel.get_detailed_validation_data(traceId)();
-                
-                // Populate the detailed sections with the returned data
-                this.populateDetailedSections(data);
-                
-                // Show the expanded details section
-                this.expandedDetails.style.display = 'block';
-                
-                // Change button text and re-enable with proper CSS classes
-                this.showMoreButton.textContent = 'Hide Details';
-                this.showMoreButton.className = 'btn btn-secondary';
-                this.showMoreButton.disabled = false;
-                
-                // Show success toast using new CSS classes
-                this.showToast('Detailed data loaded successfully', 'success');
-                
-            } catch (error) {
-                console.error('Error loading detailed data:', error);
-                this.showMoreButton.textContent = 'Show More Details';
-                this.showMoreButton.className = 'btn btn-secondary';
-                this.showMoreButton.disabled = false;
-                
-                // Show error toast using new CSS classes
-                this.showToast('Failed to load detailed data', 'error');
-            }
+            // Call Python function to get detailed data
+            const data = await eel.get_detailed_validation_data(traceId)();
+            
+            console.log("Received data:", data);
+            
+            // Populate the detailed sections with the returned data
+            this.populateDetailedSections(data);
+            
+            // Show the expanded details section
+            this.expandedDetails.style.display = 'block';
+            
+            // Change button text and re-enable
+            this.showMoreButton.textContent = 'Hide Details';
+            this.showMoreButton.className = 'btn btn-secondary';
+            this.showMoreButton.disabled = false;
+            
+            // Show success toast
+            this.showToast('Detailed data loaded successfully', 'success');
+            
+        } catch (error) {
+            console.error('Error loading detailed data:', error);
+            this.showMoreButton.textContent = 'Show More Details';
+            this.showMoreButton.className = 'btn btn-secondary';
+            this.showMoreButton.disabled = false;
+            
+            // Show error toast
+            this.showToast('Failed to load detailed data', 'error');
         }
     }
 
@@ -250,11 +282,18 @@ class ResultsDisplay {
      * Populate MX details table with improved organization
      */
     populateMXDetails(data) {
+        console.log("populateMXDetails called with data:", data); // Add this debug line
+        
         const mxTable = document.getElementById('mxDetailsTable');
-        if (!mxTable) return;
+        if (!mxTable) {
+            console.warn("mxDetailsTable element not found in DOM"); // Add this debug line
+            return;
+        }
         
         mxTable.innerHTML = '';
-        mxTable.className = 'details-table'; // Use CSS class from components.css
+        mxTable.className = 'details-table';
+        
+        console.log("MX Infrastructure data:", data.mx_infrastructure); // Add this debug line
         
         if (data.mx_infrastructure && data.mx_infrastructure.length > 0) {
             data.mx_infrastructure.forEach((mx, index) => {
@@ -274,6 +313,7 @@ class ResultsDisplay {
                 }
             });
         } else {
+            console.warn("No MX infrastructure data found"); // Add this debug line
             this.addTableRow(mxTable, 'MX Records', 'No MX infrastructure data available');
         }
     }
@@ -282,11 +322,18 @@ class ResultsDisplay {
      * Populate IP details table with enhanced grouping
      */
     populateIPDetails(data) {
+        console.log("populateIPDetails called with data:", data); // Add this debug line
+        
         const ipTable = document.getElementById('ipDetailsTable');
-        if (!ipTable) return;
+        if (!ipTable) {
+            console.warn("ipDetailsTable element not found in DOM"); // Add this debug line
+            return;
+        }
         
         ipTable.innerHTML = '';
-        ipTable.className = 'details-table'; // Use CSS class from components.css
+        ipTable.className = 'details-table';
+
+        console.log("IP Addresses data:", data.mx_ip_addresses); // Add this debug line
 
         if (data.mx_ip_addresses && data.mx_ip_addresses.length > 0) {
             // Group IP addresses by mx_infrastructure_id
@@ -311,6 +358,7 @@ class ResultsDisplay {
                 serverIndex++;
             }
         } else {
+            console.warn("No IP address data found"); // Add this debug line
             this.addTableRow(ipTable, 'IP Addresses', 'No IP address data available');
         }
     }
@@ -434,45 +482,367 @@ class ResultsDisplay {
      * @param {Object} data - Validation details data
      */
     populateDMARCAnalysis(data) {
-        // Check if we have domain info
-        if (!data || !data.email_validation_record || !data.email_validation_record.domain) return;
+        // Debug the data structure we're receiving
+        console.log("DMARC Analysis data:", data);
         
-        const domain = data.email_validation_record.domain;
-        
-        // Initialize DMARC analyzer if needed
-        if (!window.dmarcAnalyzer) {
-            if (window.DmarcAnalyzer) {
-                window.dmarcAnalyzer = new DmarcAnalyzer();
-                window.dmarcAnalyzer.init();
-            } else {
-                console.error('DmarcAnalyzer class not found');
-                return;
-            }
+        // Check if we have domain and DMARC data
+        if (!data || !data.email_validation_record) {
+            console.warn("No email validation record found");
+            return;
         }
         
-        // Set loading state
+        const record = data.email_validation_record;
+        const domain = record.domain;
+        
+        // Get DMARC details from the main validation response
+        let dmarcDetailsData = null;
+        
+        // Try each possible location for DMARC details
+        if (record.dmarc_details) {
+            try {
+                dmarcDetailsData = typeof record.dmarc_details === 'string' ? 
+                    JSON.parse(record.dmarc_details) : record.dmarc_details;
+                console.log("Found DMARC details in record.dmarc_details");
+            } catch(e) {
+                console.error('Error parsing DMARC details:', e);
+            }
+        } else if (record.dns_security && record.dns_security.dmarc_details) {
+            dmarcDetailsData = record.dns_security.dmarc_details;
+            console.log("Found DMARC details in record.dns_security.dmarc_details");
+        }
+        
+        console.log("DMARC details data:", dmarcDetailsData);
+        
+        // Get the container elements
         const dmarcLoading = document.getElementById('dmarcLoading');
-        const dmarcDetails = document.getElementById('dmarcDetails');
+        const dmarcDetailsElem = document.getElementById('dmarcDetails');
         
-        if (dmarcLoading) dmarcLoading.style.display = 'block';
-        if (dmarcDetails) dmarcDetails.innerHTML = '';
+        if (!dmarcDetailsElem) {
+            console.warn("Could not find dmarcDetails element");
+            return;
+        }
         
-        // Analyze domain and display results
-        window.dmarcAnalyzer.analyzeDomain(domain)
-            .then(dmarcInfo => {
-                window.dmarcAnalyzer.displayResults(dmarcInfo);
-            })
-            .catch(error => {
-                console.error('Error analyzing DMARC:', error);
-                // Display error in DMARC section
-                if (dmarcDetails) {
-                    dmarcDetails.innerHTML = `
-                        <div class="message error">
-                            <strong>Error:</strong> Failed to analyze DMARC
-                        </div>
-                    `;
-                }
+        // Clear previous content
+        dmarcDetailsElem.innerHTML = '';
+        
+        // Hide loading indicator if present
+        if (dmarcLoading) dmarcLoading.style.display = 'none';
+        
+        // Display DMARC information
+        if (dmarcDetailsData) {
+            this.displayDMARCResults(domain, dmarcDetailsElem, dmarcDetailsData);
+        } else {
+            dmarcDetailsElem.innerHTML = `
+                <div class="message warning">
+                    <p><strong>DMARC Information</strong></p>
+                    <p>No DMARC information available for ${domain}</p>
+                </div>`;
+        }
+    }
+
+    /**
+     * Display DMARC analysis results - replacement for DmarcAnalyzer.displayResults
+     * @param {string} domain - The domain being analyzed
+     * @param {HTMLElement} container - The container element to populate
+     * @param {Object} data - DMARC details data
+     */
+    displayDMARCResults(domain, container, data) {
+        if (!container) return;
+        
+        // Handle error or missing data
+        if (!data || data.error) {
+            container.innerHTML = `
+                <div class="message error">
+                    <strong>Error:</strong> ${data?.error || 'Failed to analyze DMARC'}
+                </div>
+            `;
+            return;
+        }
+        
+        // Determine policy status class for styling
+        let policyStatusClass = 'warning';
+        if (data.policy === 'reject') {
+            policyStatusClass = 'success';
+        } else if (data.policy === 'none') {
+            policyStatusClass = 'error';
+        }
+        
+        // Begin building HTML content
+        let html = `
+            <div class="results-container">
+                <h3>DMARC Status for ${domain}</h3>
+                <div class="grid-2col mb-15">
+                    <div class="message ${data.has_dmarc ? 'success' : 'error'}">
+                        <strong>DMARC Record:</strong> ${data.has_dmarc ? 'Present' : 'Missing'}
+                    </div>
+                    <div class="message ${policyStatusClass}">
+                        <strong>Policy:</strong> ${data.policy?.toUpperCase() || 'NONE'} (${data.policy_strength || 'weak'})
+                    </div>
+                </div>`;
+        
+        if (data.has_dmarc) {
+            // Show DMARC details in a table
+            html += `
+                <table class="details-table">
+                    <tr>
+                        <td>Subdomain Policy:</td>
+                        <td>${data.subdomain_policy || 'Same as domain policy'}</td>
+                    </tr>
+                    <tr>
+                        <td>Alignment Mode:</td>
+                        <td>${data.alignment_mode || 'relaxed'}</td>
+                    </tr>
+                    <tr>
+                        <td>Percentage Covered:</td>
+                        <td>${data.percentage_covered || 100}%</td>
+                    </tr>
+                    <tr>
+                        <td>Aggregate Reporting:</td>
+                        <td>${data.aggregate_reporting ? 'Enabled' : 'Disabled'}</td>
+                    </tr>
+                    <tr>
+                        <td>Forensic Reporting:</td>
+                        <td>${data.forensic_reporting ? 'Enabled' : 'Disabled'}</td>
+                    </tr>`;
+            
+            if (data.execution_time_ms) {
+                html += `
+                    <tr>
+                        <td>Analysis Time:</td>
+                        <td>${(data.execution_time_ms / 1000).toFixed(2)}s</td>
+                    </tr>`;
+            }
+            
+            html += `</table>`;
+            
+            // Display DMARC record if available
+            if (data.record && data.record.raw) {
+                html += `
+                    <h4 class="mt-15 mb-10">Record Details</h4>
+                    <div class="json-display">
+                        ${data.record.raw}
+                    </div>`;
+            } else if (data.raw_record) {
+                html += `
+                    <h4 class="mt-15 mb-10">Record Details</h4>
+                    <div class="json-display">
+                        ${data.raw_record}
+                    </div>`;
+            }
+            
+            // Display recommendations if available
+            if (data.recommendations && data.recommendations.length > 0) {
+                html += `
+                    <h4 class="mt-15 mb-10">Recommendations</h4>
+                    <ul class="mb-15">`;
+                    
+                data.recommendations.forEach(rec => {
+                    html += `<li>${rec}</li>`;
+                });
+                
+                html += `</ul>`;
+            }
+        } else {
+            html += `
+                <div class="message warning">
+                    <p><strong>No DMARC Record Found</strong></p>
+                    <p>We recommend implementing DMARC to improve email security and deliverability. 
+                    DMARC helps protect your domain from unauthorized use and provides visibility into email authentication.</p>
+                </div>`;
+        }
+        
+        // Add warnings if any
+        if (data.warnings && data.warnings.length > 0) {
+            html += `
+                <h4 class="mt-15 mb-10">Warnings</h4>
+                <ul class="mb-15">`;
+                
+            data.warnings.forEach(warning => {
+                html += `<li class="text-muted">${warning}</li>`;
             });
+            
+            html += `</ul>`;
+        }
+        
+        html += `</div>`;
+        container.innerHTML = html;
+    }
+
+    /**
+     * Display DKIM analysis results
+     * @param {string} domain - The domain being analyzed
+     * @param {HTMLElement} container - The container element to populate
+     * @param {Object} data - DKIM details data
+     */
+    displayDKIMResults(domain, container, data) {
+        if (!data) return;
+        
+        // Determine security status class for styling
+        let securityStatusClass = 'warning';
+        if (data.security_level === 'high') {
+            securityStatusClass = 'success';
+        } else if (data.security_level === 'none' || data.security_level === 'low') {
+            securityStatusClass = 'error';
+        }
+        
+        let html = `
+            <div class="results-container">
+            <h3>DKIM Status for ${domain}</h3>
+            <div class="grid-2col mb-15">
+                <div class="message ${data.has_dkim ? 'success' : 'error'}">
+                    <strong>DKIM Record:</strong> ${data.has_dkim ? 'Present' : 'Missing'}
+                </div>
+                <div class="message ${securityStatusClass}">
+                    <strong>Security Level:</strong> ${data.security_level.toUpperCase()}
+                </div>
+            </div>`;
+            
+        if (data.has_dkim) {
+            // Show DKIM details in a table using the existing details-table class
+            html += `
+                <table class="details-table">
+                    <tr>
+                        <td>Selector:</td>
+                        <td>${data.selector || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                        <td>Key Type:</td>
+                        <td>${data.key_type || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                        <td>Key Length:</td>
+                        <td>${data.key_length || 'N/A'} bits</td>
+                    </tr>
+                    <tr>
+                        <td>Hash Algorithms:</td>
+                        <td>${Array.isArray(data.hash_algorithms) ? data.hash_algorithms.join(', ') : 'N/A'}</td>
+                    </tr>`;
+        
+            if (data.testing) {
+                html += `
+                    <tr>
+                        <td>Testing Mode:</td>
+                        <td><span class="badge warning">Enabled</span></td>
+                    </tr>`;
+            }
+            
+            if (data.found_selectors && data.found_selectors.length > 0) {
+                html += `
+                    <tr>
+                        <td>Found Selectors:</td>
+                        <td>${data.found_selectors.join(', ')}</td>
+                    </tr>`;
+            }
+            
+            if (data.execution_time) {
+                html += `
+                    <tr>
+                        <td>Analysis Time:</td>
+                        <td>${(data.execution_time / 1000).toFixed(2)}s</td>
+                    </tr>`;
+            }
+            
+            html += `</table>`;
+            
+            // Display recommendations if available
+            if (data.recommendations && data.recommendations.length > 0) {
+                html += `
+                    <h4 class="mt-15 mb-10">Recommendations</h4>
+                    <ul class="mb-15">`;
+                
+                data.recommendations.forEach(rec => {
+                    html += `<li>${rec}</li>`;
+                });
+                
+                html += `</ul>`;
+            }
+        } else {
+            html += `
+                <div class="message warning">
+                    <p><strong>No DKIM Record Found</strong></p>
+                    <p>We recommend implementing DKIM to improve email security and deliverability. 
+                    DKIM adds a digital signature to emails sent from your domain, helping verify that they're actually from you.</p>
+                </div>`;
+        }
+        
+        // Add warnings if any
+        if (data.warnings && data.warnings.length > 0) {
+            html += `
+                <h4 class="mt-15 mb-10">Warnings</h4>
+                <ul class="mb-15">`;
+            
+            data.warnings.forEach(warning => {
+                html += `<li class="text-muted">${warning}</li>`;
+            });
+            
+            html += `</ul>`;
+        }
+        
+        html += `</div>`;
+        container.innerHTML = html;
+    }
+
+    /**
+     * Populate DKIM analysis section
+     * @param {Object} data - Validation details data
+     */
+    populateDKIMAnalysis(data) {
+        // Debug the data structure we're receiving
+        console.log("DKIM Analysis data:", data);
+        
+        // Check if we have domain and DKIM data
+        if (!data || !data.email_validation_record) {
+            console.warn("No email validation record found");
+            return;
+        }
+        
+        const record = data.email_validation_record;
+        const domain = record.domain;
+        
+        // Get DKIM details from the main validation response
+        let dkimDetailsData = null;
+        
+        // Try each possible location for DKIM details
+        if (record.dkim_details) {
+            try {
+                dkimDetailsData = typeof record.dkim_details === 'string' ? 
+                    JSON.parse(record.dkim_details) : record.dkim_details;
+                console.log("Found DKIM details in record.dkim_details");
+            } catch(e) {
+                console.error('Error parsing DKIM details:', e);
+            }
+        } else if (record.dns_security && record.dns_security.dkim_details) {
+            dkimDetailsData = record.dns_security.dkim_details;
+            console.log("Found DKIM details in record.dns_security.dkim_details");
+        }
+        
+        console.log("DKIM details data:", dkimDetailsData);
+        
+        // Get the container elements
+        const dkimLoading = document.getElementById('dkimLoading');
+        const dkimDetailsElem = document.getElementById('dkimDetails');
+        
+        if (!dkimDetailsElem) {
+            console.warn("Could not find dkimDetails element");
+            return;
+        }
+        
+        // Clear previous content
+        dkimDetailsElem.innerHTML = '';
+        
+        // Hide loading indicator if present
+        if (dkimLoading) dkimLoading.style.display = 'none';
+        
+        // Display DKIM information
+        if (dkimDetailsData) {
+            this.displayDKIMResults(domain, dkimDetailsElem, dkimDetailsData);
+        } else {
+            dkimDetailsElem.innerHTML = `
+                <div class="message warning">
+                    <p><strong>DKIM Information</strong></p>
+                    <p>No DKIM information available for ${domain}</p>
+                </div>`;
+        }
     }
 
     /**

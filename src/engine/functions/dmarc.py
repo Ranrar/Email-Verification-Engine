@@ -26,13 +26,22 @@ import json
 from src.managers.cache import cache_manager, CacheKeys
 from src.managers.dns import DNSManager
 from src.managers.rate_limit import RateLimitManager
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.managers.time import now_utc, EnhancedOperationTimer
 from src.engine.functions.statistics import DNSServerStats
 from src.helpers.dbh import sync_db
 
+# Import trace system
+from src.helpers.tracer import (
+    ensure_trace_id,
+    ensure_context_has_trace_id,
+    trace_function,
+    validate_trace_id,
+    create_child_trace_id
+)
+
 # Initialize logging
-logger = Axe()
+logger = get_logger()
 
 @dataclass
 class DMARCRecord:
@@ -72,12 +81,17 @@ class DMARCResult:
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     recommendations: List[str] = field(default_factory=list)
+    trace_id: Optional[str] = None  # Add trace_id to result
 
 class DMARCValidator:
     """DMARC record validator implementing RFC 7489"""
     
-    def __init__(self):
+    @trace_function("dmarc_validator_init")
+    def __init__(self, trace_id: Optional[str] = None):
         """Initialize with required managers"""
+        # Ensure we have a valid trace_id
+        self.trace_id = ensure_trace_id(trace_id)
+        
         self.dns_manager = DNSManager()
         self.rate_limit_manager = RateLimitManager()
         
@@ -87,7 +101,7 @@ class DMARCValidator:
             self.domain_info = DomainInfoExtractor()
         except ImportError:
             self.domain_info = None
-            logger.debug("DomainInfoExtractor not available, using fallback domain detection")
+            logger.debug(f"[{self.trace_id}] DomainInfoExtractor not available, using fallback domain detection")
         
         # Initialize DNS stats if available
         if DNSServerStats:
@@ -102,47 +116,50 @@ class DMARCValidator:
             if not isinstance(self.dmarc_cache_ttl, (int, float)) or self.dmarc_cache_ttl <= 0:
                 self.dmarc_cache_ttl = 3600  # Default 1 hour
         except KeyError:
-            logger.debug("DMARC cache TTL not configured in rate limits, using default of 3600 seconds")
+            logger.debug(f"[{self.trace_id}] DMARC cache TTL not configured in rate limits, using default of 3600 seconds")
             self.dmarc_cache_ttl = 3600
         except Exception as e:
-            logger.warning(f"Failed to get DMARC cache TTL from rate limits: {e}, using default")
+            logger.warning(f"[{self.trace_id}] Failed to get DMARC cache TTL from rate limits: {e}, using default")
             self.dmarc_cache_ttl = 3600
         
         # Get DNS timeout from DNS manager
         try:
             # Use the DNS manager's own timeout method which has proper fallback
             self.dns_timeout = self.dns_manager.get_timeout()
-            logger.debug(f"Using DNS timeout from DNS manager: {self.dns_timeout}s")
+            logger.debug(f"[{self.trace_id}] Using DNS timeout from DNS manager: {self.dns_timeout}s")
         except Exception as e:
-            logger.warning(f"Failed to get DNS timeout from DNS manager: {e}, using default")
+            logger.warning(f"[{self.trace_id}] Failed to get DNS timeout from DNS manager: {e}, using default")
             self.dns_timeout = 5.0
         
-        logger.debug(f"DMARC Validator initialized - Cache TTL: {self.dmarc_cache_ttl}s, "
+        logger.debug(f"[{self.trace_id}] DMARC Validator initialized - Cache TTL: {self.dmarc_cache_ttl}s, "
                     f"DNS Timeout: {self.dns_timeout}s, "
                     f"Stats Available: {self.dns_stats is not None}")
 
+    @trace_function("validate_dmarc")
     def validate_dmarc(self, domain: str, trace_id: Optional[str] = None) -> DMARCResult:
         """Validate DMARC record for a domain with enhanced timing and statistics"""
         
-        with EnhancedOperationTimer(f"DMARC validation for {domain}", trace_id) as timer:
-            # Don't generate new trace_id if one is provided
-            if trace_id is None:
-                # Only generate if absolutely no trace_id is provided (shouldn't happen in normal operation)
-                trace_id = f"dmarc_fallback_{int(time.time() * 1000)}"
-                logger.warning(f"No trace_id provided for DMARC validation of {domain}, using fallback: {trace_id}")
+        # Ensure we have a valid trace_id
+        trace_id = ensure_trace_id(trace_id)
         
+        # Validate trace_id at entry point
+        if not validate_trace_id(trace_id):
+            logger.error(f"Invalid trace_id received in validate_dmarc: {trace_id}")
+            trace_id = ensure_trace_id()
+        
+        with EnhancedOperationTimer(f"DMARC validation for {domain}", trace_id) as timer:
             logger.info(f"[{trace_id}] Starting DMARC validation for domain {domain}")
             
-            result = DMARCResult(domain=domain)
+            result = DMARCResult(domain=domain, trace_id=trace_id)
             
             # Validate domain format
-            if not self._is_valid_domain(domain):
+            if not self._is_valid_domain(domain, trace_id):
                 result.errors.append(f"Invalid domain format: {domain}")
                 result.execution_time_ms = timer.elapsed_ms or 0.0
                 return result
             
             # Get organizational domain for DMARC lookup
-            org_domain = self._get_organizational_domain(domain)
+            org_domain = self._get_organizational_domain(domain, trace_id)
             result.organizational_domain = org_domain
             
             # Look up DMARC record
@@ -159,13 +176,13 @@ class DMARCValidator:
                 result.forensic_reporting = len(dmarc_record.ruf_addresses) > 0
                 
                 # Determine alignment mode
-                result.alignment_mode = self._get_alignment_mode(dmarc_record)
+                result.alignment_mode = self._get_alignment_mode(dmarc_record, trace_id)
                 
                 # Assess policy strength
-                result.policy_strength = self._assess_policy_strength(dmarc_record)
+                result.policy_strength = self._assess_policy_strength(dmarc_record, trace_id)
                 
                 # Generate recommendations
-                result.recommendations = self._generate_recommendations(dmarc_record)
+                result.recommendations = self._generate_recommendations(dmarc_record, trace_id)
                 
                 # Collect errors and warnings from record
                 result.errors.extend(dmarc_record.errors)
@@ -187,11 +204,17 @@ class DMARCValidator:
             
             return result
 
-    def _get_dmarc_record(self, domain: str, trace_id: Optional[str] = None) -> Tuple[Optional[DMARCRecord], int]:
+    @trace_function("get_dmarc_record")
+    def _get_dmarc_record(self, domain: str, trace_id: str) -> Tuple[Optional[DMARCRecord], int]:
         """Get DMARC record from DNS with proper cache integration"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _get_dmarc_record: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         dmarc_hostname = f"_dmarc.{domain}"
         
-        # Use centralized cache key system - FIXED
+        # Use centralized cache key system
         cache_key = CacheKeys.dmarc(dmarc_hostname)
         
         cached_result = cache_manager.get(cache_key)
@@ -222,7 +245,7 @@ class DMARCValidator:
                 return None, 1
             
             # Parse DMARC record
-            dmarc_record = self._parse_dmarc_record(dmarc_txt)
+            dmarc_record = self._parse_dmarc_record(dmarc_txt, trace_id)
             
             # Cache result with proper TTL
             cache_manager.set(cache_key, dmarc_record, ttl=self.dmarc_cache_ttl)
@@ -234,11 +257,19 @@ class DMARCValidator:
             cache_manager.set(cache_key, None, ttl=300)
             return None, 1
 
-    def _parse_dmarc_record(self, record: str) -> DMARCRecord:
+    @trace_function("parse_dmarc_record")
+    def _parse_dmarc_record(self, record: str, trace_id: str) -> DMARCRecord:
         """Parse a DMARC TXT record"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _parse_dmarc_record: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         dmarc_record = DMARCRecord(raw_record=record)
         
         try:
+            logger.debug(f"[{trace_id}] Parsing DMARC record: {record}")
+            
             # Parse key-value pairs
             tags = {}
             for part in record.split(';'):
@@ -272,10 +303,10 @@ class DMARCValidator:
             
             # Parse reporting addresses
             if 'rua' in tags:
-                dmarc_record.rua_addresses = self._parse_report_addresses(tags['rua'])
+                dmarc_record.rua_addresses = self._parse_report_addresses(tags['rua'], trace_id)
             
             if 'ruf' in tags:
-                dmarc_record.ruf_addresses = self._parse_report_addresses(tags['ruf'])
+                dmarc_record.ruf_addresses = self._parse_report_addresses(tags['ruf'], trace_id)
             
             # Validate version
             if dmarc_record.version != 'DMARC1':
@@ -299,14 +330,23 @@ class DMARCValidator:
             # Record is valid if no errors
             dmarc_record.valid = len(dmarc_record.errors) == 0
             
+            logger.debug(f"[{trace_id}] DMARC record parsed successfully, valid: {dmarc_record.valid}")
+            
         except Exception as e:
+            logger.error(f"[{trace_id}] Failed to parse DMARC record: {str(e)}")
             dmarc_record.errors.append(f"Failed to parse DMARC record: {str(e)}")
             dmarc_record.valid = False
         
         return dmarc_record
 
-    def _parse_report_addresses(self, addresses_str: str) -> List[str]:
+    @trace_function("parse_report_addresses")
+    def _parse_report_addresses(self, addresses_str: str, trace_id: str) -> List[str]:
         """Parse and validate DMARC reporting addresses"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _parse_report_addresses: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         addresses = []
         email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
         
@@ -326,36 +366,65 @@ class DMARCValidator:
             if email and email_pattern.match(email):
                 addresses.append(email)
             elif email:  # Log invalid addresses for debugging
-                logger.debug(f"Invalid DMARC report address format: {email}")
+                logger.debug(f"[{trace_id}] Invalid DMARC report address format: {email}")
         
         return addresses
 
-    def _get_organizational_domain(self, domain: str) -> str:
+    @trace_function("get_organizational_domain")
+    def _get_organizational_domain(self, domain: str, trace_id: str) -> str:
         """Get organizational domain for DMARC lookup using domain info extractor"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _get_organizational_domain: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         try:
             # Use domain info extractor if available
             if self.domain_info and hasattr(self.domain_info, 'extract_organizational_domain'):
-                return self.domain_info.extract_organizational_domain(domain)
+                org_domain = self.domain_info.extract_organizational_domain(domain)
+                logger.debug(f"[{trace_id}] Organizational domain for {domain}: {org_domain}")
+                return org_domain
         
             # Simple fallback if domain info extractor is not available
             parts = domain.split('.')
             if len(parts) >= 2:
-                return '.'.join(parts[-2:])
+                org_domain = '.'.join(parts[-2:])
+                logger.debug(f"[{trace_id}] Fallback organizational domain for {domain}: {org_domain}")
+                return org_domain
+            
+            logger.debug(f"[{trace_id}] Using domain as-is for organizational domain: {domain}")
             return domain
         
         except Exception as e:
-            logger.warning(f"Error determining organizational domain for {domain}: {e}")
+            logger.warning(f"[{trace_id}] Error determining organizational domain for {domain}: {e}")
             return domain
 
-    def _get_alignment_mode(self, record: DMARCRecord) -> str:
+    @trace_function("get_alignment_mode")
+    def _get_alignment_mode(self, record: DMARCRecord, trace_id: str) -> str:
         """Determine the strictest alignment mode"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _get_alignment_mode: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         if record.alignment_spf == 's' or record.alignment_dkim == 's':
-            return "strict"
-        return "relaxed"
+            alignment = "strict"
+        else:
+            alignment = "relaxed"
+        
+        logger.debug(f"[{trace_id}] DMARC alignment mode: {alignment}")
+        return alignment
 
-    def _assess_policy_strength(self, record: DMARCRecord) -> str:
+    @trace_function("assess_policy_strength")
+    def _assess_policy_strength(self, record: DMARCRecord, trace_id: str) -> str:
         """Assess the strength of DMARC policy with enhanced scoring"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _assess_policy_strength: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         if not record.valid:
+            logger.debug(f"[{trace_id}] DMARC record invalid, strength: none")
             return "none"
         
         score = 0
@@ -386,16 +455,25 @@ class DMARCValidator:
         
         # Determine strength based on total score (0-100)
         if score >= 80:
-            return "strong"
+            strength = "strong"
         elif score >= 60:
-            return "moderate"
+            strength = "moderate"
         elif score >= 30:
-            return "weak"
+            strength = "weak"
         else:
-            return "none"
+            strength = "none"
+        
+        logger.debug(f"[{trace_id}] DMARC policy strength assessment: {strength} (score: {score})")
+        return strength
 
-    def _generate_recommendations(self, record: DMARCRecord) -> List[str]:
+    @trace_function("generate_recommendations")
+    def _generate_recommendations(self, record: DMARCRecord, trace_id: str) -> List[str]:
         """Generate recommendations for DMARC improvement"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _generate_recommendations: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         recommendations = []
         
         if record.policy == 'none':
@@ -416,11 +494,19 @@ class DMARCValidator:
         if not record.subdomain_policy:
             recommendations.append("Consider adding explicit subdomain policy (sp)")
         
+        logger.debug(f"[{trace_id}] Generated {len(recommendations)} DMARC recommendations")
         return recommendations
 
-    def _is_valid_domain(self, domain: str) -> bool:
+    @trace_function("is_valid_domain")
+    def _is_valid_domain(self, domain: str, trace_id: str) -> bool:
         """Validate domain format"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _is_valid_domain: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         if not domain or len(domain) > 255:
+            logger.debug(f"[{trace_id}] Domain validation failed: empty or too long")
             return False
         
         # Basic domain validation
@@ -429,10 +515,18 @@ class DMARCValidator:
             r'(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
         )
         
-        return bool(domain_pattern.match(domain))
+        is_valid = bool(domain_pattern.match(domain))
+        logger.debug(f"[{trace_id}] Domain {domain} validation: {is_valid}")
+        return is_valid
 
+    @trace_function("record_dmarc_statistics")
     def _record_dmarc_statistics(self, result: DMARCResult, trace_id: str):
         """Record DMARC validation statistics"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _record_dmarc_statistics: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         try:
             # Use the statistics module instead of direct database insertion
             if self.dns_stats and hasattr(self.dns_stats, 'record_dmarc_statistics'):
@@ -454,8 +548,14 @@ class DMARCValidator:
         except Exception as e:
             logger.warning(f"[{trace_id}] Failed to record DMARC statistics: {e}")
 
+    @trace_function("store_dmarc_analysis")
     def _store_dmarc_analysis(self, domain: str, result: DMARCResult, trace_id: str):
         """Store DMARC analysis results for reporting and analytics"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _store_dmarc_analysis: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         try:
             # Use the statistics module for storing DMARC analysis
             if self.dns_stats and hasattr(self.dns_stats, 'store_dmarc_analysis'):
@@ -481,8 +581,14 @@ class DMARCValidator:
         except Exception as e:
             logger.warning(f"[{trace_id}] Failed to store DMARC analysis: {e}")
 
-    def _validate_dmarc_syntax(self, record: str) -> List[str]:
+    @trace_function("validate_dmarc_syntax")
+    def _validate_dmarc_syntax(self, record: str, trace_id: str) -> List[str]:
         """Additional DMARC syntax validation"""
+        # Validate trace_id
+        if not validate_trace_id(trace_id):
+            logger.warning(f"Invalid trace_id in _validate_dmarc_syntax: {trace_id}")
+            trace_id = ensure_trace_id()
+        
         errors = []
         
         # Check for duplicate tags
@@ -504,37 +610,44 @@ class DMARCValidator:
         if 'p' not in tags:
             errors.append("Missing required policy tag (p)")
         
+        logger.debug(f"[{trace_id}] DMARC syntax validation found {len(errors)} errors")
         return errors
 
 # Main DMARC check function for the validation engine
+@trace_function("dmarc_check")
 def dmarc_check(context: Dict[str, Any]) -> Dict[str, Any]:
     """
     DMARC validation function for the Email Verification Engine
     """
+    # Ensure context has valid trace_id
+    context = ensure_context_has_trace_id(context)
+    trace_id = context['trace_id']
+    
     email = context.get("email", "")
-    trace_id = context.get("trace_id", "")
     
     if not email or '@' not in email:
+        logger.error(f"[{trace_id}] Invalid email format for DMARC check: {email}")
         return {
             "valid": False,
             "error": "Invalid email format for DMARC check",
             "has_dmarc": False,
             "policy": "none",
             "policy_strength": "none",
-            "execution_time": 0
+            "execution_time": 0,
+            "trace_id": trace_id
         }
     
     domain = email.split('@')[-1].lower().strip()
-    validator = DMARCValidator()
+    
+    # Create child trace for spawned operation
+    child_trace_id = create_child_trace_id(trace_id)
+    validator = DMARCValidator(child_trace_id)
     
     start_time = time.time()
     try:
-        # Ensure trace_id is not empty
-        if not trace_id:
-            logger.warning(f"Empty trace_id provided for DMARC validation of {domain}")
-            trace_id = f"dmarc_missing_{int(time.time() * 1000)}"
+        logger.debug(f"[{trace_id}] Starting DMARC validation for domain: {domain}")
         
-        dmarc_result = validator.validate_dmarc(domain, trace_id)  # Pass the correct trace_id
+        dmarc_result = validator.validate_dmarc(domain, child_trace_id)
         execution_time = (time.time() - start_time) * 1000
         
         # Create result dictionary instead of direct database update
@@ -602,6 +715,7 @@ def dmarc_check(context: Dict[str, Any]) -> Dict[str, Any]:
             "warnings": dmarc_result.warnings,
             "recommendations": dmarc_result.recommendations,
             "domain": domain,
+            "trace_id": trace_id,
             
             # Additional metadata for comprehensive reporting
             "record_details": {
@@ -615,15 +729,17 @@ def dmarc_check(context: Dict[str, Any]) -> Dict[str, Any]:
                 "validator_version": "1.0.0",
                 "rfc_compliance": "RFC-7489",
                 "cache_hit": dmarc_result.dns_lookups == 0,
-                "timestamp": now_utc().isoformat()
+                "timestamp": now_utc().isoformat(),
+                "child_trace_id": child_trace_id
             }
         }
         
+        logger.info(f"[{trace_id}] DMARC validation completed successfully for {domain}")
         return result
         
     except Exception as e:
         execution_time = (time.time() - start_time) * 1000
-        logger.error(f"[{trace_id}] DMARC validation error: {str(e)}")
+        logger.error(f"[{trace_id}] DMARC validation error for {domain}: {str(e)}")
         return {
             "valid": False,
             "error": f"DMARC validation error: {str(e)}",
@@ -631,5 +747,6 @@ def dmarc_check(context: Dict[str, Any]) -> Dict[str, Any]:
             "policy": "none",
             "policy_strength": "none",
             "domain": domain,
-            "execution_time": execution_time
+            "execution_time": execution_time,
+            "trace_id": trace_id
         }

@@ -16,9 +16,9 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 from src.managers.time import now_utc, normalize_datetime, to_iso8601, from_iso8601
 from concurrent.futures import ThreadPoolExecutor
-from src.managers.log import Axe
+from src.managers.log import get_logger
 # Set up logging
-logger = Axe()
+logger = get_logger()
 
 class TimeoutHandler:
     """Utility for tracking elapsed time with proper timezone handling"""

@@ -7,10 +7,10 @@ This module provides IPv4-specific DNS resolution functionality.
 
 import dns.resolver
 from typing import List, Optional, Any
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
 # Set up logging
-logger = Axe()
+logger = get_logger()
 
 class IPv4Resolver:
     """

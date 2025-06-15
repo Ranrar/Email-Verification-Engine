@@ -228,13 +228,8 @@ function updateGeneralTheme() {
 // Listen for theme changes
 document.addEventListener('themeChanged', updateGeneralTheme);
 
-// Export functions and state for use by the main settings module
-export {
-    capitalizeFirstLetter,
-    formatSettingName,
-    showNotification,
-    generalState,
-    loadGeneralSettings,
-    renderAppSettings,
-    saveGeneralSettings
-};
+// Expose functions globally
+window.loadGeneralSettings = loadGeneralSettings;
+window.saveGeneralSettings = saveGeneralSettings;
+window.renderAppSettings = renderAppSettings;
+window.generalState = generalState;

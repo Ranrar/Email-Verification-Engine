@@ -11,9 +11,9 @@ This module provides functions to check if a domain is:
 from typing import Dict, Any, Optional
 from src.helpers.dbh import sync_db
 from src.managers.cache import cache_manager, CacheKeys
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
-logger = Axe()
+logger = get_logger()
 
 def check_black_white(context: Dict[str, Any]) -> Dict[str, Any]:
     """

@@ -806,15 +806,8 @@ async function saveNewEmailFilterConfiguration() {
     }
 }
 
-// Export functions and state for use by the main settings module
-export {
-    capitalizeFirstLetter,
-    showNotification,
-    formatDate,
-    emailFilterState,
-    loadEmailFilterRegexSettings,
-    renderEmailFilterRegexSettings,
-    applyEmailFilterRegexPreset,
-    saveEmailFilterRegexSettings,
-    updateEmailFilterTheme
-};
+// Expose functions and state to the global window object
+window.loadEmailFilterRegexSettings = loadEmailFilterRegexSettings;
+window.saveEmailFilterRegexSettings = saveEmailFilterRegexSettings;
+window.renderEmailFilterRegexSettings = renderEmailFilterRegexSettings;
+window.emailFilterState = emailFilterState;

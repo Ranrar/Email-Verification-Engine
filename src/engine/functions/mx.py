@@ -25,11 +25,19 @@ from src.managers.cache import cache_manager, CacheKeys
 from src.managers.dns import DNSManager
 from src.managers.rate_limit import RateLimitManager
 from src.managers.time import TimeManager, now_utc, EnhancedOperationTimer
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.utils.http_utils import make_request
+from src.engine.functions.provider import get_email_provider_info
+from src.helpers.tracer import (
+    ensure_trace_id, 
+    ensure_context_has_trace_id, 
+    trace_function, 
+    validate_trace_id,
+    create_child_trace_id
+)
 
 # Initialize logging
-logger = Axe()
+logger = get_logger()
 
 class MXCacher:
     """Simple utility to cache MX records efficiently."""
@@ -84,7 +92,8 @@ class MXCacher:
                 "domain": domain,
                 "mx_records": None,
                 "error": "Rate limit exceeded",
-                "timestamp": now_utc()
+                "timestamp": now_utc(),
+                "duration_ms": 0
     }
         
         # Use enhanced timer to measure operation duration
@@ -231,18 +240,21 @@ if __name__ == "__main__":
         parser.print_help()
         sys.exit(1)
 
+@trace_function("fetch_mx_records")
 def fetch_mx_records(context):
-    """
-    Fetch MX records for an email's domain with comprehensive infrastructure analysis.
+    """Fetch MX records for domain with comprehensive infrastructure analysis"""
     
-    Args:
-        context: Dictionary containing email address and trace_id
-        
-    Returns:
-        Dict with MX validation results including infrastructure details
-    """
+    # Ensure context has valid trace_id
+    context = ensure_context_has_trace_id(context)
+    trace_id = context['trace_id']
+    
+    # Validate trace_id at entry point
+    if not validate_trace_id(trace_id):
+        logger.error(f"Invalid trace_id received in fetch_mx_records: {trace_id}")
+        trace_id = ensure_trace_id()
+        context['trace_id'] = trace_id
+    
     email = context.get("email", "")
-    trace_id = context.get("trace_id", "")
     
     if not email or '@' not in email:
         return {
@@ -607,10 +619,12 @@ def fetch_mx_records(context):
         except Exception as e:
             logger.warning(f"[{trace_id}] WHOIS lookup failed for {domain}: {str(e)}")
     
-    # Detect email provider from MX records
+    # Get provider information for the email domain
+    domain = context.get('domain') or context.get('email', '').split('@')[1] if '@' in context.get('email', '') else ''
     email_provider_info = None
-    if exchanges:
-        email_provider_info = _get_email_provider_info(exchanges, domain, trace_id)  # Changed from get_email_provider_info
+    if domain:
+        email_provider_info = get_email_provider_info(f"test@{domain}", trace_id=context.get('trace_id'))
+        context['provider_info'] = email_provider_info
 
     # Update the result dictionary
     result_dict = {
@@ -634,23 +648,24 @@ def fetch_mx_records(context):
             "has_failover": len(mx_groups) > 1
         },
         "infrastructure_info": infra_info,
-        "email_provider": email_provider_info,  # Add the email provider information
+        "email_provider": email_provider_info,
         "execution_time": mx_result.get("duration_ms", 0)
     }
     
     return result_dict
 
+@trace_function("get_ip_geolocation")
 def _get_ip_geolocation(ip, trace_id=None):
-    """
-    Internal helper: Get geolocation information for an IP address.
+    """Get geolocation information for an IP address"""
     
-    Args:
-        ip: IP address to look up
-        trace_id: Optional trace ID for logging
-        
-    Returns:
-        Dict with geolocation information or None if lookup failed
-    """
+    # Ensure we have a valid trace_id
+    trace_id = ensure_trace_id(trace_id)
+    
+    # Validate trace_id
+    if not validate_trace_id(trace_id):
+        logger.warning(f"Invalid trace_id in _get_ip_geolocation: {trace_id}")
+        trace_id = ensure_trace_id()
+    
     try:
         ip_obj = ipaddress.ip_address(ip)
         
@@ -719,51 +734,13 @@ def _get_ip_geolocation(ip, trace_id=None):
         logger.debug(f"[{trace_id}] Geolocation error for {ip}: {e}")
         return None
 
-def _get_email_provider_info(mx_exchanges, domain, trace_id=None):
-    """
-    Internal helper: Determine email provider information from MX records.
-    
-    Args:
-        mx_exchanges: List of MX exchange hostnames
-        domain: The domain being analyzed
-        trace_id: Optional trace ID for logging
-        
-    Returns:
-        Dict with minimal email provider information
-    """
-    # Check for custom hosted email (same domain in MX)
-    uses_self_hosted = any(domain.lower() in mx.lower() for mx in mx_exchanges)
-    
-    # Simplified result structure - provider name will be populated from mx_ip_addresses table later
-    return {
-        "provider_name": "Unknown",
-        "self_hosted": uses_self_hosted,
-        "provider_detected": False
-    }
-
+@trace_function("fetch_whois_info")
 def fetch_whois_info(context):
-    """
-    Retrieve WHOIS information for the domain of an email address.
+    """Fetch WHOIS information for domain"""
     
-    This function is part of the public API and can be called directly
-    or used internally by the fetch_mx_records function.
-    
-    Args:
-        context: Dictionary containing:
-            - email: Email address to extract domain from, OR
-            - domain: Direct domain name input
-            - trace_id: Optional trace ID for logging
-        
-    Returns:
-        Dict with WHOIS information for the domain including:
-            - valid: Boolean indicating success
-            - domain: The domain that was queried
-            - whois_info: Dictionary of WHOIS data or None if failed
-            - domain_age_days: Age of domain in days (if available)
-            - source: "cache" or "lookup" depending on where data came from
-            - execution_time: Time taken for lookup (if not from cache)
-    """
-    trace_id = context.get("trace_id", "")
+    # Ensure context has valid trace_id
+    context = ensure_context_has_trace_id(context)
+    trace_id = context['trace_id']
     
     # Handle both direct domain input and email extraction
     if "domain" in context:

@@ -13,12 +13,12 @@ This module provides functionality to:
 
 import re
 from typing import Dict, Any, List, Optional, Set
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 from src.managers.cache import cache_manager
 
 # Initialize logging
-logger = Axe()
+logger = get_logger()
 
 class DomainInfoExtractor:
     """Extracts and manages domain provider information"""

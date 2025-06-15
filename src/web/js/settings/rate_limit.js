@@ -214,12 +214,8 @@ function updateRateLimitTheme() {
 // Listen for theme changes
 document.addEventListener('themeChanged', updateRateLimitTheme);
 
-// Export functions and state for use by the main settings module
-export {
-    capitalizeFirstLetter,
-    showNotification,
-    rateLimitState,
-    loadRateLimitSettings,
-    renderRateLimits,
-    saveRateLimitSettings
-};
+// Expose functions and state to the global window object
+window.loadRateLimitSettings = loadRateLimitSettings;
+window.saveRateLimitSettings = saveRateLimitSettings;
+window.renderRateLimits = renderRateLimits;
+window.rateLimitState = rateLimitState;

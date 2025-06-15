@@ -14,7 +14,7 @@ import dns.resolver
 
 from src.managers.executor import ThreadPoolexecutor
 from src.helpers.dbh import sync_db
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.managers.cache import cache_manager, CacheKeys
 from src.managers.rate_limit import rate_limit_manager
 from src.engine.functions.statistics import DNSServerStats
@@ -22,7 +22,7 @@ from src.helpers.ipv4_resolver import IPv4Resolver
 from src.helpers.ipv6_resolver import IPv6Resolver
 
 # Set up logging
-logger = Axe()
+logger = get_logger()
 
 class DNSManager:
     """

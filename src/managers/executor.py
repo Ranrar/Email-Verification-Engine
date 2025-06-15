@@ -18,7 +18,7 @@ from concurrent.futures import ProcessPoolExecutor as ProcessPoolexecutor
 import psutil
 import requests
 
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 from src.managers.benchmark import run_benchmark
 
@@ -38,7 +38,7 @@ def ensure_event_loop(func):
     return wrapper
 
 # Set up logging
-logger = Axe()
+logger = get_logger()
 
 # Define test paths
 TEST_FILE_PATH = os.path.join(tempfile.gettempdir(), "tg_io.bin")

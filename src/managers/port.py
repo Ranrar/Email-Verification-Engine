@@ -11,9 +11,9 @@ import threading
 import time
 from typing import List, Dict, Any, Optional
 from src.helpers.dbh import sync_db
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
-logger = Axe()
+logger = get_logger()
 
 class PortManager:
     """

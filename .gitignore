@@ -1,7 +1,8 @@
-# .gitignore
+/.gitignore
 /.cache
 /.temp
 /.venv
+/.VSCodeCounter
 /logs
 /dev
 /__pycache__
@@ -15,4 +16,3 @@
 /src/helpers/__pycache__
 /src/engine/__pycache__
 /src/engine/functions/__pycache__
-src/engine/functions/dkim.py

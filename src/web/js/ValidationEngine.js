@@ -12,12 +12,15 @@ class ValidationEngine {
         this.detailedResults = null;
         this.animationElement = null;
         this.progressContainer = null;
+        this.listenersAttached = false;
     }
 
     /**
      * Initialize the validation engine
      */
     init() {
+        console.log('Initializing ValidationEngine');
+        
         this.verifyButton = document.getElementById('verifyButton');
         this.emailInput = document.getElementById('emailInput');
         this.resultDiv = document.getElementById('result');
@@ -28,12 +31,22 @@ class ValidationEngine {
         this.stepText = document.getElementById('validation-step');
         this.smtpResultsDiv = document.getElementById('smtpResults');
 
+        console.log('- DOM elements found:');
+        console.log('- verifyButton:', !!this.verifyButton);
+        console.log('- emailInput:', !!this.emailInput);
+        console.log('- resultDiv:', !!this.resultDiv);
+        console.log('- detailedResults:', !!this.detailedResults);
+
         if (!this.verifyButton || !this.emailInput) {
-            console.error('ValidationEngine: Required DOM elements not found');
+            console.error('- ValidationEngine: Required DOM elements not found');
+            console.error('- verifyButton missing:', !this.verifyButton);
+            console.error('- emailInput missing:', !this.emailInput);
             return false;
         }
 
+        console.log('Attaching event listeners');
         this.attachEventListeners();
+        console.log('ValidationEngine initialized successfully');
         return true;
     }
 
@@ -41,20 +54,41 @@ class ValidationEngine {
      * Attach event listeners
      */
     attachEventListeners() {
+        if (this.listenersAttached) {
+            console.log('Event listeners already attached, skipping');
+            return;
+        }
+
+        console.log('Attaching event listeners to ValidationEngine');
+        
         // Verify button click handler
-        this.verifyButton.addEventListener('click', () => this.handleVerifyClick());
+        this.verifyButton.addEventListener('click', () => {
+            console.log('Verify button click event triggered');
+            this.handleVerifyClick();
+        });
         
         // Enter key support for form submission
-        this.emailInput.addEventListener('keypress', (e) => this.handleKeyPress(e));
+        this.emailInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                console.log('Enter key detected');
+                this.handleKeyPress(e);
+            }
+        });
+        
+        this.listenersAttached = true;
+        console.log('Event listeners attached');
     }
 
     /**
      * Handle verify button click
      */
     handleVerifyClick() {
+        console.log('Verify button clicked');
         const email = this.emailInput.value;
+        console.log('Email input value:', email);
         
         if (this.verifyButton.textContent === "New Validation") {
+            console.log('Resetting validation form');
             this.resetValidationForm();
             return;
         }
@@ -62,11 +96,14 @@ class ValidationEngine {
         // Basic client-side validation - check for @ and . characters
         if (email.trim() !== '') {
             if (email.includes('@') && email.includes('.')) {
+                console.log('Email format valid, starting validation');
                 this.startValidation(email);
             } else {
+                console.log('Invalid email format');
                 this.showError('Please enter a valid email address.');
             }
         } else {
+            console.log('Empty email field');
             this.showError('Please enter an email address.');
         }
     }
@@ -75,13 +112,19 @@ class ValidationEngine {
      * Handle key press events
      */
     handleKeyPress(e) {
+        console.log('Key pressed:', e.key);
         if (e.key === 'Enter') {
             e.preventDefault();
+            console.log('Enter key detected');
             
             if (!this.verifyButton.disabled && this.verifyButton.textContent !== "New Validation") {
+                console.log('Calling handleVerifyClick from Enter key');
                 this.handleVerifyClick();
             } else if (this.verifyButton.textContent === "New Validation") {
+                console.log('Resetting from Enter key');
                 this.resetValidationForm();
+            } else {
+                console.log('Button disabled or validation in progress');
             }
         }
     }
@@ -90,11 +133,18 @@ class ValidationEngine {
      * Start the email validation process
      */
     async startValidation(email) {
-        if (this.isValidating) return;
+        console.log('Starting validation for:', email);
+        
+        if (this.isValidating) {
+            console.log('Already validating, skipping');
+            return;
+        }
         
         this.isValidating = true;
         this.emailInput.disabled = true;
         this.verifyButton.disabled = true;
+        
+        console.log('UI locked for validation');
         
         // Clear previous results
         this.clearResults();
@@ -102,10 +152,11 @@ class ValidationEngine {
         try {
             // Show progress and start validation
             this.showValidationProgress();
+            console.log('Progress shown, calling eel.verify_email');
             
             // Call the Python validation function
             const response = await eel.verify_email(email)();
-            console.log("Validation response:", response);
+            console.log("Validation response received:", response);
             
             // Process the response
             this.handleValidationResponse(response);
@@ -114,6 +165,7 @@ class ValidationEngine {
             console.error('Validation error:', error);
             this.showError('An error occurred during validation. Please try again.');
         } finally {
+            console.log('Unlocking UI');
             this.isValidating = false;
             this.hideValidationProgress();
             this.verifyButton.disabled = false;

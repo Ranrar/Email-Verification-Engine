@@ -169,12 +169,8 @@ function updatePortTheme() {
 // Listen for theme changes
 document.addEventListener('themeChanged', updatePortTheme);
 
-// Export functions and state for use by the main settings module
-export {
-    capitalizeFirstLetter,
-    showNotification,
-    portState,
-    loadPortsConfiguration,
-    renderPortsConfiguration,
-    savePortsConfiguration
-};
+// Expose functions and state to the global window object
+window.loadPortsConfiguration = loadPortsConfiguration;
+window.savePortsConfiguration = savePortsConfiguration;
+window.renderPortsConfiguration = renderPortsConfiguration;
+window.portState = portState;

@@ -23,11 +23,11 @@ if __name__ == "__main__":
 from src.managers.dns import DNSManager
 from src.engine.functions.statistics import DNSServerStats
 from src.helpers.dbh import sync_db
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.managers.time import now_utc, normalize_datetime
 
 # Initialize logger
-logger = Axe()
+logger = get_logger()
 
 class DNSWarmup:
     """
@@ -197,8 +197,6 @@ class DNSWarmup:
             if ':' in nameserver_ip and not ipv6_available:
                 logger.info(f"Skipping IPv6 nameserver {nameserver_ip} due to lack of IPv6 support")
                 continue
-                
-            logger.info(f"Testing nameserver: {nameserver_ip} ({ns['provider']})")
             
             # For each domain, try just one record type to minimize unnecessary tests
             for domain_index, domain in enumerate(test_domains):
@@ -213,7 +211,6 @@ class DNSWarmup:
                         from src.helpers.ipv4_resolver import IPv4Resolver
                         test_resolver = IPv4Resolver()
                     
-                    logger.info(f"Querying {record_type} records for {domain} using {nameserver_ip}")
                     start_query = time.time()
                     answers = test_resolver.resolve(
                         hostname=domain,
@@ -232,7 +229,6 @@ class DNSWarmup:
                     )
                     
                     success_count += 1
-                    logger.info(f"Success - {len(answers)} records in {duration_ms:.1f}ms")
                     
                 except Exception as e:
                     # Record failure

@@ -261,12 +261,8 @@ function updateValidationTheme() {
 // Listen for theme changes
 document.addEventListener('themeChanged', updateValidationTheme);
 
-// Export functions and state for use by the main settings module
-export {
-    capitalizeFirstLetter,
-    showNotification,
-    validationState,
-    loadValidationSettings,
-    renderValidationScoring,
-    saveValidationSettings
-};
+// Expose functions and state to the global window object
+window.loadValidationSettings = loadValidationSettings;
+window.saveValidationSettings = saveValidationSettings;
+window.renderValidationScoring = renderValidationScoring;
+window.validationState = validationState;

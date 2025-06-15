@@ -5,11 +5,11 @@ Contains functions for processing validation results and calculating confidence 
 """
 
 from typing import Dict, Any, Optional
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 from src.engine.result import EmailValidationResult, MxInfrastructure
 
-logger = Axe()
+logger = get_logger()
 
 def process_validation_results(result: EmailValidationResult, validation_results: Dict[str, Any]) -> None:
     """Process validation results and update the EmailValidationResult object"""
@@ -207,6 +207,46 @@ def process_validation_results(result: EmailValidationResult, validation_results
                             f"forensic={str(result.dmarc_details['forensic_reporting']).lower()}")
         else:
             logger.debug(f"[{result.trace_id}] No DMARC record found for domain {result.domain}")
+    
+    # DKIM check processing
+    if 'dkim_check' in validation_results:
+        dkim_data = validation_results.get('dkim_check', {})
+        
+        # Update basic DKIM status
+        result.dkim_status = dkim_data.get('security_level', '')
+        
+        # Add error message logging here
+        if dkim_data.get("error"):
+            logger.error(f"[{result.trace_id}] DKIM error: {dkim_data['error']}")
+        
+        # Store detailed DKIM information
+        result.dkim_details = {
+            'valid': dkim_data.get('valid', False),
+            'has_dkim': dkim_data.get('has_dkim', False),
+            'selector': dkim_data.get('selector', ''),
+            'found_selectors': dkim_data.get('found_selectors', []),
+            'key_type': dkim_data.get('key_type', ''),
+            'key_length': dkim_data.get('key_length', 0),
+            'security_level': dkim_data.get('security_level', 'none'),
+            'hash_algorithms': dkim_data.get('hash_algorithms', []),
+            'recommendations': dkim_data.get('recommendations', []),
+            'testing': dkim_data.get('testing', False),
+            'execution_time': dkim_data.get('execution_time_ms', 0)
+        }
+        
+        # Log DKIM validation result
+        logger.info(f"[{result.trace_id}] DKIM validation result: {result.dkim_status}")
+        if result.dkim_details['has_dkim']:
+            logger.debug(f"[{result.trace_id}] DKIM key: {result.dkim_details['key_type']} "
+                        f"{result.dkim_details['key_length']} bits, "
+                        f"security: {result.dkim_details['security_level']}")
+            
+            # Log recommendations if available
+            if result.dkim_details['recommendations']:
+                logger.debug(f"[{result.trace_id}] DKIM recommendations: "
+                            f"{', '.join(result.dkim_details['recommendations'])}")
+        else:
+            logger.debug(f"[{result.trace_id}] No valid DKIM records found for domain {result.domain}")
     
     # Legacy DNS security processing
     if 'dns_security' in validation_results:

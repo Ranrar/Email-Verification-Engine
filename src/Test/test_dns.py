@@ -43,11 +43,11 @@ sys.path.insert(0, project_root)
 # Now import from the project structure
 from src.managers.dns import DNSManager
 from src.engine.functions.statistics import DNSServerStats
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 
 # Initialize logger and managers
-logger = Axe()
+logger = get_logger()
 dns_manager = DNSManager()
 dns_manager.initialize()
 

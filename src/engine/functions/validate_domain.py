@@ -6,9 +6,9 @@ Early domain verification to ensure the domain exists before other validation st
 
 from typing import Dict, Any
 from src.engine.functions.mx import fetch_mx_records
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
-logger = Axe()
+logger = get_logger()
 
 def validate_domain(context):
     """

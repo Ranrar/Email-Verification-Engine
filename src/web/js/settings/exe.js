@@ -273,15 +273,10 @@ function updateExecutorTheme() {
 // Listen for theme changes
 document.addEventListener('themeChanged', updateExecutorTheme);
 
-// Export functions and state for use by the main settings module
-export {
-    capitalizeFirstLetter,
-    formatSettingName,
-    showNotification,
-    executorState,
-    loadExecutorSettings,
-    renderExecutorSettings,
-    saveExecutorSettings,
-    applyExecutorPreset,
-    runExecutorAutotune
-};
+// Expose functions globally (add this at the end)
+window.loadExecutorSettings = loadExecutorSettings;
+window.saveExecutorSettings = saveExecutorSettings;
+window.renderExecutorSettings = renderExecutorSettings;
+window.runExecutorAutotune = runExecutorAutotune;
+window.applyExecutorPreset = applyExecutorPreset;
+window.executorState = executorState;

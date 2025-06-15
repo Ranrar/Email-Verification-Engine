@@ -32,9 +32,9 @@ import pytz
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
-logger = Axe()
+logger = get_logger()
 
 def now_utc() -> datetime:
     """

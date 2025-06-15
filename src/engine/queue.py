@@ -16,11 +16,11 @@ from datetime import datetime
 import json
 
 from src.managers.time import EnhancedOperationTimer
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 from src.managers.cache import CacheKeys, cache_manager
 
-logger = Axe()
+logger = get_logger()
 
 class DynamicQueue:
     """
@@ -254,16 +254,16 @@ class DynamicQueue:
     
     def execute(self, context):
         """Execute all validation functions in proper order with dependencies."""
-        from src.managers.log import Axe
-        email_logger = Axe()
+        from src.managers.log import get_logger
+        email_logger = get_logger()
         
         email = context.get('email')
         trace_id = context.get('trace_id')
         track_steps = context.get('track_steps', False)
         
         if email:
-            logger.email(f"Queue execution starting for: {email}") # type: ignore
-        
+            logger.debug(f"Queue execution starting for: {email}")
+
         # Add code to create parent record first if needed
         if track_steps and trace_id and email:
             try:
@@ -299,7 +299,6 @@ class DynamicQueue:
             # Execute functions in order
             for function_name in self.execution_order:
                 if not self.functions[function_name]['enabled']:
-                    logger.email(f"Skipping disabled function: {function_name}") # type: ignore
                     continue
                     
                 # Check dependencies
@@ -308,7 +307,7 @@ class DynamicQueue:
                     if dep not in results or not results[dep].get('valid', False):
                         dependencies_met = False
                         if email:
-                            logger.email(f"Skipping {function_name}: dependency {dep} not met") # type: ignore
+                            logger.debug(f"Skipping {function_name}: dependency {dep} not met")
                         break
                 
                 if not dependencies_met:
@@ -323,7 +322,7 @@ class DynamicQueue:
                 # Get the function
                 func = self.get_function(function_name)
                 if not func:
-                    logger.email(f"Failed to load function: {function_name}") # type: ignore
+                    logger.debug(f"Failed to load function: {function_name}")
                     results[function_name] = {
                         'valid': False, 
                         'error': 'Function not found', 
@@ -335,7 +334,7 @@ class DynamicQueue:
                 start_time = None  # Ensure start_time is always defined
                 try:
                     if email:
-                        logger.email(f"Executing function: {function_name}") # type: ignore
+                        logger.debug(f"Executing function: {function_name}")
                     
                     start_time = datetime.now()
                     
@@ -391,13 +390,13 @@ class DynamicQueue:
                     # Log result
                     valid = func_result.get('valid', False)
                     if email:
-                        logger.email(f"Function {function_name} completed in {elapsed_ms:.1f}ms: {'PASS' if valid else 'FAIL'}") # type: ignore
+                        logger.debug(f"Function {function_name} completed in {elapsed_ms:.1f}ms: {'PASS' if valid else 'FAIL'}")
                         
                         # Log extra details on failure
                         if not valid and 'error' in func_result:
-                            logger.email(f"  Error: {func_result['error']}") # type: ignore
+                            logger.error(f"  Error: {func_result['error']}")
                 except Exception as e:
-                    logger.email(f"Error in validation function {function_name}: {e}") # type: ignore
+                    logger.error(f"Error in validation function {function_name}: {e}")
                     results[function_name] = {
                         'valid': False, 
                         'error': str(e), 
@@ -438,7 +437,7 @@ class DynamicQueue:
                             logger.warning(f"Failed to log validation step error: {log_err}")
     
         if email:
-            logger.email(f"Queue execution completed with {sum(1 for r in results.values() if r.get('valid', False))}/{len(results)} valid steps") # type: ignore
+            logger.debug(f"Queue execution completed with {sum(1 for r in results.values() if r.get('valid', False))}/{len(results)} valid steps")
     
         return results
     

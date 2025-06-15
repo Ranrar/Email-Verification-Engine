@@ -215,13 +215,8 @@ function updateDNSTheme() {
 // Listen for theme changes
 document.addEventListener('themeChanged', updateDNSTheme);
 
-// Export functions and state for use by the main settings module
-export {
-    capitalizeFirstLetter,
-    formatSettingName,
-    showNotification,
-    dnsState,
-    loadDNSSettings,
-    renderDNSSettings,
-    saveDNSSettings
-};
+// Expose functions and state to the global window object
+window.loadDNSSettings = loadDNSSettings;
+window.saveDNSSettings = saveDNSSettings;
+window.renderDNSSettings = renderDNSSettings;
+window.dnsState = dnsState;

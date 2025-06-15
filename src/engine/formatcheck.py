@@ -76,10 +76,10 @@ import idna
 from src.managers.executor import process_pool
 from src.managers.time import TimeManager, OperationTimer
 from src.managers.cache import cache_manager, CacheKeys
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 
-logger = Axe()
+logger = get_logger()
 
 # Initialize these directly when needed instead
 time_manager = None
@@ -259,7 +259,8 @@ class EmailFormat: # all the format check settings
             "validate_idna": True
         })
         
-        logger.debug(f"Email format checker initialized with config: {self.config}")
+        logger.debug(f"Email format checker initialized with config: {self.config.get('name', 'default')}")
+
 
     def refresh_config(self):
         """Refresh configuration from database"""
@@ -569,7 +570,7 @@ class LoadRegexPresets:
         """Initialize the configuration loader."""
         self.db = db_handler
         self.cache_ttl = cache_ttl
-        self.logger = logger or Axe()  # Use provided logger or create new one
+        self.logger = logger or get_logger()  # Use provided logger or create new one
         self.time_manager = time_manager or get_time_manager()  # Use getter instead of direct initialization
         
     def fetch_email_regex_config(self, refresh=False) -> Dict[str, Any]:

@@ -8,7 +8,7 @@ import json
 import dataclasses
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 from src.engine.result import (
     EmailValidationResult, 
@@ -17,8 +17,14 @@ from src.engine.result import (
     InfrastructureInfo,
     sanitize_value
 )
+from src.helpers.tracer import (
+    ensure_trace_id, 
+    validate_trace_id, 
+    trace_function,
+    create_child_trace_id
+)
 
-logger = Axe()
+logger = get_logger()
 
 def to_int_or_none(value: Any) -> Optional[int]:
     """
@@ -77,10 +83,15 @@ def log_to_database(result: EmailValidationResult) -> Optional[int]:
         logger.error(f"[{result.trace_id}] Failed to log validation result for {result.email}: {e}", exc_info=True)
         return None
 
+@trace_function("prepare_db_fields")
 def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
     """Prepare fields for database insertion with proper sanitization."""
-    import json
-
+    
+    # Validate trace_id at entry point
+    if not validate_trace_id(trace_id):
+        logger.error(f"Invalid trace_id in _prepare_db_fields: {trace_id}")
+        trace_id = ensure_trace_id()
+    
     mx_infrastructure_dict = data.get('mx_infrastructure', {})
     email_provider_dict = data.get('email_provider', {})
     blacklist_info = data.get("blacklist_info", {})
@@ -115,6 +126,20 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
             "aggregate_reporting": data.get("aggregate_reporting", False),
             "forensic_reporting": data.get("forensic_reporting", False),
             "organizational_domain": data.get("organizational_domain", ""),
+            "recommendations": data.get("recommendations", [])
+        })
+    
+    # Make sure it includes full DKIM details from the validation
+    dkim_details = data.get("dkim_details", {})
+    if isinstance(dkim_details, dict) and data.get("dkim_status"):
+        # Ensure we have a full set of DKIM details
+        dkim_details.update({
+            "has_dkim": data.get("has_dkim", False),
+            "security_level": data.get("security_level", "none"),
+            "key_type": data.get("key_type", ""),
+            "key_length": data.get("key_length", 0),
+            "selector": data.get("selector", ""),
+            "found_selectors": data.get("found_selectors", []),
             "recommendations": data.get("recommendations", [])
         })
     
@@ -176,6 +201,7 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
         "spf_status": data.get("spf_status", ""),
         "spf_details": json.dumps(spf_details) if spf_details else None,
         "dkim_status": data.get("dkim_status", ""),
+        "dkim_details": json.dumps(dkim_details) if dkim_details else None,
         "dmarc_status": data.get("dmarc_status", ""),
         "server_policies": json.dumps(data.get("server_policies", {})) if data.get("server_policies") else None,
 
@@ -328,8 +354,15 @@ def _store_ip_addresses(db, mx_infra_id: int, mx_ip_addresses, infrastructure_in
     _store_ipv4_addresses(db, mx_infra_id, mx_ip_addresses, infrastructure_info, trace_id)
     _store_ipv6_addresses(db, mx_infra_id, mx_ip_addresses, trace_id)
 
+@trace_function("store_ipv4_addresses")
 def _store_ipv4_addresses(db, mx_infra_id: int, mx_ip_addresses, infrastructure_info, trace_id: str) -> None:
     """Store IPv4 address records."""
+    
+    # Validate trace_id
+    if not validate_trace_id(trace_id):
+        logger.error(f"Invalid trace_id in _store_ipv4_addresses: {trace_id}")
+        trace_id = ensure_trace_id()
+    
     ipv4_list = mx_ip_addresses.ipv4 if isinstance(mx_ip_addresses, IpAddresses) else mx_ip_addresses.get('ipv4', [])
     for ip in ipv4_list:
         try:
@@ -365,8 +398,15 @@ def _store_ipv4_addresses(db, mx_infra_id: int, mx_ip_addresses, infrastructure_
         except Exception as e:
             logger.warning(f"Failed to store IPv4 address {ip}: {e}")
 
+@trace_function("store_ipv6_addresses")
 def _store_ipv6_addresses(db, mx_infra_id: int, mx_ip_addresses, trace_id: str) -> None:
     """Store IPv6 address records."""
+    
+    # Validate trace_id
+    if not validate_trace_id(trace_id):
+        logger.error(f"Invalid trace_id in _store_ipv6_addresses: {trace_id}")
+        trace_id = ensure_trace_id()
+    
     ipv6_list = mx_ip_addresses.ipv6 if isinstance(mx_ip_addresses, IpAddresses) else mx_ip_addresses.get('ipv6', [])
     for ip in ipv6_list:
         try:
@@ -398,23 +438,17 @@ def _store_ipv6_addresses(db, mx_infra_id: int, mx_ip_addresses, trace_id: str) 
         except Exception as e:
             logger.warning(f"Failed to store IPv6 address {ip}: {e}")
 
+@trace_function("log_validation_operation")
 def log_validation_operation(trace_id: str, operation: str, category: Optional[str] = None, 
                            status: str = "info", duration_ms: Optional[float] = None, 
                            details: Optional[Dict[str, Any]] = None) -> bool:
-    """
-    Log a validation operation to the validation_logs table.
+    """Log validation operation to database"""
     
-    Args:
-        trace_id: The trace ID of the validation
-        operation: Name of the operation being performed
-        category: Category of the operation (e.g., 'smtp', 'dns', 'format')
-        status: Status of the operation (e.g., 'success', 'failure', 'info')
-        duration_ms: Duration of the operation in milliseconds
-        details: Additional details as a dictionary
-        
-    Returns:
-        bool: Whether logging was successful
-    """
+    # Validate trace_id at entry point
+    if not validate_trace_id(trace_id):
+        logger.error(f"Invalid trace_id in log_validation_operation: {trace_id}")
+        trace_id = ensure_trace_id()
+    
     try:
         db = sync_db
         
@@ -427,73 +461,13 @@ def log_validation_operation(trace_id: str, operation: str, category: Optional[s
             "duration_ms": duration_ms,
             "details": json.dumps(details) if details else None
         }
-        
-        columns = ", ".join(values.keys())
-        placeholders = ", ".join([f"${i+1}" for i in range(len(values))])
-        
         db.execute(
-            f"INSERT INTO validation_logs ({columns}) VALUES ({placeholders})",
-            *values.values()
+            "INSERT INTO validation_operations (trace_id, timestamp, operation, category, status, duration_ms, details) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            values["trace_id"], values["timestamp"], values["operation"], values["category"],
+            values["status"], values["duration_ms"], values["details"]
         )
-        
         return True
     except Exception as e:
-        logger.error(f"Failed to log validation operation: {e}", exc_info=True)
+        logger.error(f"Exception in log_validation_operation: {e}", exc_info=True)
         return False
-
-def log_batch_info(batch_id, name=None, source=None, status="processing", settings=None, 
-                 total_emails=0, processed_emails=0, success_count=0, failed_count=0, 
-                 error_message=None, completed=False) -> Optional[int]:
-    """Log batch operation information to database."""
-    try:
-        db = sync_db
-        
-        # Prepare values
-        now = datetime.now(timezone.utc)
-        values = {
-            "created_at": now,
-            "batch_id": batch_id,
-            "name": name or f"Batch {batch_id[:8]}",
-            "source": source or "API",
-            "completed_at": now if completed else None,
-            "total_emails": total_emails,
-            "processed_emails": processed_emails,
-            "success_count": success_count,
-            "failed_count": failed_count,
-            "status": status,
-            "error_message": error_message or "",
-            "settings_snapshot": settings or {}
-        }
-        
-        columns = ", ".join(values.keys())
-        placeholders = ", ".join([f"${i+1}" for i in range(len(values))])
-        
-        # Use UPSERT pattern for updating existing batch records
-        sql = f"""
-            INSERT INTO batch_info (
-                {columns}
-            ) VALUES (
-                {placeholders}
-            )
-            ON CONFLICT (batch_id) 
-            DO UPDATE SET 
-                name = EXCLUDED.name,
-                completed_at = EXCLUDED.completed_at,
-                total_emails = EXCLUDED.total_emails,
-                processed_emails = EXCLUDED.processed_emails,
-                success_count = EXCLUDED.success_count,
-                failed_count = EXCLUDED.failed_count,
-                status = EXCLUDED.status,
-                error_message = EXCLUDED.error_message
-            RETURNING id
-        """
-        
-        result = db.fetchrow(sql, *values.values())
-        batch_record_id = result['id'] if result else None
-        
-        logger.info(f"Logged batch info for {batch_id} to database with ID {batch_record_id}")
-        return batch_record_id
-        
-    except Exception as e:
-        logger.error(f"Failed to log batch info for {batch_id}: {e}", exc_info=True)
-        return None

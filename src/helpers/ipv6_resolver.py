@@ -10,10 +10,10 @@ import socket
 import subprocess
 import os
 from typing import List, Optional, Any, Dict
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
 # Set up logging
-logger = Axe()
+logger = get_logger()
 
 class IPv6Resolver:
     """

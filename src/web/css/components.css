@@ -1029,3 +1029,16 @@ input, textarea, select,
 .close-icon {
     font-size: var(--font-size-tertiary);
 }
+
+/* Add this to ensure DKIM container styling matches DMARC */
+
+.dkim-details-container {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    background-color: var(--card-bg-color);
+}
+
+.dkim-details {
+    min-height: 100px;
+}

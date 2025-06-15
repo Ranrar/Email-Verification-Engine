@@ -368,6 +368,40 @@ async function removeDomainFromList(id) {
 }
 
 /**
+ * Save the current black/white list state to the database
+ */
+async function saveBlackWhiteList() {
+    try {
+        // Prepare the data to be saved
+        const dataToSave = bwState.blackWhiteList.map(domain => ({
+            domain: domain.domain,
+            category: domain.category
+        }));
+        
+        // Show loading state
+        if (typeof updateLoadingState === 'function') {
+            updateLoadingState(true);
+        }
+        
+        // Call the Python function to save the data
+        const result = await eel.save_black_white_list(dataToSave)();
+        
+        if (result.success) {
+            showNotification('success', 'Black/white list saved successfully');
+        } else {
+            showNotification('error', `Failed to save black/white list: ${result.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('Error saving black/white list:', error);
+        showNotification('error', 'An error occurred while saving the black/white list');
+    } finally {
+        if (typeof updateLoadingState === 'function') {
+            updateLoadingState(false);
+        }
+    }
+}
+
+/**
  * Update theme classes when theme changes
  */
 function updateBWTheme() {
@@ -379,15 +413,17 @@ function updateBWTheme() {
 // Listen for theme changes
 document.addEventListener('themeChanged', updateBWTheme);
 
-// Export functions and state for use by the main settings module
-export {
-    capitalizeFirstLetter,
-    showNotification,
-    formatDate,
-    bwState,
-    loadBlackWhiteList,
-    renderBlackWhiteList,
-    addDomainToList,
-    updateDomainCategory,
-    removeDomainFromList
-};
+// Make sure all functions are defined before this point
+window.loadBlackWhiteList = typeof loadBlackWhiteList !== 'undefined' ? loadBlackWhiteList : function() { console.warn('loadBlackWhiteList not defined'); };
+window.saveBlackWhiteList = typeof saveBlackWhiteList !== 'undefined' ? saveBlackWhiteList : function() { console.warn('saveBlackWhiteList not defined'); };
+window.renderBlackWhiteList = typeof renderBlackWhiteList !== 'undefined' ? renderBlackWhiteList : function() { console.warn('renderBlackWhiteList not defined'); };
+window.addDomainToList = typeof addDomainToList !== 'undefined' ? addDomainToList : function() { console.warn('addDomainToList not defined'); };
+window.updateDomainCategory = typeof updateDomainCategory !== 'undefined' ? updateDomainCategory : function() { console.warn('updateDomainCategory not defined'); };
+window.removeDomainFromList = typeof removeDomainFromList !== 'undefined' ? removeDomainFromList : function() { console.warn('removeDomainFromList not defined'); };
+window.bwState = bwState;
+
+console.log('Black and White list functions exposed:', {
+    loadBlackWhiteList: typeof window.loadBlackWhiteList,
+    saveBlackWhiteList: typeof window.saveBlackWhiteList,
+    renderBlackWhiteList: typeof window.renderBlackWhiteList
+});

@@ -7,11 +7,11 @@ to determine optimal settings based on system capabilities.
 import os
 import time
 import statistics
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 
 # Set up logging
-logger = Axe()
+logger = get_logger()
 
 def log_function_entry(func_name, **params):
     """Log function entry with parameters"""

@@ -1,6 +1,12 @@
 // This file contains the JavaScript code that handles theme management, menu system, and module coordination.
 
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM Content Loaded');
+    console.log('Available functions check:');
+    console.log('- eel object:', typeof eel);
+    console.log('- ValidationEngine:', typeof ValidationEngine);
+    console.log('- ResultsDisplay:', typeof ResultsDisplay);
+    
     // Create message container for notifications if it doesn't exist
     if (!document.getElementById('message-container')) {
         const messageContainer = document.createElement('div');
@@ -14,7 +20,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.body.appendChild(messageContainer);
     }
     
-    // Initialize modules
+    // Initialize modules - ONLY CALL THIS ONCE
     initializeModules();
     
     // Initialize theme management
@@ -35,6 +41,12 @@ function getCurrentTheme() {
  * Initialize all application modules
  */
 function initializeModules() {
+    // Prevent multiple initializations
+    if (window.validationEngine) {
+        console.log('ValidationEngine already exists, skipping initialization');
+        return;
+    }
+
     // Initialize ValidationEngine
     if (window.ValidationEngine) {
         const validationEngine = new ValidationEngine();
@@ -47,29 +59,16 @@ function initializeModules() {
     }
     
     // Initialize ResultsDisplay
-    if (window.ResultsDisplay) {
+    if (window.ResultsDisplay && !window.resultsDisplay) {
         const resultsDisplay = new ResultsDisplay();
         if (resultsDisplay.init()) {
             console.log('ResultsDisplay initialized successfully');
-            // Store the instance (lowercase r)
             window.resultsDisplay = resultsDisplay;
         } else {
             console.error('Failed to initialize ResultsDisplay');
         }
     }
-    
-    // Initialize DmarcAnalyzer
-    if (window.DmarcAnalyzer) {
-        const dmarcAnalyzer = new DmarcAnalyzer();
-        if (dmarcAnalyzer.init()) {
-            console.log('DmarcAnalyzer initialized successfully');
-            // Store the instance
-            window.dmarcAnalyzer = dmarcAnalyzer;
-        } else {
-            console.error('Failed to initialize DmarcAnalyzer');
-        }
-    }
-    
+      
     // Settings module is initialized when needed
 }
 
@@ -109,38 +108,6 @@ function initializeTheme() {
             const theme = this.checked ? 'dark' : 'light';
             applyTheme(theme);
         });
-    }
-}
-
-/**
- * Open settings panel with proper integration
- */
-function openSettingsPanel(section = 'general') {
-    console.log(`Opening settings panel: ${section}`);
-    
-    // Check if Settings module is available
-    if (typeof window.openSettingsPanel === 'function') {
-        // Use the Settings module function
-        window.openSettingsPanel(section);
-    } else {
-        // Fallback to dialog
-        showDialog('Settings', `Opening ${section} settings panel...`);
-    }
-}
-
-/**
- * Close settings panel with proper integration
- */
-function closeSettingsPanel() {
-    console.log('Closing settings panel');
-    
-    // Check if Settings module is available
-    if (typeof window.closeSettingsPanel === 'function') {
-        // Use the Settings module function
-        window.closeSettingsPanel();
-    } else {
-        // Fallback to close dialog
-        closeDialog();
     }
 }
 
@@ -203,7 +170,22 @@ function initializeMenuSystem() {
             e.preventDefault();
             e.stopPropagation();
             closeAllDropdowns();
-            openSettingsPanel('general');
+            
+            // Check if function is available, if not, wait a bit
+            if (typeof openSettingsPanel === 'function') {
+                openSettingsPanel('general');
+            } else {
+                console.log('openSettingsPanel not ready, waiting...');
+                setTimeout(() => {
+                    if (typeof openSettingsPanel === 'function') {
+                        openSettingsPanel('general');
+                    } else {
+                        console.error('Settings function still not available');
+                        // Fallback - show basic dialog
+                        alert('Settings panel is not ready. Please try again in a moment.');
+                    }
+                }, 100);
+            }
         });
     }
     
@@ -344,6 +326,24 @@ function handleMenuAction(action) {
             
         case 'help-about':
             showAboutDialog();
+            break;
+            
+        // Settings panel action
+        case 'open-settings':
+            // Load Settings.js and call its function
+            if (typeof window.openSettingsPanel === 'undefined') {
+                // Load Settings.js dynamically
+                const script = document.createElement('script');
+                script.src = '/js/Settings.js';
+                script.onload = function() {
+                    if (typeof window.openSettingsPanel === 'function') {
+                        window.openSettingsPanel('general');
+                    }
+                };
+                document.head.appendChild(script);
+            } else {
+                window.openSettingsPanel('general');
+            }
             break;
             
         default:
@@ -976,3 +976,9 @@ window.showToast = function(message, type = 'info', persistent = false, details 
 
 // Make getCurrentTheme available globally
 window.getCurrentTheme = getCurrentTheme;
+
+// Expose functions globally
+window.openSettingsPanel = openSettingsPanel;
+window.closeSettingsPanel = closeSettingsPanel;
+window.initSettingsMenu = initSettingsMenu;
+window.switchSettingsTab = switchSettingsTab;

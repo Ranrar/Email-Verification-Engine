@@ -162,14 +162,20 @@
                 </div>
                 
                 <div class="accordion-item">
-                    <div class="accordion-header">MX Infrastructure</div>
+                    <div class="accordion-header">
+                        <h3>MX Infrastructure</h3>
+                        <span class="accordion-icon">+</span>
+                    </div>
                     <div class="accordion-content">
                         <table id="mxDetailsTable" class="details-table"></table>
                     </div>
                 </div>
                 
                 <div class="accordion-item">
-                    <div class="accordion-header">IP Information</div>
+                    <div class="accordion-header">
+                        <h3>IP Address Information</h3>
+                        <span class="accordion-icon">+</span>
+                    </div>
                     <div class="accordion-content">
                         <table id="ipDetailsTable" class="details-table"></table>
                     </div>
@@ -205,6 +211,26 @@
                                 </div>
                             </div>
                             <div id="dmarcDetails" class="dmarc-details"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DKIM Analysis Section -->
+                <div class="accordion-item">
+                    <div class="accordion-header">DKIM Analysis</div>
+                    <div class="accordion-content">
+                        <div id="dkimDetailsContainer" class="dkim-details-container">
+                            <div id="dkimLoading" class="validation-animation" style="display: none;">
+                                <div class="text-center">
+                                    <span>Analyzing DKIM</span>
+                                    <div class="dots">
+                                        <span class="dot">.</span>
+                                        <span class="dot">.</span>
+                                        <span class="dot">.</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="dkimDetails" class="dkim-details"></div>
                         </div>
                     </div>
                 </div>
@@ -284,11 +310,21 @@
         </div>
     </div>
 
-    <script src="js/main.js"></script>
-    <script src="js/debug.js"></script>
-    <script type="module" src="js/Settings.js"></script>
+    <!-- Load individual settings modules first -->
+    <script src="js/settings/general.js"></script>
+    <script src="js/settings/rate_limit.js"></script>
+    <script src="js/settings/dns.js"></script>
+    <script src="js/settings/exe.js"></script>
+    <script src="js/settings/validation.js"></script>
+    <script src="js/settings/port.js"></script>
+    <script src="js/settings/regex.js"></script>
+    <script src="js/settings/bw.js"></script>
+    <!-- Then load the main Settings.js -->
+    <script src="js/Settings.js"></script>
+    <!-- Make sure ValidationEngine.js is loaded before main.js -->
     <script src="js/ValidationEngine.js"></script>
     <script src="js/ResultsDisplay.js"></script>
-    <script src="js/DmarcAnalyzer.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/debug.js"></script>
 </body>
 </html>

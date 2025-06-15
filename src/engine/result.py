@@ -9,10 +9,10 @@ import json
 import dataclasses
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
-from src.managers.log import Axe, EMAIL, INFO, ERROR, DEBUG
+from src.managers.log import get_logger
 
 # Initialize the logger with a more specific name
-logger = Axe("email_validation")
+logger = get_logger()
 
 __all__ = [
     'MxInfrastructure',
@@ -150,6 +150,20 @@ class EmailValidationResult:
             'execution_time': 0
         }
         
+        # Detailed DKIM information
+        self.dkim_details = {
+            'valid': False,
+            'has_dkim': False,
+            'selector': '',
+            'key_type': '',
+            'key_length': 0,
+            'security_level': 'none',
+            'hash_algorithms': [],
+            'found_selectors': [],
+            'recommendations': [],
+            'execution_time': 0
+        }
+        
         # SMTP validation - update to include all required fields
         self.smtp_result = False      # Overall SMTP validation result
         self.smtp_banner = ''         # SMTP server banner
@@ -244,6 +258,9 @@ class EmailValidationResult:
             'imap_info': self.imap_info,
             'pop3_status': self.pop3_status,
             'pop3_info': self.pop3_info,
+            
+            # Include DKIM details
+            'dkim_details': self.dkim_details,
         }
 
     @staticmethod
@@ -261,11 +278,17 @@ class EmailValidationResult:
             completion_msg = f"Batch {batch_id} completed - Success: {success_count}, Failed: {failed_count}"
             logger.info(completion_msg)
         
-        from src.engine.database import log_batch_info
-        return log_batch_info(
-            batch_id, name, source, status, settings,
-            total_emails, processed_emails, success_count, failed_count,
-            error_message, completed
+        from src.engine.database import log_validation_operation
+        from src.helpers.tracer import ensure_trace_id
+        
+        # Generate or get a trace_id since we don't have access to self in static method
+        trace_id = ensure_trace_id()
+        
+        return log_validation_operation(
+            trace_id=trace_id,  # Use the generated trace_id instead of self.trace_id
+            operation="batch_completed", 
+            category="batch",
+            status="info"
         )
         
     def finalize_validation(self):

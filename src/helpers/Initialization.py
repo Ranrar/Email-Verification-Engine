@@ -7,12 +7,12 @@ import eel
 import time
 import traceback
 from concurrent.futures.process import BrokenProcessPool
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.managers.cache import cache_manager
 from src.helpers.dbh import sync_db
 from src.managers.time import time_function_call, normalize_datetime, now_utc
 
-logger = Axe()
+logger = get_logger()
 
 # Global components registry
 _components = {}
@@ -41,18 +41,18 @@ class InitQueue:
             except Exception as e:
                 logger.error(f"Failed to update UI: {e}")
             
-            logger.info(f"[INIT] Running: {name} ...")
+            logger.info(f"Running: {name} ...")
             
             try:
                 # Use time_function_call to get execution time
                 result, elapsed_ms = time_function_call(func)
-                logger.info(f"[INIT] Done: {name} in {elapsed_ms:.2f}ms")
+                logger.info(f"Done: {name} in {elapsed_ms:.2f}ms")
                 
                 # Add a small delay for UI updates to be visible
                 time.sleep(0.3)
                 
             except Exception as e:
-                logger.error(f"[INIT] FAILED: {name} - {e}")
+                logger.error(f"FAILED: {name} - {e}")
                 traceback.print_exc()
                 
                 # Update UI with error
@@ -82,68 +82,56 @@ def initialize_database_pool_and_executor():
     logger.info("Database pools and executors initialized")
 
 def load_settings_to_memory():
+    """Load settings tables into memory with reduced logging"""
     logger.info("Loading settings tables into memory...")
     settings_tables = [
-        "app_settings",
-        "confidence_levels",
-        "executor_pool_settings",
-        "dns_settings",
-        "email_filter_regex_settings",
-        "black_white",
-        "ports",
-        "rate_limit",
-        "validation_scoring",
-        "executor_pool_presets"
+        "app_settings", "confidence_levels", "executor_pool_settings",
+        "dns_settings", "email_filter_regex_settings", "black_white",
+        "ports", "rate_limit", "validation_scoring", "executor_pool_presets"
     ]
+    
+    loaded_count = 0
     for table in settings_tables:
         try:
-            logger.debug(f"Loading table: {table}")
+            # Only log at debug level, not info
             rows = sync_db.fetch(f"SELECT * FROM {table}")
             cache_manager.set(f"startup:{table}", rows)
-            logger.info(f"Loaded {table} into memory/cache.")
+            loaded_count += 1
         except Exception as e:
-            logger.warning(f"[INIT] Warning: Failed to load {table}: {e}")
+            logger.warning(f"Warning: Failed to load {table}: {e}")
+    
+    # Log summary once instead of for each table
+    logger.info(f"Loaded {loaded_count}/{len(settings_tables)} settings tables into memory/cache.")
 
 def load_settings_to_diskcache():
     """
-    Load settings tables from database directly into disk cache with no TTL.
-    This ensures settings persist indefinitely even after application restart.
+    Load settings tables from database directly into disk cache with reduced logging
     """
     logger.info("Loading settings tables into disk cache for long-term persistence...")
     settings_tables = [
-        "app_settings",
-        "confidence_levels",
-        "executor_pool_settings",
-        "dns_settings",
-        "email_filter_regex_settings",
-        "black_white",
-        "ports",
-        "rate_limit",
-        "validation_scoring",
-        "executor_pool_presets"
+        "app_settings", "confidence_levels", "executor_pool_settings",
+        "dns_settings", "email_filter_regex_settings", "black_white",
+        "ports", "rate_limit", "validation_scoring", "executor_pool_presets"
     ]
     
+    loaded_count = 0
+    total_rows = 0
     for table in settings_tables:
         try:
-            logger.debug(f"Loading table to disk cache: {table}")
+            # Log at debug level only
             rows = sync_db.fetch(f"SELECT * FROM {table}")
             
             if rows:
-                # Store in disk cache with no TTL for permanent persistence
-                cache_manager.set(
-                    f"diskcache:{table}",
-                    rows,
-                    ttl=0,  # No expiration
-                    category="persistent_disk_cache"
-                )
-                logger.info(f"Stored {table} in disk cache with {len(rows)} rows (permanent storage)")
+                cache_manager.set(f"disk:{table}", rows, ttl=None)  # Permanent storage
+                loaded_count += 1
+                total_rows += len(rows)
             else:
-                logger.warning(f"No data found in {table} for disk caching")
-                
+                logger.warning(f"No rows found in {table}")
         except Exception as e:
-            logger.warning(f"[INIT] Warning: Failed to load {table} to disk cache: {e}")
+            logger.warning(f"Warning: Failed to load {table} to disk cache: {e}")
     
-    logger.info("Settings tables loaded into disk cache with permanent persistence")
+    # Log one summary line rather than multiple similar lines
+    logger.info(f"Stored {loaded_count} tables with {total_rows} total rows in disk cache (permanent storage)")
 
 def cache_blackwhite_list():
     """Cache permanent black/white list entries."""
@@ -159,7 +147,6 @@ def cache_blackwhite_list():
                 # Cache with the domain as part of the key
                 cache_key = f"blackwhite:{domain}"
                 cache_manager.set(cache_key, row)
-                logger.debug(f"Cached {row.get('category', 'unknown')} entry: {domain}")
                 
         logger.info(f"Successfully cached {len(rows)} black/white list entries")
     except Exception as e:
@@ -369,7 +356,7 @@ def initialize_email_format_check():
                         if not test_pattern.match(email):
                             logger.warning(f"Pattern '{pattern_name}' compiled successfully but doesn't match valid email '{email}'")
                 
-                logger.debug(f"Successfully compiled pattern '{pattern_name}': {pattern_str}")
+                logger.debug(f"Successfully compiled pattern '{pattern_name}'")
             except re.error as e:
                 logger.error(f"Failed to compile regex pattern '{pattern_name}': {pattern_str}")
                 logger.error(f"Regex compilation error: {e}")

@@ -8,12 +8,12 @@ from various database tables.
 
 import eel
 from src.helpers.dbh import sync_db
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from typing import Dict, Any, List, Optional
 # Import the auto_tune function from executor
 from src.managers.executor import auto_tune
 
-logger = Axe()
+logger = get_logger()
 
 @eel.expose
 def get_app_settings():
@@ -754,3 +754,14 @@ def apply_custom_email_filter_regex(config_id: int):
             "success": False,
             "error": str(e)
         }
+
+# Add this function after the existing executor functions (around line 120)
+
+@eel.expose
+def update_executor_setting(setting_name, setting_value):
+    """Update an executor setting by name - alias for update_executor_pool_setting"""
+    try:
+        return update_executor_pool_setting(setting_name, int(setting_value))
+    except Exception as e:
+        logger.error(f"Error updating executor setting {setting_name}: {e}")
+        return {'success': False, 'error': str(e)}

@@ -1,450 +1,276 @@
-""""
-Email Verification Engine
-===================================
-Logger modul
-"""
 import os
-import json
 import logging
-import weakref
-import shutil
-import time
-import warnings
-import threading
-from datetime import datetime
+import datetime
+import inspect
 from logging.handlers import TimedRotatingFileHandler
+import colorama
+from colorama import Fore, Style
+import sys
 
-# True = split logs into multiple files by log level
-# False = keep all logs in one file with level info (no rotation)
-K1 = True
+# Initialize colorama for colored console output
+colorama.init(autoreset=True)
 
-# Define default logger name as ISO date format
-NAME = datetime.now().strftime('%Y-%m-%d')  # Generates '2025-03-22' format
+# Set up a custom LogRecord factory to capture the actual caller module
+original_factory = logging.getLogRecordFactory()
 
-# Define custom log levels
-EMAIL = 22      # Special level for email validation logs
-SQL = 15        # Custom level for SQL logs
-DEBUG = 10		# Standard levels
-INFO = 20		# Standard levels
-WARNING = 30	# Something unexpected happened
-ERROR = 40		# Serious problem occurred
-CRITICAL = 50	# Program is about to crash
-STATS = 12      # Custom level for Statistics
-
-# Register the new levels with the logging module
-logging.addLevelName(EMAIL, "EMAIL")
-logging.addLevelName(SQL, "SQL")
-logging.addLevelName(STATS, "STATS")
-
-# Add convenience methods to the Logger class
-def _email(self, message, *args, **kwargs):
-    if self.isEnabledFor(EMAIL):
-        self._log(EMAIL, message, args, **kwargs)
-
-def _sql(self, message, *args, **kwargs):
-    if self.isEnabledFor(SQL):
-        self._log(SQL, message, args, **kwargs)
-
-def _STATS(self, message, *args, **kwargs):
-    if self.isEnabledFor(STATS):
-        self._log(STATS, message, args, **kwargs)        
-
-# Add the methods to the Logger class
-setattr(logging.Logger, "email", _email)
-setattr(logging.Logger, "sql", _sql)
-setattr(logging.Logger, "stats", _STATS)
-
-# Silence warnings (optional)
-warnings.filterwarnings('ignore')
-
-# Replace the current LOGS_DIR definition
-def determine_project_root():
-    """Find the project root directory containing main.py"""
-    # Get the absolute path to this file (log.py)
-    current_file = os.path.abspath(__file__)
+def custom_record_factory(*args, **kwargs):
+    record = original_factory(*args, **kwargs)
     
-    # Go up two levels: src/managers/log.py -> src/ -> project_root/
-    # This matches the structure: main.py at root, log.py in src/managers/
-    project_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+    # Find the actual caller by looking up the stack
+    # Skip frames related to the logging system itself
+    frame = inspect.currentframe()
     
-    # Verify we found the right directory by checking for main.py
-    if os.path.isfile(os.path.join(project_dir, 'main.py')):
-        return project_dir
+    # Skip this factory function
+    if frame is not None:
+        frame = frame.f_back
     
-    # Fallback to current working directory if structure doesn't match
-    return os.getcwd()
-
-# Define logs directory relative to project root
-PROJECT_ROOT = determine_project_root()
-LOGS_DIR = os.path.join(PROJECT_ROOT, 'logs')
-
-# Create a dedicated error logger
-def setup_error_logger():
-    """Set up a dedicated logger for error tracking."""
-    error_logger = logging.getLogger("error_logger")
-    error_logger.setLevel(logging.ERROR)
-
-    # Create a file handler for error logs
-    error_log_file = os.path.join(LOGS_DIR, 'errors.log')
+    # Skip internal logging functions
+    while frame:
+        module_name = frame.f_globals.get('__name__', '')
+        if not (module_name == __name__ or module_name.startswith('logging')):
+            break
+        frame = frame.f_back
     
-    class LazyFileHandler(logging.FileHandler):
-        def __init__(self, filename, mode='a', encoding=None, delay=True):
-            super().__init__(filename, mode, encoding, delay=True)
-            
-        def emit(self, record):
-            if not os.path.exists(os.path.dirname(self.baseFilename)):
-                os.makedirs(os.path.dirname(self.baseFilename), exist_ok=True)
-            return super().emit(record)
+    if frame:
+        module = frame.f_globals.get('__name__', '')
+        # Get just the last part of the module name
+        record.moduleoverride = module.split('.')[-1]
+    else:
+        record.moduleoverride = record.module
     
-    file_handler = LazyFileHandler(error_log_file, delay=True)
-    file_handler.setLevel(logging.ERROR)
+    return record
 
-    # Use a formatter with milliseconds for error logs
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
-                                 datefmt="%Y-%m-%d %H:%M:%S.%f")
-    file_handler.setFormatter(formatter)
+# Install our custom factory
+logging.setLogRecordFactory(custom_record_factory)
 
-    # Add the handler to the logger
-    error_logger.addHandler(file_handler)
-    return error_logger
-
-# Initialize the error logger
-error_logger = setup_error_logger()
-
-# Create a custom JSON formatter
-class JsonFormatter(logging.Formatter):
-    """Format log records as JSON strings"""
-    def __init__(self, datefmt=None, split_by_level=False):
-        super().__init__(datefmt=datefmt)
-        self.split_by_level = split_by_level
-    
-    def formatTime(self, record, datefmt=None):
-        """Override to ensure milliseconds are included"""
-        ct = self.converter(record.created)
-        if datefmt:
-            s = datetime.fromtimestamp(record.created).strftime(datefmt)
-        else:
-            s = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")
-        return s
+class LogFormatter(logging.Formatter):
+    """Custom formatter for logs with different formats based on log level"""
     
     def format(self, record):
-        # Get module and function names
-        module_name = record.module if hasattr(record, 'module') else 'unknown'
-        function_name = record.funcName if hasattr(record, 'funcName') else 'unknown'
+        # Format timestamp with milliseconds - using datetime to handle microseconds properly
+        dt = datetime.datetime.fromtimestamp(record.created)
+        record.timestamp = dt.strftime('%H:%M:%S') + f':{dt.microsecond//1000:03d}'
         
-        # For module-level code, provide better context
-        if function_name == '<module>':
-            # If running at module level, include filename for better context
-            filename = getattr(record, 'filename', 'unknown')
-            lineno = getattr(record, 'lineno', 0)
-            function_name = f"Module@Line{lineno}"
+        # Get function name
+        if not record.funcName or record.funcName == '<module>':
+            record.function_name = 'main'
+        else:
+            record.function_name = record.funcName
         
-        # Use our custom formatTime method
-        time_format = "%H:%M:%S.%f" if self.datefmt is None else self.datefmt
+        # Extract just the filename from the full path
+        record.filename = os.path.basename(record.pathname)
         
-        # Create log data with level near the beginning
-        log_data = {
-            "timestamp": self.formatTime(record, time_format),
-        }
+        # Extract exception info if present to prevent it from breaking our format
+        exc_text = None
+        if record.exc_info and not record.exc_text:
+            exc_text = self.formatException(record.exc_info)
+            record.exc_text = exc_text
         
-        # Include level near the beginning when in single file mode
-        if not self.split_by_level:
-            # Use brackets to make log levels visually distinct and consistent width
-            log_data["level"] = f"[{record.levelname}]".ljust(10)  # [CRITICAL] is 10 chars
-            
-        # Continue with other fields
-        log_data["module"] = module_name
-        log_data["function"] = function_name
-        log_data["message"] = record.getMessage()
-        log_data["file"] = getattr(record, 'filename', 'unknown')
-        log_data["line"] = str(getattr(record, 'lineno', 0))
+        # Choose format based on log level with fixed-width columns for alignment
+        if record.levelno <= logging.INFO:
+            self._style._fmt = "%(timestamp)12s | %(moduleoverride)-15s | %(function_name)-8s | %(message)s"
+        else:
+            self._style._fmt = "%(timestamp)12s | %(moduleoverride)-15s | %(function_name)-8s | %(message)s | %(filename)s | %(lineno)d"
         
-        # Add exception info if present
-        if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
+        # Format the message 
+        formatted_message = super().format(record)
         
-        return json.dumps(log_data)
+        # Handle exception info separately to maintain correct formatting
+        if record.exc_text and exc_text:
+            # Remove the exception info from the formatted message if it was added
+            # by the parent formatter and add it on a new line
+            formatted_message = formatted_message.replace('\n' + exc_text, '')
+            return f"{formatted_message}\n{exc_text}"
+        
+        return formatted_message
 
-# Store logger instances in a weak reference dictionary
-_logger_instances = weakref.WeakValueDictionary()
-
-# Add at module level
-_logger_lock = threading.Lock()
-
-class LazyTimedRotatingFileHandler(TimedRotatingFileHandler):
-    """A file handler that creates the log file only when needed and never deletes rotated files"""
+class ConsoleFormatter(LogFormatter):
+    """Console formatter with colors"""
     
-    def __init__(self, filename, when='h', interval=1, backupCount=0, encoding=None, 
-                 delay=True, utc=False, atTime=None):
-        # Set backupCount to 0 which means keep all files
-        super().__init__(filename, when, interval, 0, encoding, 
-                         delay=True, utc=utc, atTime=atTime)
-    
-    def emit(self, record):
-        """Create containing directory only when emitting first record"""
-        if not os.path.exists(os.path.dirname(self.baseFilename)):
-            os.makedirs(os.path.dirname(self.baseFilename), exist_ok=True)
-        return super().emit(record)
+    def format(self, record):
+        # Format the message using parent formatter
+        message = super().format(record)
         
-    def getFilesToDelete(self):
-        """Override to never delete any files"""
-        return []  # Return empty list so no files are deleted
+        # Apply colors based on log level
+        if record.levelno == logging.INFO:
+            return f"{Fore.WHITE}{message}"  # White (normal)
+        elif record.levelno == logging.DEBUG:
+            return f"{Fore.WHITE}{Style.BRIGHT}{message}"  # White (bold)
+        elif record.levelno == logging.WARNING:
+            return f"{Fore.YELLOW}{message}"  # Yellow (normal)
+        elif record.levelno == logging.ERROR:
+            return f"{Fore.RED}{message}"  # Red (normal)
+        elif record.levelno == logging.CRITICAL:
+            return f"{Fore.RED}{Style.BRIGHT}{message}"  # Red (bold)
+        else:
+            return message
 
-class NoRenameTimedRotatingFileHandler(LazyTimedRotatingFileHandler):
-    """A file handler that creates new files at midnight without renaming the existing ones"""
-    
-    def rotation_filename(self, default_name):
-        """Override to prevent renaming of the old log file"""
-        # Just return the name that would have been used for rotation
-        # but don't actually apply it to the old file
-        return default_name
+class CustomRotatingFileHandler(TimedRotatingFileHandler):
+    """Custom handler that archives logs in year/month folders"""
     
     def doRollover(self):
-        """Override rollover behavior to avoid renaming the existing file"""
-        # Close the current file if it's open
-        if self.stream:
-            self.stream.close()
+        # Get current filename before rotation
+        current_filename = self.baseFilename
         
-        # Calculate new filename for the next rotation period
-        # This creates a new file with today's date instead of renaming
-        current_time = int(time.time())
-        dstNow = time.localtime(current_time)[-1]
+        # Execute standard rollover
+        super().doRollover()
         
-        t = self.computeRollover(current_time) - self.interval
-        if self.utc:
-            timeTuple = time.gmtime(t)
-        else:
-            timeTuple = time.localtime(t)
-            dstThen = timeTuple[-1]
-            if dstNow != dstThen:
-                if dstNow:
-                    addend = 3600
-                else:
-                    addend = -3600
-                timeTuple = time.localtime(t + addend)
-        
-        # Generate new log filename with current date
-        dfn = self.baseFilename + "." + time.strftime(self.suffix, timeTuple)
-        
-        # Don't try to rename the old file - just create a new one
-        self.mode = 'a'
-        self.stream = self._open()
-        
-        # Update rollover time
-        newRolloverAt = self.computeRollover(current_time)
-        while newRolloverAt <= current_time:
-            newRolloverAt = newRolloverAt + self.interval
-        
-        self.rolloverAt = newRolloverAt
-
-def Axe(axe_name=NAME, log_level=logging.DEBUG, log_to_console=False, 
-        backup_count=7, use_json=True) -> logging.Logger:
-    """Configure application logging with file logging and optional console output"""
-    with _logger_lock:
-        # Check if logger already exists with the same name to avoid duplicates
-        if axe_name in _logger_instances:
-            return _logger_instances[axe_name]
-        
-        # Use the global LOGS_DIR instead of recalculating it
-        logs_dir = LOGS_DIR
-        
-        # Create the logger
-        logger = logging.getLogger(axe_name)
-        
-        # Clear any existing handlers to avoid duplicates
-        if logger.handlers:
-            logger.handlers = []
-        
-        # Set the logger level
-        logger.setLevel(log_level)
-        
-        # Get the current date in YYYYMMDD format
-        current_date = datetime.now().strftime('%Y-%m-%d')
-        
-        if K1:
-            # Split log mode: multiple files based on log level
-            log_levels = [
-                (logging.DEBUG, "debug"),
-                (logging.INFO, "info"),
-                (EMAIL, "email"),
-                (SQL, "sql"),
-                (logging.WARNING, "warning"),
-                (logging.ERROR, "error"),
-                (logging.CRITICAL, "critical"),
-                (STATS, "stats"),
-            ]
+        # Move the rotated file to archives
+        if os.path.exists(current_filename):
+            # Extract date from filename (YYYY-MM-DD.log)
+            filename = os.path.basename(current_filename)
+            date_part = filename.split('.')[0]  # Get YYYY-MM-DD
+            year, month, _ = date_part.split('-')
             
-            for level, level_name in log_levels:
-                # Skip levels below the configured log_level
-                if level < log_level:
-                    continue
-                
-                # Create level-specific log file
-                level_log_file = os.path.join(logs_dir, f'{level_name}.{current_date}.log')
-                
-                # Create a handler for this specific level
-                # Replace LazyTimedRotatingFileHandler with NoRenameTimedRotatingFileHandler
-                file_handler = NoRenameTimedRotatingFileHandler(
-                    level_log_file,
-                    when='midnight',
-                    interval=1,
-                    backupCount=backup_count,
-                    delay=True  # Delay file creation until first log
-                )
-                file_handler.suffix = "%Y-%m-%d"
-                
-                # Filter to include only this specific level
-                class LevelFilter(logging.Filter):
-                    def __init__(self, level):
-                        self.level = level
-                        
-                    def filter(self, record):
-                        return record.levelno == self.level
-                
-                file_handler.addFilter(LevelFilter(level))
-                file_handler.setLevel(level)
-                
-                # Use JSON formatter with time-only format if use_json is True
-                if use_json:
-                    file_formatter = JsonFormatter(datefmt="%H:%M:%S.%f", split_by_level=True)
-                else:
-                    file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt="%Y-%m-%d %H:%M:%S.%f")
-                
-                file_handler.setFormatter(file_formatter)
-                logger.addHandler(file_handler)
-        else:
-            # Single file mode: all logs in one file with level info
-            log_file = os.path.join(logs_dir, f'all.{current_date}.log')
+            # Create archive directory
+            archive_dir = os.path.join(os.path.dirname(os.path.dirname(current_filename)), year, month)
+            os.makedirs(archive_dir, exist_ok=True)
             
-            # Create a single file handler for all levels
-            file_handler = logging.FileHandler(
-                log_file,
-                mode='a',
-                delay=True  # Delay file creation until first log
-            )
-            file_handler.setLevel(log_level)
-            
-            # Always include level info in single file mode
-            if use_json:
-                file_formatter = JsonFormatter(datefmt="%H:%M:%S.%f", split_by_level=False)
-            else:
-                file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt="%Y-%m-%d %H:%M:%S.%f")
-            
-            file_handler.setFormatter(file_formatter)
-            
-            # Create directory if it doesn't exist
-            if not os.path.exists(os.path.dirname(log_file)):
-                os.makedirs(os.path.dirname(log_file), exist_ok=True)
-                
-            logger.addHandler(file_handler)
-        
-        if log_to_console:
-            # Add console handler
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(log_level)
-            console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt="%Y-%m-%d %H:%M:%S.%f")
-            console_handler.setFormatter(console_formatter)
-            logger.addHandler(console_handler)
-        
-        logger.propagate = False
-        
-        # Store in weak reference dictionary
-        _logger_instances[axe_name] = logger
-        
-        return logger
-
-def close_logger(logger):
-    """Properly close all handlers attached to the logger"""
-    if logger:
-        for handler in logger.handlers[:]:
-            handler.close()
-            logger.removeHandler(handler)
-
-class LoggerManager:
-    """Context manager for logger to ensure proper cleanup"""
-    
-    # Month names dictionary - defined once as a class attribute
-    MONTH_NAMES = {
-        1: "01-January", 2: "02-February", 3: "03-March", 4: "04-April",
-        5: "05-May", 6: "06-June", 7: "07-July", 8: "08-August",
-        9: "09-September", 10: "10-October", 11: "11-November", 12: "12-December"
-    }
-    
-    def __init__(self, logger_name=NAME, log_level=logging.DEBUG, 
-                 log_to_console=False, backup_count=7, split_by_level=True):
-        self.logger = Axe(logger_name, log_level, log_to_console, backup_count)
-        
-    def __enter__(self):
-        return self.logger
-        
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        close_logger(self.logger)
-    
-    @staticmethod
-    def _ensure_dir(directory):
-        """Ensure directory exists"""
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-        return directory
-    
-    @staticmethod
-    def _get_default_dirs():
-        """Get default log and archive directories"""
-        # Use the global LOGS_DIR instead of calculating it again
-        logs_dir = LOGS_DIR
-        archive_dir = os.path.join(PROJECT_ROOT, 'logs_archive')
-        return logs_dir, archive_dir
-    
-    @staticmethod
-    def _safe_move(src_path, dest_path):
-        """Safely move a file, logging any errors"""
-        if not os.path.exists(dest_path):
+            # Move file to archive
+            archive_path = os.path.join(archive_dir, filename)
             try:
-                shutil.move(src_path, dest_path)
-                return True
+                os.replace(current_filename, archive_path)
             except Exception as e:
-                error_logger.error(f"Failed to move {src_path} to {dest_path}: {e}")
-        return False
-        
+                print(f"Error archiving log file: {e}")
+
+class Logger:
+    """Logger class that manages file and console logging"""
+    
+    _instance = None
+    
     @classmethod
-    def auto_manage_logs(cls, logs_dir=None, archive_dir=None, max_days=7):
-        """
-        Move old logs to archive and organize them by date structure
-        """
-        # Get and ensure directories
-        logs_dir, archive_dir = cls._get_default_dirs() if logs_dir is None else (logs_dir, archive_dir)
-        if not os.path.exists(logs_dir):
-            return False
-        cls._ensure_dir(archive_dir)
-            
-        # Process log files
-        current_time = time.time()
-        max_age = max_days * 86400  # Convert days to seconds
+    def get_instance(cls, console_logging=True):
+        """Get logger singleton instance"""
+        if cls._instance is None:
+            cls._instance = cls(console_logging)
+        elif console_logging != cls._instance.console_logging:
+            if console_logging:
+                cls._instance.enable_console_logging()
+            else:
+                cls._instance.disable_console_logging()
+        return cls._instance
+    
+    def __init__(self, console_logging=True):
+        # Create logger
+        self.logger = logging.getLogger('email_verification_engine')
+        self.logger.setLevel(logging.DEBUG)
         
-        for filename in os.listdir(logs_dir):
-            file_path = os.path.join(logs_dir, filename)
+        # Prevent logs from propagating to the root logger
+        self.logger.propagate = False
+        
+        # Clear any existing handlers
+        if self.logger.hasHandlers():
+            self.logger.handlers.clear()
+        
+        # Set up file logging
+        self._setup_file_handler()
+        
+        # Set up console logging if enabled
+        self.console_logging = console_logging
+        if console_logging:
+            self._setup_console_handler()
+    
+    def _setup_file_handler(self):
+        """Set up file logging"""
+        # Create logs directory if it doesn't exist
+        logs_dir = os.path.join(os.getcwd(), 'logs')
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # Create log file with today's date using the recommended UTC approach
+        today = datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d')
+        log_file = os.path.join(logs_dir, f"{today}.log")
+        
+        # Set up file handler with midnight rotation (UTC)
+        file_handler = CustomRotatingFileHandler(
+            filename=log_file,
+            when='midnight',
+            interval=1,
+            backupCount=0,  # Don't delete old logs
+            utc=True,
+            encoding='utf-8'  # Explicitly set UTF-8 encoding
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(LogFormatter())
+        self.logger.addHandler(file_handler)
+    
+    def _setup_console_handler(self):
+        """Set up console logging"""
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.DEBUG)
+        console_handler.setFormatter(ConsoleFormatter())
+        self.logger.addHandler(console_handler)
+    
+    def enable_console_logging(self):
+        """Enable console logging"""
+        if not self.console_logging:
+            self.console_logging = True
+            self._setup_console_handler()
+    
+    def disable_console_logging(self):
+        """Disable console logging"""
+        if self.console_logging:
+            # Create a new logger instance without console handlers
+            self.console_logging = False
             
-            # Skip non-log files
-            if not os.path.isfile(file_path) or not filename.endswith('.log'):
-                continue
+            # Keep track of the file handlers
+            file_handlers = [h for h in self.logger.handlers 
+                           if not isinstance(h, logging.StreamHandler) or 
+                              isinstance(h, logging.FileHandler)]
+            
+            # Remove all handlers
+            self.logger.handlers.clear()
+            
+            # Re-add only the file handlers
+            for handler in file_handlers:
+                self.logger.addHandler(handler)
                 
-            # Check file age
-            file_age = current_time - os.path.getmtime(file_path)
-            if file_age <= max_age:
-                continue
-                
-            # Get date information and create destination folder structure
-            date_time = datetime.fromtimestamp(os.path.getmtime(file_path))
-            safe_archive_dir = archive_dir if archive_dir is not None else ""
-            safe_year = str(date_time.year) if date_time and hasattr(date_time, "year") else "unknown_year"
-            year_dir = os.path.join(safe_archive_dir, safe_year)
-            month_dir = os.path.join(year_dir, cls.MONTH_NAMES.get(date_time.month, f"{date_time.month:02d}-Unknown"))
-            day_dir = os.path.join(month_dir, f"{date_time.day:02d}")
-            
-            # Ensure destination directories exist
-            cls._ensure_dir(day_dir)
-            
-            # Move file to organized location
-            cls._safe_move(file_path, os.path.join(day_dir, filename))
-            
-        return True
+            # Flush stdout to ensure any pending output is processed
+            sys.stdout.flush()
+    
+    def debug(self, message, exc_info=False):
+        self.logger.debug(message, exc_info=exc_info)
+    
+    def info(self, message, exc_info=False):
+        self.logger.info(message, exc_info=exc_info)
+    
+    def warning(self, message, exc_info=False):
+        self.logger.warning(message, exc_info=exc_info)
+    
+    def error(self, message, exc_info=False):
+        self.logger.error(message, exc_info=exc_info)
+    
+    def critical(self, message, exc_info=False):
+        self.logger.critical(message, exc_info=exc_info)
+
+# Convenience functions
+def get_logger(console_logging=True):
+    """Get the logger instance"""
+    return Logger.get_instance(console_logging)
+
+def enable_console_logging():
+    """Enable console logging"""
+    Logger.get_instance().enable_console_logging()
+
+def disable_console_logging():
+    """Disable console logging"""
+    Logger.get_instance().disable_console_logging()
+
+def debug(message, exc_info=False):
+    """Log a debug message"""
+    Logger.get_instance().debug(message, exc_info=exc_info)
+
+def info(message, exc_info=False):
+    """Log an info message"""
+    Logger.get_instance().info(message, exc_info=exc_info)
+
+def warning(message, exc_info=False):
+    """Log a warning message"""
+    Logger.get_instance().warning(message, exc_info=exc_info)
+
+def error(message, exc_info=False):
+    """Log an error message"""
+    Logger.get_instance().error(message, exc_info=exc_info)
+
+def critical(message, exc_info=False):
+    """Log a critical message"""
+    Logger.get_instance().critical(message, exc_info=exc_info)

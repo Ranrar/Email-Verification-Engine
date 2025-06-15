@@ -6,9 +6,9 @@ request handling, and other common HTTP operations.
 """
 import requests
 from src.helpers.dbh import sync_db
-from src.managers.log import Axe
+from src.managers.log import get_logger
 
-logger = Axe()
+logger = get_logger()
 
 def get_user_agent():
     """

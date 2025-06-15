@@ -16,11 +16,11 @@ import time
 from typing import Any, Dict, Optional
 from src.managers.cache import cache_manager
 from src.managers.executor import thread_pool, process_pool
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 from src.helpers.dbh import DBHandler
 
-logger = Axe()
+logger = get_logger()
 db = None
 _app_components = None
 

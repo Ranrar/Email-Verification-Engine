@@ -45,11 +45,11 @@ import os
 from datetime import datetime, timezone, timedelta
 from cachetools import TTLCache
 from src.helpers.dbh import sync_db
-from src.managers.log import Axe
+from src.managers.log import get_logger
 from src.managers.time import now_utc, normalize_datetime
 
 # Initialize logging
-logger = Axe()
+logger = get_logger()
 
 class CacheKeys:
     """
