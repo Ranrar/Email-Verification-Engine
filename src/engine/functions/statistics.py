@@ -14,9 +14,11 @@ import time
 from typing import Dict, Any, Tuple, Optional, List
 from datetime import datetime, timezone, timedelta
 import decimal
+import json
 
 from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
+from src.managers.time import now_utc
 
 # Initialize logging
 logger = get_logger()
@@ -537,9 +539,6 @@ class DNSServerStats:
             """)
             
             if table_check and table_check[0][0]:  # Table exists
-                import json
-                from src.managers.time import now_utc
-                
                 sync_db.execute("""
                     INSERT INTO dmarc_validation_history 
                     (domain, policy, policy_strength, alignment_mode, percentage_covered,
@@ -634,9 +633,6 @@ class DNSServerStats:
             """)
             
             if table_check and table_check[0][0]:  # Table exists
-                import json
-                from src.managers.time import now_utc
-                
                 sync_db.execute("""
                     INSERT INTO dkim_validation_history 
                     (domain, selector, has_dkim, key_type, key_length, security_level,
@@ -672,3 +668,48 @@ class DNSServerStats:
             
         except Exception as e:
             logger.warning(f"[{trace_id}] Failed to store DKIM analysis: {e}")
+
+    def record_imap_statistics(self, trace_id: str, domain: str, has_imap: bool,
+                              servers_found: int, security_level: str, supports_ssl: bool,
+                              supports_starttls: bool, supports_oauth: bool, dns_lookups: int,
+                              processing_time_ms: float, errors: Optional[str] = None):
+        """Record IMAP validation statistics to database"""
+        try:
+            sync_db.execute("""
+                INSERT INTO imap_validation_statistics 
+                (trace_id, domain, has_imap, servers_found, security_level,
+                 supports_ssl, supports_starttls, supports_oauth, dns_lookups,
+                 processing_time_ms, errors)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            """, trace_id, domain, has_imap, servers_found, security_level,
+                 supports_ssl, supports_starttls, supports_oauth, dns_lookups,
+                 processing_time_ms, errors)
+        
+        except Exception as e:
+            logger.error(f"[{trace_id}] Failed to record IMAP statistics: {e}")
+
+    def store_imap_analysis(self, domain: str, result: dict, trace_id: str):
+        """Store IMAP analysis in history table"""
+        try:
+            import json
+            sync_db.execute("""
+                INSERT INTO imap_validation_history 
+                (domain, has_imap, servers_found, security_level, supports_ssl,
+                 supports_starttls, supports_oauth, dns_lookups, processing_time_ms,
+                 errors, warnings, recommendations, trace_id, validated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                ON CONFLICT (domain, validation_date) 
+                DO UPDATE SET
+                    has_imap = EXCLUDED.has_imap,
+                    servers_found = EXCLUDED.servers_found,
+                    security_level = EXCLUDED.security_level,
+                    last_validated_at = EXCLUDED.validated_at
+            """, domain, result.get('has_imap', False), result.get('servers_found', 0),
+                 result.get('security_level', 'none'), result.get('supports_ssl', False),
+                 result.get('supports_starttls', False), result.get('supports_oauth', False),
+                 result.get('dns_lookups', 0), result.get('execution_time_ms', 0),
+                 json.dumps(result.get('errors', [])), json.dumps(result.get('warnings', [])),
+                 json.dumps(result.get('recommendations', [])), trace_id, now_utc())
+             
+        except Exception as e:
+            logger.error(f"[{trace_id}] Failed to store IMAP analysis: {e}")

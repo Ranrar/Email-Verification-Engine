@@ -49,6 +49,8 @@ class RateLimitManager:
         self.additional_limits = None
         self.cache_limits = None
         self.dns_limits = None
+        self.imap_limits = None
+        self.pop3_limits = None
 
         # Add test_mode attribute (default: False)
         self.test_mode = False
@@ -245,6 +247,70 @@ class RateLimitManager:
             logger.error(f"Failed to load DNS rate limits: {str(e)}")
             self.dns_limits = {}
             raise
+            
+    def _load_imap_limits(self):
+        """Load IMAP-related rate limits from database"""
+        if self.imap_limits is not None:
+            logger.debug("IMAP rate limits already loaded, skipping reload")
+            return
+            
+        try:
+            query = """
+                SELECT name, value, is_time, enabled 
+                FROM rate_limit 
+                WHERE category = 'imap' AND enabled = TRUE
+            """
+            results = sync_db.fetch(query)
+            
+            self.imap_limits = {}
+            for row in results:
+                name = row['name']
+                value = row['value']
+                is_time = row['is_time']
+                
+                # Convert to appropriate type based on is_time flag
+                if is_time:
+                    self.imap_limits[name] = float(value)
+                else:
+                    self.imap_limits[name] = int(value)
+                    
+            logger.debug(f"Loaded {len(self.imap_limits)} IMAP rate limits")
+        except Exception as e:
+            logger.error(f"Failed to load IMAP rate limits: {str(e)}")
+            self.imap_limits = {}
+            raise
+            
+    def _load_pop3_limits(self):
+        """Load POP3-related rate limits from database"""
+        if self.pop3_limits is not None:
+            logger.debug("POP3 rate limits already loaded, skipping reload")
+            return
+            
+        try:
+            query = """
+                SELECT name, value, is_time, enabled 
+                FROM rate_limit 
+                WHERE category = 'pop3' AND enabled = TRUE
+            """
+            results = sync_db.fetch(query)
+            
+            self.pop3_limits = {}
+            for row in results:
+                name = row['name']
+                value = row['value']
+                is_time = row['is_time']
+                
+                # Convert to appropriate type based on is_time flag
+                if is_time:
+                    self.pop3_limits[name] = float(value)
+                else:
+                    self.pop3_limits[name] = int(value)
+                    
+            logger.debug(f"Loaded {len(self.pop3_limits)} POP3 rate limits")
+        except Exception as e:
+            logger.error(f"Failed to load POP3 rate limits: {str(e)}")
+            self.pop3_limits = {}
+            raise
 
     def reload_all_limits(self):
         """Reload all rate limits from database"""
@@ -254,6 +320,8 @@ class RateLimitManager:
         self.additional_limits = None
         self.cache_limits = None
         self.dns_limits = None
+        self.imap_limits = None
+        self.pop3_limits = None
         logger.info("All rate limits marked for reload")
         
     def get_smtp_limits(self) -> Dict[str, Any]:
@@ -303,6 +371,22 @@ class RateLimitManager:
         if self.dns_limits is None:
             return {}
         return self.dns_limits
+        
+    def get_imap_limits(self) -> Dict[str, Any]:
+        """Get all IMAP rate limits"""
+        if self.imap_limits is None:
+            self._load_imap_limits()
+        if self.imap_limits is None:
+            return {}
+        return self.imap_limits
+        
+    def get_pop3_limits(self) -> Dict[str, Any]:
+        """Get all POP3 rate limits"""
+        if self.pop3_limits is None:
+            self._load_pop3_limits()
+        if self.pop3_limits is None:
+            return {}
+        return self.pop3_limits
     
     def get_smtp_limit(self, setting_name: str) -> Any:
         """Get a specific SMTP rate limit"""
@@ -355,6 +439,32 @@ class RateLimitManager:
         # If it's not found, raise an error
         logger.error(f"DNS rate limit '{setting_name}' not found in database")
         raise KeyError(f"DNS rate limit '{setting_name}' not found in database")
+        
+    def get_imap_limit(self, setting_name: str) -> Any:
+        """Get a specific IMAP rate limit"""
+        if self.imap_limits is None:
+            self._load_imap_limits()
+        
+        # If setting exists, return it
+        if self.imap_limits is not None and setting_name in self.imap_limits:
+            return self.imap_limits[setting_name]
+        
+        # If it's not found, raise an error
+        logger.error(f"IMAP rate limit '{setting_name}' not found in database")
+        raise KeyError(f"IMAP rate limit '{setting_name}' not found in database")
+        
+    def get_pop3_limit(self, setting_name: str) -> Any:
+        """Get a specific POP3 rate limit"""
+        if self.pop3_limits is None:
+            self._load_pop3_limits()
+        
+        # If setting exists, return it
+        if self.pop3_limits is not None and setting_name in self.pop3_limits:
+            return self.pop3_limits[setting_name]
+        
+        # If it's not found, raise an error
+        logger.error(f"POP3 rate limit '{setting_name}' not found in database")
+        raise KeyError(f"POP3 rate limit '{setting_name}' not found in database")
 
     # --- SMTP Rate Limit Helper Methods ---
     def get_max_retries(self):
@@ -466,8 +576,104 @@ class RateLimitManager:
     def get_tls_cipher_probe_interval(self):
         return self.get_auth_security_limit('tls_cipher_interval')
 
-    def get_rbl_check_interval(self):
-        return self.get_auth_security_limit('rbl_check_interval')
+    def get_query_timeout(self):
+        return self.get_auth_security_limit('query_timeout')
+        
+    # --- IMAP Rate Limit Helper Methods ---
+    def get_imap_connection_limit(self):
+        """Get maximum IMAP connections per minute"""
+        return self.get_imap_limit('imap_connection_limit_per_min')
+    
+    def get_imap_concurrent_sessions(self):
+        """Get maximum concurrent IMAP sessions"""
+        return self.get_imap_limit('imap_concurrent_sessions')
+            
+    # --- IMAP Timeout Helper Methods ---
+    def get_imap_connect_timeout(self):
+        """Get IMAP connection timeout"""
+        return self.get_imap_limit('timeout_connect')
+    
+    def get_imap_login_timeout(self):
+        """Get IMAP login timeout"""
+        return self.get_imap_limit('timeout_login')
+    
+    def get_imap_read_timeout(self):
+        """Get IMAP read timeout"""
+        return self.get_imap_limit('timeout_read')
+    
+    def get_imap_idle_timeout(self):
+        """Get IMAP idle timeout"""
+        return self.get_imap_limit('timeout_idle')
+    
+    def get_imap_connection_timeout(self):
+        """Get IMAP overall connection timeout"""
+        return self.get_imap_limit('connection_timeout')
+
+    # --- IMAP Rate Limit Protection Helper Methods ---
+    def get_imap_max_login_failures(self):
+        """Get maximum IMAP login failures per minute"""
+        return self.get_imap_limit('max_login_failures_per_min')
+    
+    def get_imap_block_duration_after_failures(self):
+        """Get block duration after repeated IMAP login failures"""
+        return self.get_imap_limit('block_duration_after_failures')
+
+    # --- IMAP Cache TTL Helper Methods ---
+    def get_imap_capabilities_cache_ttl(self):
+        """Get cache TTL for IMAP capabilities"""
+        return self.get_imap_limit('imap_capabilities_cache_ttl')
+    
+    def get_imap_starttls_cache_ttl(self):
+        """Get cache TTL for IMAP STARTTLS support"""
+        return self.get_imap_limit('imap_starttls_support_cache_ttl')
+        
+    # --- POP3 Rate Limit Helper Methods ---
+    def get_pop3_connection_limit(self):
+        """Get maximum POP3 connections per minute"""
+        return self.get_pop3_limit('connection_limit_per_min')
+    
+    def get_pop3_concurrent_sessions(self):
+        """Get maximum concurrent POP3 sessions"""
+        return self.get_pop3_limit('concurrent_sessions')
+            
+    # --- POP3 Timeout Helper Methods ---
+    def get_pop3_connect_timeout(self):
+        """Get POP3 connection timeout"""
+        return self.get_pop3_limit('timeout_connect')
+    
+    def get_pop3_login_timeout(self):
+        """Get POP3 login timeout"""
+        return self.get_pop3_limit('timeout_login')
+    
+    def get_pop3_read_timeout(self):
+        """Get POP3 read timeout"""
+        return self.get_pop3_limit('timeout_read')
+    
+    def get_pop3_idle_timeout(self):
+        """Get POP3 idle timeout"""
+        return self.get_pop3_limit('timeout_idle')
+    
+    def get_pop3_connection_timeout(self):
+        """Get POP3 overall connection timeout"""
+        return self.get_pop3_limit('connection_timeout')
+
+    # --- POP3 Rate Limit Protection Helper Methods ---
+    def get_pop3_max_login_failures(self):
+        """Get maximum POP3 login failures per minute"""
+        return self.get_pop3_limit('max_login_failures_per_min')
+    
+    def get_pop3_block_duration_after_failures(self):
+        """Get block duration after repeated POP3 login failures"""
+        return self.get_pop3_limit('block_duration_after_failures')
+        
+    # --- POP3 Cache TTL Helper Methods ---
+    def get_pop3_capabilities_cache_ttl(self):
+        """Get cache TTL for POP3 capabilities"""
+        return self.get_pop3_limit('pop3_capabilities_cache_ttl')
+    
+    def get_pop3_starttls_cache_ttl(self):
+        """Get cache TTL for POP3 STARTTLS support"""
+        return self.get_pop3_limit('pop3_starttls_support_cache_ttl')
 
     def record_usage(self, category, resource_id):
         """
@@ -538,6 +744,12 @@ class RateLimitManager:
             elif category == 'dns':
                 limit_value = self.get_dns_limit(limit_name)
                 period = "DNS lookup"
+            elif category == 'imap':
+                limit_value = self.get_imap_limit(limit_name)
+                period = "IMAP operation"
+            elif category == 'pop3':
+                limit_value = self.get_pop3_limit(limit_name)
+                period = "POP3 operation"
             else:
                 logger.error(f"Unknown rate limit category: {category}")
                 return False, {'limit': 'unknown', 'current': current_count, 'period': 'unknown category'}
@@ -593,6 +805,10 @@ class RateLimitManager:
                 limit_value = self.get_cache_limit(limit_name)
             elif category == 'dns':
                 limit_value = self.get_dns_limit(limit_name)
+            elif category == 'imap':
+                limit_value = self.get_imap_limit(limit_name)
+            elif category == 'pop3':
+                limit_value = self.get_pop3_limit(limit_name)
         except Exception as e:
             logger.error(f"Failed to get rate limit {category}.{limit_name}: {e}")
             return False

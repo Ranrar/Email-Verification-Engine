@@ -434,7 +434,6 @@ class DynamicQueue:
                             )
                         except Exception as log_err:
                             logger.warning(f"Failed to log validation step error: {log_err}")
-                            logger.warning(f"Failed to log validation step error: {log_err}")
     
         if email:
             logger.debug(f"Queue execution completed with {sum(1 for r in results.values() if r.get('valid', False))}/{len(results)} valid steps")

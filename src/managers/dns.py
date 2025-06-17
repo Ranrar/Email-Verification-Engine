@@ -6,11 +6,9 @@ Central DNS management for EVE components.
 Handles settings, nameserver selection, and resolution.
 """
 
-import traceback
 import threading
 import time
 from typing import Any, Dict, List
-import dns.resolver
 
 from src.managers.executor import ThreadPoolexecutor
 from src.helpers.dbh import sync_db
