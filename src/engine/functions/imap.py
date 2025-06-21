@@ -605,6 +605,7 @@ class IMAPVerifier:
             if use_ssl:
                 try:
                     context = ssl.create_default_context()
+                    context.minimum_version = ssl.TLSVersion.TLSv1_2
                     sock = context.wrap_socket(sock, server_hostname=host)
                 except ssl.SSLError as e:
                     return False, {"error": f"SSL error: {str(e)}", "banner": "", "capabilities": []}
