@@ -214,9 +214,13 @@ class DNSManager:
     
     def get_use_tcp(self) -> bool:
         """Get whether to force TCP for DNS queries instead of UDP"""
-        return bool(self._get_setting_with_fallback('use_tcp', 
-                 self._get_setting_with_fallback('fallback_to_tcp', False, log_level="debug"), 
-                 log_level="debug"))
+        # Try 'use_tcp' first
+        value = self._get_setting_with_fallback('use_tcp', None, log_level="debug")
+        if value is not None:
+            return bool(int(value)) if str(value).isdigit() else bool(value)
+        # Fallback to 'fallback_to_tcp'
+        fallback = self._get_setting_with_fallback('fallback_to_tcp', False, log_level="debug")
+        return bool(int(fallback)) if str(fallback).isdigit() else bool(fallback)
         
     def get_nameservers_list(self) -> List[str]:
         """Get nameservers as a list of IP address strings"""

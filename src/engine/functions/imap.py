@@ -26,6 +26,8 @@ from typing import Dict, List, Any, Tuple, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
+import dns.resolver
+
 # Import managers from the Email Verification Engine
 from src.managers.cache import cache_manager, CacheKeys
 from src.managers.dns import DNSManager
@@ -229,6 +231,9 @@ class IMAPVerifier:
         with EnhancedOperationTimer("imap_lookup", metadata={"domain": domain}) as timer:
             # Initialize hosts_to_check before the try-except block to ensure it is always defined
             hosts_to_check = []
+            # Initialize mx_result with a default value
+            mx_result = {"records": [], "valid": False, "error": None}
+            
             try:
                 # First, get MX records to find potential mail servers
                 logger.info(f"[{child_trace_id}] Fetching MX records for {domain}")
@@ -251,142 +256,158 @@ class IMAPVerifier:
                 logger.debug(f"[{child_trace_id}] MX lookup returned: valid={mx_result.get('valid')}, error={mx_result.get('error', 'None')}")
                 if mx_result.get('records'):
                     logger.info(f"[{child_trace_id}] Found {len(mx_result.get('records'))} MX records for {domain}")
+                    
+                # Extract MX records from the result and add to hosts_to_check
+                if mx_result.get('records'):
+                    for mx_record in mx_result.get('records', []):
+                        exchange = mx_record.get('exchange', '')
+                        if exchange and exchange not in hosts_to_check:
+                            hosts_to_check.append(exchange)
+                            logger.info(f"[{child_trace_id}] Added MX host for IMAP check: {exchange}")
+                
             except Exception as e:
                 logger.error(f"[{child_trace_id}] Error in MX lookup: {e}")
                 # Continue with fallback approach on MX fetch error
-            
-            # If no MX records found or as additional checks, add domain itself and common patterns
-            if not hosts_to_check:
+
+        # If no valid MX hosts found, add domain itself and check for its existence
+        if not hosts_to_check:
+            # Check if domain itself exists via DNS
+            if self._check_host_exists(domain, child_trace_id):
                 hosts_to_check.append(domain)
                 logger.info(f"[{child_trace_id}] Added domain itself for IMAP check: {domain}")
-                
-                # Add common patterns with logging
-                for pattern in ["mail", "imap", "webmail", "pop", "exchange"]:
-                    pattern_host = f"{pattern}.{domain}"
+            else:
+                logger.info(f"[{child_trace_id}] Domain {domain} does not exist in DNS, skipping")
+            
+            # Check and add common patterns, but only if they exist
+            for pattern in ["mail", "imap", "webmail", "pop", "exchange"]:
+                pattern_host = f"{pattern}.{domain}"
+                if self._check_host_exists(pattern_host, child_trace_id):
                     hosts_to_check.append(pattern_host)
                     logger.debug(f"[{child_trace_id}] Added pattern host: {pattern_host}")
+                else:
+                    logger.debug(f"[{child_trace_id}] Pattern host {pattern_host} does not exist in DNS, skipping")
+        
+        # Track results for all hosts
+        results = []
+        successful_servers = []
+        has_imap = False
+        current_concurrent = 0
+        
+        # Check each host
+        for host in hosts_to_check:
+            host_result = {
+                "host": host,
+                "ports_checked": []
+            }
             
-            # Track results for all hosts
-            results = []
-            successful_servers = []
-            has_imap = False
-            current_concurrent = 0
+            # Get enabled ports sorted by priority
+            enabled_ports = self.get_enabled_imap_ports()
+            priority_sorted_ports = self.get_imap_ports_by_priority()
             
-            # Check each host
-            for host in hosts_to_check:
-                host_result = {
-                    "host": host,
-                    "ports_checked": []
-                }
+            for port, port_info in priority_sorted_ports:
+                # Check concurrent session limit
+                if current_concurrent >= self.imap_concurrent_sessions:
+                    logger.warning(f"[{child_trace_id}] IMAP concurrent session limit reached: "
+                                  f"{current_concurrent}/{self.imap_concurrent_sessions}")
+                    break
                 
-                # Get enabled ports sorted by priority
-                enabled_ports = self.get_enabled_imap_ports()
-                priority_sorted_ports = self.get_imap_ports_by_priority()
+                # Skip disabled ports
+                if not port_info.get("enabled", True):
+                    logger.debug(f"[{child_trace_id}] Skipping disabled port {port} for {host}")
+                    continue
                 
-                for port, port_info in priority_sorted_ports:
-                    # Check concurrent session limit
-                    if current_concurrent >= self.imap_concurrent_sessions:
-                        logger.warning(f"[{child_trace_id}] IMAP concurrent session limit reached: "
-                                      f"{current_concurrent}/{self.imap_concurrent_sessions}")
-                        break
-                    
-                    # Skip disabled ports
-                    if not port_info.get("enabled", True):
-                        logger.debug(f"[{child_trace_id}] Skipping disabled port {port} for {host}")
-                        continue
-                    
-                    use_ssl = port_info.get("secure", False)
-                    
-                    logger.debug(f"[{child_trace_id}] Testing {host}:{port} ({port_info.get('protocol', 'IMAP')}) - Priority: {port_info.get('priority', 999)}")
-                    
-                    # Try to connect
-                    success, port_result = self._connect_to_imap_server(
-                        host, 
-                        port, 
-                        use_ssl=use_ssl, 
-                        timeout=self.imap_timeout
-                    )
-                    
-                    current_concurrent += 1  # Track concurrent connections
-                    
-                    host_result["ports_checked"].append({
-                        "port": port,
-                        "success": success,
-                        "priority": port_info.get('priority', 999),
-                        "protocol": port_info.get('protocol', 'IMAP'),
-                        **port_result
-                    })
-                    
-                    # Record successful server
-                    if success:
-                        has_imap = True
-                        server_info = {
-                            "host": host,
-                            "port": port,
-                            "protocol": port_info.get("protocol", "IMAP"),
-                            "secure": port_info.get("secure", False),
-                            "capabilities": port_result.get("capabilities", []),
-                            "banner": port_result.get("banner", ""),
-                            "priority": port_info.get("priority", 999)
-                        }
-                        successful_servers.append(server_info)
-                    
-                    # Record connection attempt for rate limiting
-                    self._record_imap_connection(domain)
-                    
-                    # Small delay between connections
-                    time.sleep(0.2)
-            
-            # Convert dictionary results to IMAPRecord objects
-            imap_server_records = []
-            for server in successful_servers:
-                imap_record = IMAPRecord(
-                    host=server.get("host", ""),
-                    port=server.get("port", 0),
-                    protocol=server.get("protocol", "IMAP"),
-                    capabilities=server.get("capabilities", []),
-                    secure_connection=server.get("secure", False),
-                    banner=server.get("banner", ""),
-                    supports_starttls=server.get("supports_starttls", False),
-                    supports_login=server.get("supports_login", False),
-                    supports_plain=server.get("supports_plain", False),
-                    supports_oauth=server.get("supports_oauth", False),
-                    supports_idle=server.get("supports_idle", False),
-                    success=True
+                use_ssl = port_info.get("secure", False)
+                
+                logger.debug(f"[{child_trace_id}] Testing {host}:{port} ({port_info.get('protocol', 'IMAP')}) - Priority: {port_info.get('priority', 999)}")
+                
+                # Try to connect
+                success, port_result = self._connect_to_imap_server(
+                    host, 
+                    port, 
+                    use_ssl=use_ssl, 
+                    timeout=self.imap_timeout
                 )
-                imap_server_records.append(imap_record)
+                
+                current_concurrent += 1  # Track concurrent connections
+                
+                host_result["ports_checked"].append({
+                    "port": port,
+                    "success": success,
+                    "priority": port_info.get('priority', 999),
+                    "protocol": port_info.get('protocol', 'IMAP'),
+                    **port_result
+                })
+                
+                # Record successful server
+                if success:
+                    has_imap = True
+                    server_info = {
+                        "host": host,
+                        "port": port,
+                        "protocol": port_info.get("protocol", "IMAP"),
+                        "secure": port_info.get("secure", False),
+                        "capabilities": port_result.get("capabilities", []),
+                        "banner": port_result.get("banner", ""),
+                        "priority": port_info.get("priority", 999)
+                    }
+                    successful_servers.append(server_info)
+                
+                # Record connection attempt for rate limiting
+                self._record_imap_connection(domain)
+                
+                # Small delay between connections
+                time.sleep(0.2)
         
-            # Assess security and generate recommendations
-            security_level = self._assess_imap_security(imap_server_records, child_trace_id)
-            recommendations = self._generate_recommendations(imap_server_records, child_trace_id)
-            
-            # Create final result with correct duration
-            end_time = datetime.now()
-            duration_ms = int((end_time - start_time).total_seconds() * 1000)
-            
-            final_result = IMAPResult(
-                domain=domain,
-                has_imap=has_imap,
-                imap_servers=imap_server_records,
-                servers_checked=results,
-                timestamp=now_utc(),
-                duration_ms=duration_ms,
-                security_level=security_level,
-                recommendations=recommendations,
-                supports_ssl=any(server.secure_connection for server in imap_server_records),
-                supports_starttls=any(server.supports_starttls for server in imap_server_records),
-                supports_oauth=any(server.supports_oauth for server in imap_server_records)
+        # Convert dictionary results to IMAPRecord objects
+        imap_server_records = []
+        for server in successful_servers:
+            imap_record = IMAPRecord(
+                host=server.get("host", ""),
+                port=server.get("port", 0),
+                protocol=server.get("protocol", "IMAP"),
+                capabilities=server.get("capabilities", []),
+                secure_connection=server.get("secure", False),
+                banner=server.get("banner", ""),
+                supports_starttls=server.get("supports_starttls", False),
+                supports_login=server.get("supports_login", False),
+                supports_plain=server.get("supports_plain", False),
+                supports_oauth=server.get("supports_oauth", False),
+                supports_idle=server.get("supports_idle", False),
+                success=True
             )
-            
-            # Record statistics
-            self._record_imap_statistics(final_result, child_trace_id)
-            
-            # Cache the result using schema-defined TTL
-            cache_manager.set(cache_key, final_result, ttl=self.imap_cache_ttl)
-            logger.info(f"[{child_trace_id}] Cached IMAP verification for {domain}: has_imap={has_imap}")
-            
-            return final_result
+            imap_server_records.append(imap_record)
+    
+        # Assess security and generate recommendations
+        security_level = self._assess_imap_security(imap_server_records, child_trace_id)
+        recommendations = self._generate_recommendations(imap_server_records, child_trace_id)
         
+        # Create final result with correct duration
+        end_time = datetime.now()
+        duration_ms = int((end_time - start_time).total_seconds() * 1000)
+        
+        final_result = IMAPResult(
+            domain=domain,
+            has_imap=has_imap,
+            imap_servers=imap_server_records,
+            servers_checked=results,
+            timestamp=now_utc(),
+            duration_ms=duration_ms,
+            security_level=security_level,
+            recommendations=recommendations,
+            supports_ssl=any(server.secure_connection for server in imap_server_records),
+            supports_starttls=any(server.supports_starttls for server in imap_server_records),
+            supports_oauth=any(server.supports_oauth for server in imap_server_records)
+        )
+        
+        # Record statistics
+        self._record_imap_statistics(final_result, child_trace_id)
+        
+        # Cache the result using schema-defined TTL
+        cache_manager.set(cache_key, final_result, ttl=self.imap_cache_ttl)
+        logger.info(f"[{child_trace_id}] Cached IMAP verification for {domain}: has_imap={has_imap}")
+        
+        return final_result
+    
     def _get_current_imap_connections(self, domain: str) -> int:
         """Get current IMAP connection count for rate limiting"""
         # Use rate_limit_manager to get current usage count - also fix this call
@@ -677,6 +698,40 @@ class IMAPVerifier:
             results[port] = self._connect_to_imap_server(host, port)
         return results
 
+    def _check_host_exists(self, hostname: str, trace_id: str) -> bool:
+        """Check if hostname exists in DNS using A or AAAA records"""
+        try:
+            # Try to get from cache first
+            cache_key = CacheKeys.host_exists(hostname)
+            cached_result = cache_manager.get(cache_key)
+            if cached_result is not None:
+                logger.debug(f"[{trace_id}] Cache hit for host existence check: {hostname}")
+                return cached_result
+            
+            # Try A record first
+            try:
+                answers = dns.resolver.resolve(hostname, 'A')
+                if answers:
+                    cache_manager.set(cache_key, True, ttl=3600)  # Cache for 1 hour
+                    return True
+            except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+                # If A record fails, try AAAA
+                try:
+                    answers = dns.resolver.resolve(hostname, 'AAAA')
+                    if answers:
+                        cache_manager.set(cache_key, True, ttl=3600)
+                        return True
+                except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+                    # If both fail, the host doesn't exist
+                    cache_manager.set(cache_key, False, ttl=300)  # Cache negative result for 5 minutes
+                    return False
+            
+            # Default fallback - shouldn't reach here
+            return False
+        except Exception as e:
+            logger.warning(f"[{trace_id}] Error checking if host {hostname} exists: {e}")
+            return False  # Assume host doesn't exist if we encounter errors
+
 @trace_function("imap_check")
 def imap_check(context: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -713,6 +768,8 @@ def imap_check(context: Dict[str, Any]) -> Dict[str, Any]:
     result = verifier.check_imap(domain, child_trace_id)
     
     # Convert to dictionary format for consistency with other modules
+    if not result.has_imap and not result.error:
+        result.error = "No IMAP server found or connection failed"
     response = {
         "valid": result.has_imap,
         "has_imap": result.has_imap,

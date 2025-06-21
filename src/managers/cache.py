@@ -194,6 +194,11 @@ class CacheKeys:
     @staticmethod
     def imap_starttls(server): return CacheKeys.IMAP_STARTTLS.format(server=server)
 
+    @staticmethod
+    def host_exists(hostname: str) -> str:
+        """Create a cache key for host existence check"""
+        return f"host_exists:{hostname}"
+
 class CacheManager:
     """
     3-Level Cache Manager:

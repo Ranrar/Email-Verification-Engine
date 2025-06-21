@@ -150,7 +150,19 @@ def verify_email(email):
                     "supports_tls": validation_result.get("smtp_supports_tls", False),
                     "supports_auth": validation_result.get("smtp_supports_auth", False)
                 },
-                
+
+                # IMAP details
+                "imap": {
+                    "status": validation_result.get("imap_status", ""),
+                    "details": validation_result.get("imap_details", {})
+                },
+
+                # IMAP details
+                "pop3": {
+                    "status": validation_result.get("pop3_status", ""),
+                    "details": validation_result.get("pop3_details", {})
+                },
+
                 # Infrastructure information
                 "infrastructure": {
                     "provider": validation_result.get("email_provider", {}).get("provider_name", "Unknown"),
