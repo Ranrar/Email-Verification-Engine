@@ -190,6 +190,9 @@ class ResultsDisplay {
         // SMTP Details
         this.populateSMTPDetails(data);
         
+        // IMAP Details - Add this line
+        this.populateIMAPDetails(data);
+        
         // MX Infrastructure
         this.populateMXDetails(data);
         
@@ -201,6 +204,9 @@ class ResultsDisplay {
         
         // DMARC Analysis
         this.populateDMARCAnalysis(data);
+        
+        // DKIM Analysis
+        this.populateDKIMAnalysis(data);
         
         // Timing & Performance
         this.populateTimingDetails(data);
@@ -275,6 +281,120 @@ class ResultsDisplay {
                 record.catch_all ? 'Yes (accepts all emails)' : 'No');
         } else {
             this.addTableRow(smtpTable, 'SMTP Details', 'No SMTP data available');
+        }
+    }
+
+    /**
+     * Populate IMAP details table with server capabilities
+     */
+    populateIMAPDetails(data) {
+        console.log("populateIMAPDetails called with data:", data);
+        
+        const imapTable = document.getElementById('imapDetailsTable');
+        if (!imapTable) {
+            console.warn("imapDetailsTable element not found in DOM");
+            return;
+        }
+        
+        imapTable.innerHTML = '';
+        imapTable.className = 'details-table';
+        
+        if (!data || !data.email_validation_record) {
+            this.addTableRow(imapTable, 'IMAP Information', 'No IMAP data available');
+            return;
+        }
+        
+        const record = data.email_validation_record;
+        const domain = record.domain;
+        
+        // Get IMAP details from the record
+        let imapStatus = record.imap_status || 'unknown';
+        let imapDetails = record.imap_details;
+        
+        if (typeof imapDetails === 'string') {
+            try {
+                imapDetails = JSON.parse(imapDetails);
+            } catch(e) {
+                console.error('Error parsing IMAP details:', e);
+                imapDetails = {};
+            }
+        }
+        
+        console.log("IMAP details:", imapDetails);
+        
+        // Add IMAP status header with appropriate styling
+        this.addHeaderRow(imapTable, 'IMAP Status');
+        
+        let statusClass = 'text-muted';
+        if (imapStatus === 'available') statusClass = 'valid-result';
+        else if (imapStatus === 'unavailable' || imapStatus === 'error') statusClass = 'invalid-result';
+        
+        const statusCell = document.createElement('td');
+        statusCell.innerHTML = `<span class="${statusClass}">${imapStatus.toUpperCase()}</span>`;
+        this.addTableRow(imapTable, 'IMAP Service', '', statusCell);
+        
+        if (imapDetails) {
+            // Add security level with appropriate styling
+            let securityLevel = imapDetails.security_level || 'unknown';
+            let securityClass = 'text-muted';
+            
+            if (securityLevel === 'high') securityClass = 'valid-result';
+            else if (securityLevel === 'medium') securityClass = 'warning-color';
+            else if (securityLevel === 'low' || securityLevel === 'none') securityClass = 'invalid-result';
+            
+            const securityCell = document.createElement('td');
+            securityCell.innerHTML = `<span class="${securityClass}">${securityLevel.toUpperCase()}</span>`;
+            this.addTableRow(imapTable, 'Security Level', '', securityCell);
+            
+            // Add protocol support information
+            this.addTableSeparator(imapTable);
+            this.addSubheaderRow(imapTable, 'Protocol Support');
+            this.addStatusRow(imapTable, 'SSL/TLS', imapDetails.supports_ssl, 'Supported', 'Not Supported');
+            this.addStatusRow(imapTable, 'STARTTLS', imapDetails.supports_starttls, 'Supported', 'Not Supported');
+            this.addStatusRow(imapTable, 'OAuth 2.0', imapDetails.supports_oauth, 'Supported', 'Not Supported');
+            
+            // Show server information if available
+            if (imapDetails.servers && imapDetails.servers.length > 0) {
+                this.addTableSeparator(imapTable);
+                this.addHeaderRow(imapTable, 'IMAP Servers');
+                
+                imapDetails.servers.forEach((server, index) => {
+                    this.addSubheaderRow(imapTable, `Server ${index + 1}`);
+                    this.addTableRow(imapTable, 'Host', server.host || 'N/A');
+                    this.addTableRow(imapTable, 'Port', server.port || 'N/A');
+                    this.addStatusRow(imapTable, 'Secure Connection', server.secure_connection, 'Yes', 'No');
+                    
+                    if (server.capabilities && server.capabilities.length > 0) {
+                        this.addTableRow(imapTable, 'Capabilities', server.capabilities.join(', '));
+                    }
+                    
+                    if (index < imapDetails.servers.length - 1) {
+                        this.addTableSeparator(imapTable, false, true);
+                    }
+                });
+            }
+            
+            // Show recommendations if available
+            if (imapDetails.recommendations && imapDetails.recommendations.length > 0) {
+                this.addTableSeparator(imapTable);
+                this.addHeaderRow(imapTable, 'Recommendations');
+                
+                imapDetails.recommendations.forEach((rec, index) => {
+                    this.addTableRow(imapTable, `${index + 1}.`, rec);
+                });
+            }
+            
+            // Add execution time if available
+            if (imapDetails.execution_time_ms) {
+                this.addTableSeparator(imapTable);
+                this.addTableRow(imapTable, 'Analysis Time', `${(imapDetails.execution_time_ms / 1000).toFixed(2)}s`);
+            }
+            
+            // Add error message if available
+            if (imapDetails.error) {
+                this.addTableSeparator(imapTable);
+                this.addWarningRow(imapTable, 'Error', imapDetails.error);
+            }
         }
     }
 
@@ -1235,6 +1355,120 @@ class ResultsDisplay {
             return `${minutes} minute${minutes > 1 ? 's' : ''}, ${remainingSeconds} seconds`;
         } else {
             return `${remainingSeconds} seconds`;
+        }
+    }
+
+    /**
+     * Populate IMAP details table with server capabilities
+     */
+    populateIMAPDetails(data) {
+        console.log("populateIMAPDetails called with data:", data);
+        
+        const imapTable = document.getElementById('imapDetailsTable');
+        if (!imapTable) {
+            console.warn("imapDetailsTable element not found in DOM");
+            return;
+        }
+        
+        imapTable.innerHTML = '';
+        imapTable.className = 'details-table';
+        
+        if (!data || !data.email_validation_record) {
+            this.addTableRow(imapTable, 'IMAP Information', 'No IMAP data available');
+            return;
+        }
+        
+        const record = data.email_validation_record;
+        const domain = record.domain;
+        
+        // Get IMAP details from the record
+        let imapStatus = record.imap_status || 'unknown';
+        let imapDetails = record.imap_details;
+        
+        if (typeof imapDetails === 'string') {
+            try {
+                imapDetails = JSON.parse(imapDetails);
+            } catch(e) {
+                console.error('Error parsing IMAP details:', e);
+                imapDetails = {};
+            }
+        }
+        
+        console.log("IMAP details:", imapDetails);
+        
+        // Add IMAP status header with appropriate styling
+        this.addHeaderRow(imapTable, 'IMAP Status');
+        
+        let statusClass = 'text-muted';
+        if (imapStatus === 'available') statusClass = 'valid-result';
+        else if (imapStatus === 'unavailable' || imapStatus === 'error') statusClass = 'invalid-result';
+        
+        const statusCell = document.createElement('td');
+        statusCell.innerHTML = `<span class="${statusClass}">${imapStatus.toUpperCase()}</span>`;
+        this.addTableRow(imapTable, 'IMAP Service', '', statusCell);
+        
+        if (imapDetails) {
+            // Add security level with appropriate styling
+            let securityLevel = imapDetails.security_level || 'unknown';
+            let securityClass = 'text-muted';
+            
+            if (securityLevel === 'high') securityClass = 'valid-result';
+            else if (securityLevel === 'medium') securityClass = 'warning-color';
+            else if (securityLevel === 'low' || securityLevel === 'none') securityClass = 'invalid-result';
+            
+            const securityCell = document.createElement('td');
+            securityCell.innerHTML = `<span class="${securityClass}">${securityLevel.toUpperCase()}</span>`;
+            this.addTableRow(imapTable, 'Security Level', '', securityCell);
+            
+            // Add protocol support information
+            this.addTableSeparator(imapTable);
+            this.addSubheaderRow(imapTable, 'Protocol Support');
+            this.addStatusRow(imapTable, 'SSL/TLS', imapDetails.supports_ssl, 'Supported', 'Not Supported');
+            this.addStatusRow(imapTable, 'STARTTLS', imapDetails.supports_starttls, 'Supported', 'Not Supported');
+            this.addStatusRow(imapTable, 'OAuth 2.0', imapDetails.supports_oauth, 'Supported', 'Not Supported');
+            
+            // Show server information if available
+            if (imapDetails.servers && imapDetails.servers.length > 0) {
+                this.addTableSeparator(imapTable);
+                this.addHeaderRow(imapTable, 'IMAP Servers');
+                
+                imapDetails.servers.forEach((server, index) => {
+                    this.addSubheaderRow(imapTable, `Server ${index + 1}`);
+                    this.addTableRow(imapTable, 'Host', server.host || 'N/A');
+                    this.addTableRow(imapTable, 'Port', server.port || 'N/A');
+                    this.addStatusRow(imapTable, 'Secure Connection', server.secure_connection, 'Yes', 'No');
+                    
+                    if (server.capabilities && server.capabilities.length > 0) {
+                        this.addTableRow(imapTable, 'Capabilities', server.capabilities.join(', '));
+                    }
+                    
+                    if (index < imapDetails.servers.length - 1) {
+                        this.addTableSeparator(imapTable, false, true);
+                    }
+                });
+            }
+            
+            // Show recommendations if available
+            if (imapDetails.recommendations && imapDetails.recommendations.length > 0) {
+                this.addTableSeparator(imapTable);
+                this.addHeaderRow(imapTable, 'Recommendations');
+                
+                imapDetails.recommendations.forEach((rec, index) => {
+                    this.addTableRow(imapTable, `${index + 1}.`, rec);
+                });
+            }
+            
+            // Add execution time if available
+            if (imapDetails.execution_time_ms) {
+                this.addTableSeparator(imapTable);
+                this.addTableRow(imapTable, 'Analysis Time', `${(imapDetails.execution_time_ms / 1000).toFixed(2)}s`);
+            }
+            
+            // Add error message if available
+            if (imapDetails.error) {
+                this.addTableSeparator(imapTable);
+                this.addWarningRow(imapTable, 'Error', imapDetails.error);
+            }
         }
     }
 }

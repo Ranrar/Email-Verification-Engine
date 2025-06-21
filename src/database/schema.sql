@@ -3,6 +3,8 @@
 
 -- Set timezone to UTC globally for consistent timestamp handling
 SET timezone = 'UTC';
+ALTER DATABASE postgres SET timezone TO 'UTC';
+ALTER ROLE postgres SET timezone TO 'UTC';
 
 -- =============================================
 -- Core system tables
@@ -69,10 +71,10 @@ INSERT INTO email_validation_functions (function_name, display_name, description
 ('smtp_validation', 'SMTP Validation', 'Verifies mailbox existence via SMTP connection', 40, true, 'src.engine.functions.smtp', 'validate_smtp'),
 ('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.spf', 'spf_check'),
 ('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.dkim', 'dkim_check'),
-('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.dmarc', 'dmarc_check')
+('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.dmarc', 'dmarc_check'),
+('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.imap', 'imap_check')
 -- not implementet yet
 -- ('catch_all_check', 'Catch-All Detection', 'Checks if domain accepts all emails', 80, true, 'src.engine.functions.4', '4'),
--- ('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.5', '5'),
 -- ('pop3_check', 'POP3 Verification', 'Checks if domain has POP3 service', 100, true, 'src.engine.functions.6', '6'),
 -- ('disposable_check', 'Disposable Email', 'Checks if email is from disposable email service', 110, true, 'src.engine.engine.7', '7')
 ON CONFLICT (function_name) DO NOTHING;
@@ -94,8 +96,8 @@ INSERT INTO email_validation_function_dependencies (function_name, depends_on) V
 ('spf_check', 'mx_records'),
 ('dmarc_check', 'mx_records'),
 ('dkim_check', 'mx_records'),
+('imap_check', 'mx_records'),
 -- ('catch_all_check', 'smtp_validation'),
--- ('imap_check', 'mx_records'),
 -- ('pop3_check', 'mx_records'),
 -- ('disposable_check', 'email_format_resaults'),
 ('validate_domain', 'email_format_resaults'),
@@ -148,11 +150,9 @@ CREATE TABLE IF NOT EXISTS email_validation_records (
     whois_info TEXT,
     catch_all TEXT,
     imap_status TEXT,
-    imap_info TEXT,
-    imap_security TEXT,
+    imap_details JSONB,
     pop3_status TEXT,
-    pop3_info TEXT,
-    pop3_security TEXT,
+    pop3_details JSONB,
     spf_status TEXT,
     spf_details JSONB,
     dkim_status TEXT,
@@ -245,52 +245,71 @@ INSERT INTO confidence_levels (level_name, min_threshold, max_threshold, descrip
 ON CONFLICT (level_name) DO NOTHING;
 
 -- ports
-CREATE TABLE IF NOT EXISTS ports (
+CREATE TABLE IF NOT EXISTS  ports (
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    category TEXT NOT NULL,
-    port INTEGER NOT NULL,
-    priority INTEGER NOT NULL,
-    enabled BOOLEAN NOT NULL,
-    description TEXT,
+    category     TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    port         INTEGER NOT NULL,
+    priority     INTEGER NOT NULL,
+    security     TEXT NOT NULL,
+    protocol     TEXT NOT NULL,
+    enabled      BOOLEAN NOT NULL DEFAULT TRUE,
+    description  TEXT NOT NULL,
     UNIQUE(description)
 );
 
-INSERT INTO ports (category, port, priority, enabled, description) VALUES
-('smtp', 25, 3, TRUE, 'No encryption, None/TLS, server-to-server (relay)'),
-('smtp', 587, 1, TRUE, 'Encryption with STARTTLS, client-to-server (recommended)'),
-('smtp', 465, 2, TRUE, 'Encryption with SSL/TLS, client-to-server (legacy support)'),
 
--- Domain/MX ports
-('dns', 53, 1, TRUE, 'MX record lookup via DNS for mail server hostnames (TCP/UDP)'),
-('dns', 53, 2, TRUE, 'Reverse DNS (PTR) lookup via DNS for IP-to-domain mapping (TCP/UDP)'),
-('dns', 53, 3, TRUE, 'SPF record lookup via DNS TXT record (TCP/UDP)'),
-('dns', 53, 4, TRUE, 'DKIM record lookup via DNS TXT record for public key validation (TCP/UDP)'),
-('dns', 53, 5, TRUE, 'DMARC record lookup via DNS TXT record for policy retrieval (TCP/UDP)'),
-('dns', 53, 6, TRUE, 'DNSBL lookup for checking spam source listings (TCP/UDP)'),
-('whois', 43, 7, TRUE, 'WHOIS lookup via TCP for domain registration details'),
-('rdap', 443, 8, TRUE, 'RDAP lookup via HTTPS (TLS over TCP) for structured domain registration info'),
-('rdap', 80, 9, TRUE, 'RDAP fallback lookup via HTTP for domain registration info'),
+INSERT INTO ports (category, name, port, priority, security, protocol, enabled, description) VALUES
+-- SMTP ports
+('smtp', 'smtp-relay', 25, 3, 'None or STARTTLS', 'TCP', TRUE, 'No encryption, None/TLS, server-to-server (relay)'),
+('smtp', 'smtp-submission', 587, 1, 'STARTTLS', 'TCP', TRUE, 'Encryption with STARTTLS, client-to-server (recommended)'),
+('smtp', 'smtps', 465, 2, 'SSL/TLS', 'TCP', TRUE, 'Encryption with SSL/TLS, client-to-server (legacy support)'),
+('smtp', 'smtp-alt', 2525, 4, 'STARTTLS', 'TCP', TRUE, 'Alternative SMTP port often used by ESPs (Mailgun, SendGrid)'),
+('smtp', 'smtp-dev', 8025, 5, 'None or STARTTLS', 'TCP', FALSE, 'Alternate SMTP submission port for local dev tools (MailHog, Mailpit)'),
+('smtp', 'smtp-debug', 1025, 6, 'None', 'TCP', FALSE, 'Debug SMTP port for local testing'),
 
--- Authentication and security ports
-('auth', 53, 1, TRUE, 'SPF lookup: DNS TXT record for SPF validation'),
-('auth', 53, 2, TRUE, 'DKIM lookup: DNS TXT record for DKIM public key'),
-('auth', 53, 3, TRUE, 'DMARC lookup: DNS TXT record for DMARC policy'),
-('auth', 25, 4, TRUE, 'SMTP policy check: banner, STARTTLS/AUTH on port 25'),
-('auth', 587, 5, TRUE, 'SMTP submission: STARTTLS/AUTH on port 587'),
-('auth', 465, 6, TRUE, 'SMTPS: implicit SSL/TLS on port 465'),
-('auth', 53, 7, TRUE, 'DNSSEC check: validate DNSSEC signatures'),
-('auth', 53, 8, TRUE, 'TLS-RPT lookup: _smtp._tls TXT record'),
-('auth', 443, 9, TRUE, 'MTA-STS policy fetch over HTTPS'),
-('auth', 25, 10, TRUE, 'TLS version & cipher suite probe on port 25'),
+-- DNS/MX ports
+('dns', 'dns-mx', 53, 1, 'None', 'UDP/TCP', TRUE, 'MX record lookup via DNS for mail server hostnames'),
+('dns', 'dns-ptr', 53, 2, 'None', 'UDP/TCP', TRUE, 'Reverse DNS (PTR) lookup via DNS for IP-to-domain mapping'),
+('dns', 'dns-spf', 53, 3, 'None', 'UDP/TCP', TRUE, 'SPF record lookup via DNS TXT record'),
+('dns', 'dns-dkim', 53, 4, 'None', 'UDP/TCP', TRUE, 'DKIM record lookup via DNS TXT record'),
+('dns', 'dns-dmarc', 53, 5, 'None', 'UDP/TCP', TRUE, 'DMARC record lookup via DNS TXT record'),
+('dns', 'dns-dnsbl', 53, 6, 'None', 'UDP/TCP', TRUE, 'DNSBL lookup for checking spam source listings'),
+('dns', 'dnssec', 53, 7, 'DNSSEC', 'UDP/TCP', TRUE, 'DNSSEC validation for signed zone verification'),
+('dns', 'dns-tlsa', 53, 8, 'DNSSEC', 'UDP/TCP', TRUE, 'TLSA record lookup for DANE SMTP validation'),
 
--- Additional ports
-('mail', 25, 1, TRUE, 'SMTP - Default port used for RCPT TO and catch-all testing'),
-('mail', 587, 2, TRUE, 'SMTP - Submission port with STARTTLS support'),
-('mail', 465, 3, TRUE, 'SMTP - Implicit TLS for secure email submission (legacy support)'),
-('mail', 143, 4, TRUE, 'IMAP - Default port, typically used with STARTTLS'),
-('mail', 993, 5, TRUE, 'IMAP - Implicit TLS for secure IMAP connections'),
-('mail', 110, 6, TRUE, 'POP3 - Default port, typically used with STARTTLS'),
-('mail', 995, 7, TRUE, 'POP3 - Implicit TLS for secure POP3 connections')
+-- WHOIS/RDAP
+('whois', 'whois', 43, 1, 'None', 'TCP', TRUE, 'WHOIS lookup via TCP for domain registration details'),
+('rdap', 'rdap-https', 443, 2, 'TLS', 'TCP', TRUE, 'RDAP lookup via HTTPS (TLS over TCP) for structured domain registration info'),
+('rdap', 'rdap-http', 80, 3, 'None', 'TCP', TRUE, 'RDAP fallback lookup via HTTP for domain registration info'),
+
+-- Authentication and security
+('auth', 'smtp-policy-check', 25, 1, 'STARTTLS', 'TCP', TRUE, 'SMTP policy check: banner, STARTTLS/AUTH on port 25'),
+('auth', 'smtp-submission-check', 587, 2, 'STARTTLS', 'TCP', TRUE, 'SMTP submission: STARTTLS/AUTH on port 587'),
+('auth', 'smtps-check', 465, 3, 'SSL/TLS', 'TCP', TRUE, 'SMTPS: implicit SSL/TLS on port 465'),
+('auth', 'spf-dns', 53, 4, 'None', 'UDP/TCP', TRUE, 'SPF lookup: DNS TXT record for SPF validation'),
+('auth', 'dkim-dns', 53, 5, 'None', 'UDP/TCP', TRUE, 'DKIM lookup: DNS TXT record for DKIM public key'),
+('auth', 'dmarc-dns', 53, 6, 'None', 'UDP/TCP', TRUE, 'DMARC lookup: DNS TXT record for DMARC policy'),
+('auth', 'dnssec-check', 53, 7, 'DNSSEC', 'UDP/TCP', TRUE, 'DNSSEC check: validate DNSSEC signatures'),
+('auth', 'tls-rpt', 53, 8, 'None', 'UDP/TCP', TRUE, 'TLS-RPT lookup: _smtp._tls TXT record'),
+('auth', 'mta-sts', 443, 9, 'HTTPS', 'TCP', TRUE, 'MTA-STS policy fetch over HTTPS'),
+('auth', 'tls-cipher-scan', 25, 10, 'STARTTLS', 'TCP', TRUE, 'TLS version & cipher suite probe on port 25'),
+('auth', 'mta-sts-report', 443, 11, 'HTTPS', 'TCP', TRUE, 'TLS-RPT report endpoint over HTTPS'),
+('auth', 'mta-sts-wellknown', 443, 12, 'HTTPS', 'TCP', TRUE, 'MTA-STS .well-known policy file fetch'),
+
+-- Mail retrieval
+('mail', 'smtp-rcpt-test', 25, 1, 'None or STARTTLS', 'TCP', TRUE, 'SMTP - Default port used for RCPT TO and catch-all testing'),
+('mail', 'smtp-submission', 587, 2, 'STARTTLS', 'TCP', TRUE, 'SMTP - Submission port with STARTTLS support'),
+('mail', 'smtps', 465, 3, 'SSL/TLS', 'TCP', TRUE, 'SMTP - Implicit TLS for secure email submission (legacy support)'),
+('mail', 'imap', 143, 4, 'STARTTLS', 'TCP', TRUE, 'IMAP - Default port, typically used with STARTTLS'),
+('mail', 'imaps', 993, 5, 'SSL/TLS', 'TCP', TRUE, 'IMAP - Implicit TLS for secure IMAP connections'),
+('mail', 'pop3', 110, 6, 'STARTTLS', 'TCP', TRUE, 'POP3 - Default port, typically used with STARTTLS'),
+('mail', 'pop3s', 995, 7, 'SSL/TLS', 'TCP', TRUE, 'POP3 - Implicit TLS for secure POP3 connections'),
+('mail', 'imap-debug', 1143, 8, 'None', 'TCP', FALSE, 'IMAP debug port for local development/testing'),
+
+-- Autoconfig services
+('autoconfig', 'thunderbird-autoconfig', 443, 1, 'HTTPS', 'TCP', TRUE, 'Thunderbird autoconfig endpoint over HTTPS'),
+('autodiscover', 'outlook-autodiscover', 443, 2, 'HTTPS', 'TCP', TRUE, 'Outlook/Exchange autodiscover endpoint over HTTPS')
 ON CONFLICT (description) DO NOTHING;
 
 -- rate_limits
@@ -302,7 +321,7 @@ CREATE TABLE IF NOT EXISTS rate_limit (
     is_time BOOLEAN NOT NULL,
     enabled BOOLEAN NOT NULL,
     description TEXT,
-    UNIQUE(name)
+    UNIQUE(description)
 );
 -- maby to meny  or convert all to time?
 INSERT INTO rate_limit (category, name, value, is_time, enabled, description) VALUES
@@ -319,9 +338,9 @@ INSERT INTO rate_limit (category, name, value, is_time, enabled, description) VA
 ('smtp', 'rate_limit_block_duration', 300, TRUE, TRUE, 'Duration in seconds to block domains after rate limit violation'),
 
 -- SMTP rate limits - Time based (seconds)
-('smtp', 'timeout_connect', 10, TRUE, TRUE, 'Timeout in seconds when establishing a connection'),
-('smtp', 'timeout_read', 30, TRUE, TRUE, 'Timeout in seconds when waiting for server response'),
-('smtp', 'timeout_overall', 60, TRUE, TRUE, 'Maximum allowed time for the entire operation (connection + communication)'),
+('smtp', 'timeout_connect', 5, TRUE, TRUE, 'Timeout in seconds when establishing a connection'),
+('smtp', 'timeout_read', 15, TRUE, TRUE, 'Timeout in seconds when waiting for server response'),
+('smtp', 'timeout_overall', 30, TRUE, TRUE, 'Maximum allowed time for the entire operation (connection + communication)'),
 
 -- Domain/MX rate limits - All time based
 ('dom_mx', 'mx_records_cache_ttl', 86400, TRUE, TRUE, 'MX record cache duration in seconds (1 day)'),
@@ -342,11 +361,6 @@ INSERT INTO rate_limit (category, name, value, is_time, enabled, description) VA
 -- Additional rate limits - Mixed
 ('additional', 'catch_all_rcpt_limit_per_min', 6, FALSE, TRUE, 'Max RCPT TO commands per minute per IP'),
 ('additional', 'catch_all_smtp_concurrent_limit', 10, FALSE, TRUE, 'Max concurrent SMTP connections per IP'),
-('additional', 'imap_connection_limit_per_min', 5, FALSE, TRUE, 'Max IMAP connections per minute per IP'),
-('additional', 'imap_concurrent_sessions', 16, FALSE, TRUE, 'Max concurrent IMAP sessions per user/IP'),
-('additional', 'pop3_connection_limit_per_min', 5, FALSE, TRUE, 'Max POP3 connections per minute per IP'),
-('additional', 'pop3_concurrent_sessions', 16, FALSE, TRUE, 'Max concurrent POP3 sessions per user/IP'),
-('additional', 'connection_timeout', 30, TRUE, TRUE, 'Connection timeout in seconds for additional protocols'),
 
 -- cache rate limits - All time based
 ('cache', 'cache_duration_mx_spf_dkim_dmarc', 86400, TRUE, TRUE, 'Cache duration for MX/SPF/DKIM/DMARC results (86400 seconds = 24 hours)'),
@@ -378,11 +392,49 @@ INSERT INTO rate_limit (category, name, value, is_time, enabled, description) VA
 ('dns', 'dkim_lookup', 100, FALSE, TRUE, 'Maximum DKIM record lookups per minute'),
 
 -- DNS timeout settings
-('dns', 'lookup_timeout', 10, TRUE, TRUE, 'DNS query timeout in seconds'),
+('dns', 'lookup_timeout', 5, TRUE, TRUE, 'DNS query timeout in seconds'),
 ('dns', 'retry_interval', 2, TRUE, TRUE, 'Seconds between retry attempts'),
 ('dns', 'min_mx_records', 1, FALSE, TRUE, 'Minimum required MX records for domain to be valid'),
-('dns', 'max_lookups_per_domain', 20, FALSE, TRUE, 'Maximum DNS lookups per domain per minute')
-ON CONFLICT (name) DO NOTHING;
+('dns', 'max_lookups_per_domain', 20, FALSE, TRUE, 'Maximum DNS lookups per domain per minute'),
+
+-- IMAP: Connection limits
+('imap', 'imap_connection_limit_per_min', 5, FALSE, TRUE, 'Maximum IMAP connections per minute per IP'),
+('imap', 'imap_concurrent_sessions', 16, FALSE, TRUE, 'Maximum concurrent IMAP sessions per user or IP'),
+
+-- IMAP: Timeout settings
+('imap', 'timeout_connect', 5, TRUE, TRUE, 'Timeout in seconds for establishing IMAP connection'),
+('imap', 'timeout_login', 10, TRUE, TRUE, 'Timeout in seconds for IMAP login/authentication step'),
+('imap', 'timeout_read', 15, TRUE, TRUE, 'Timeout in seconds for reading data from IMAP server'),
+('imap', 'timeout_idle', 180, TRUE, TRUE, 'Maximum idle time allowed for an IMAP session'),
+('imap', 'connection_timeout', 15, TRUE, TRUE, 'Connection timeout in seconds for the IMAP protocol'),
+
+-- IMAP: Rate-limit protection
+('imap', 'max_login_failures_per_min', 3, FALSE, TRUE, 'Maximum failed login attempts per IP per minute'),
+('imap', 'block_duration_after_failures', 600, TRUE, TRUE, 'Block duration in seconds after repeated login failures'),
+
+-- IMAP: Caching TTLs
+('imap', 'imap_capabilities_cache_ttl', 3600, TRUE, TRUE, 'Cache duration in seconds for IMAP CAPABILITY results'),
+('imap', 'imap_starttls_support_cache_ttl', 3600, TRUE, TRUE, 'Cache duration in seconds for IMAP STARTTLS support checks'),
+
+-- POP3: Connection limits
+('pop3', 'connection_limit_per_min', 5, FALSE, TRUE, 'Maximum POP3 connections per minute per IP'),
+('pop3', 'concurrent_sessions', 16, FALSE, TRUE, 'Maximum concurrent POP3 sessions per user or IP'),
+
+-- POP3: Timeout settings
+('pop3', 'timeout_connect', 5, TRUE, TRUE, 'Timeout in seconds for establishing POP3 connection'),
+('pop3', 'timeout_login', 10, TRUE, TRUE, 'Timeout in seconds for POP3 login/authentication step'),
+('pop3', 'timeout_read', 15, TRUE, TRUE, 'Timeout in seconds for reading data from POP3 server'),
+('pop3', 'timeout_idle', 180, TRUE, TRUE, 'Maximum idle time allowed for a POP3 session'),
+('pop3', 'connection_timeout', 15, TRUE, TRUE, 'Connection timeout in seconds for the POP3 protocol'),
+
+-- POP3: Rate-limit protection
+('pop3', 'max_login_failures_per_min', 3, FALSE, TRUE, 'Maximum failed login attempts per IP per minute'),
+('pop3', 'block_duration_after_failures', 600, TRUE, TRUE, 'Block duration in seconds after repeated login failures'),
+
+-- POP3: Caching TTLs (optional – few POP3 servers offer useful CAPABILITY responses, but you can include if applicable)
+('pop3', 'pop3_capabilities_cache_ttl', 3600, TRUE, TRUE, 'Cache duration in seconds for POP3 CAPABILITY results'),
+('pop3', 'pop3_starttls_support_cache_ttl', 3600, TRUE, TRUE, 'Cache duration in seconds for POP3 STARTTLS support checks')
+ON CONFLICT (description) DO NOTHING;
 
 -- executor_pool_settings
 CREATE TABLE IF NOT EXISTS executor_pool_settings (
@@ -579,7 +631,7 @@ CREATE TABLE IF NOT EXISTS dmarc_validation_statistics (
     policy VARCHAR(20) NOT NULL,
     policy_strength VARCHAR(20) NOT NULL,
     dns_lookups INTEGER DEFAULT 0,
-    processing_time_ms NUMERIC(10,3) DEFAULT 0,
+    processing_time_ms FLOAT,
     has_reporting BOOLEAN DEFAULT FALSE,
     alignment_mode VARCHAR(10) DEFAULT 'relaxed',
     error_message TEXT,
@@ -600,7 +652,7 @@ CREATE TABLE IF NOT EXISTS dmarc_validation_history (
     aggregate_reporting BOOLEAN DEFAULT FALSE,
     forensic_reporting BOOLEAN DEFAULT FALSE,
     dns_lookups INTEGER DEFAULT 0,
-    processing_time_ms NUMERIC(10,3) DEFAULT 0,
+    processing_time_ms FLOAT,
     errors JSONB,
     warnings JSONB,
     recommendations JSONB,
@@ -634,6 +686,51 @@ CREATE TABLE IF NOT EXISTS dkim_validation_statistics (
         ON DELETE SET NULL
 );
 
+-- IMAP validation statistics table
+CREATE TABLE IF NOT EXISTS imap_validation_statistics (
+    id SERIAL PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    domain VARCHAR(255) NOT NULL,
+    has_imap BOOLEAN DEFAULT FALSE,
+    servers_found INTEGER DEFAULT 0,
+    security_level VARCHAR(20),
+    supports_ssl BOOLEAN DEFAULT FALSE,
+    supports_starttls BOOLEAN DEFAULT FALSE,
+    supports_oauth BOOLEAN DEFAULT FALSE,
+    dns_lookups INTEGER DEFAULT 0,
+    processing_time_ms FLOAT,
+    errors TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_imap_validation_trace FOREIGN KEY (trace_id) 
+        REFERENCES email_validation_records(trace_id)
+        ON DELETE SET NULL
+);
+
+-- IMAP validation history table
+CREATE TABLE IF NOT EXISTS imap_validation_history (
+    id SERIAL PRIMARY KEY,
+    domain VARCHAR(255) NOT NULL,
+    has_imap BOOLEAN DEFAULT FALSE,
+    servers_found INTEGER DEFAULT 0,
+    security_level VARCHAR(20),
+    supports_ssl BOOLEAN DEFAULT FALSE,
+    supports_starttls BOOLEAN DEFAULT FALSE,
+    supports_oauth BOOLEAN DEFAULT FALSE,
+    dns_lookups INTEGER DEFAULT 0,
+    processing_time_ms FLOAT,
+    errors JSONB,
+    warnings JSONB,
+    recommendations JSONB,
+    trace_id TEXT,
+    validated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    validation_date DATE DEFAULT CURRENT_DATE,
+    last_validated_at TIMESTAMPTZ,
+    CONSTRAINT unique_domain_daily_imap UNIQUE(domain, validation_date),
+    CONSTRAINT fk_imap_validation_history_trace FOREIGN KEY (trace_id) 
+        REFERENCES email_validation_records(trace_id)
+        ON DELETE SET NULL
+);
+
 -- Table for storing DKIM validation history with daily granularity per domain
 CREATE TABLE IF NOT EXISTS dkim_validation_history (
     id SERIAL PRIMARY KEY,
@@ -644,7 +741,7 @@ CREATE TABLE IF NOT EXISTS dkim_validation_history (
     key_length INTEGER,
     security_level VARCHAR(20),
     dns_lookups INTEGER DEFAULT 0,
-    processing_time_ms NUMERIC(10,3) DEFAULT 0,
+    processing_time_ms FLOAT,
     errors JSONB,
     warnings JSONB,
     recommendations JSONB,
@@ -1229,6 +1326,26 @@ CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_date ON dmarc_validation
 CREATE INDEX IF NOT EXISTS idx_dkim_validation_stats_domain ON dkim_validation_statistics(domain);
 CREATE INDEX IF NOT EXISTS idx_dkim_validation_stats_trace_id ON dkim_validation_statistics(trace_id);
 CREATE INDEX IF NOT EXISTS idx_dkim_validation_stats_created_at ON dkim_validation_statistics(created_at);
+
+-- IMAP
+CREATE INDEX IF NOT EXISTS idx_imap_validation_statistics_trace_id ON imap_validation_statistics(trace_id);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_statistics_domain ON imap_validation_statistics(domain);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_statistics_created_at ON imap_validation_statistics(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_statistics_domain_created ON imap_validation_statistics(domain, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_statistics_has_imap_security ON imap_validation_statistics(has_imap, security_level) WHERE has_imap = true;
+CREATE INDEX IF NOT EXISTS idx_imap_validation_statistics_processing_time ON imap_validation_statistics(processing_time_ms DESC) WHERE processing_time_ms > 1000;
+
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_domain ON imap_validation_history(domain);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_validation_date ON imap_validation_history(validation_date DESC);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_trace_id ON imap_validation_history(trace_id);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_domain_date ON imap_validation_history(domain, validation_date DESC);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_validated_at ON imap_validation_history(validated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_security_level ON imap_validation_history(security_level) WHERE security_level IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_has_imap ON imap_validation_history(has_imap, validation_date DESC) WHERE has_imap = true;
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_errors_gin ON imap_validation_history USING GIN(errors);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_warnings_gin ON imap_validation_history USING GIN(warnings);
+CREATE INDEX IF NOT EXISTS idx_imap_validation_history_recommendations_gin ON imap_validation_history USING GIN(recommendations);
+
 
 -- =============================================
 -- View

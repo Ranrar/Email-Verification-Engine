@@ -143,9 +143,16 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
             "recommendations": data.get("recommendations", [])
         })
     
+    # Handle IMAP data properly
+    imap_info = data.get("imap_info", {})
+    imap_status = "available" if imap_info.get("has_imap", False) else "unavailable"
+    if imap_info.get("error"):
+        imap_status = "error"
+    
     return {
         "trace_id": trace_id,
         "timestamp": datetime.now(timezone.utc),
+        "lastscan": datetime.now(timezone.utc),
         "email": sanitize_value(data.get("email")),
         "domain": sanitize_value(data.get("domain")),
 
@@ -189,13 +196,11 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
         "catch_all": str(data.get("catch_all", "")) if data.get("catch_all", None) is not None else "",
         "disposable": str(data.get("is_disposable", "")),
 
-        # IMAP/POP3 (if available)
+        # IMAP/POP3 fields - CORRECTED to match database schema
         "imap_status": str(data.get("imap_status", "")),
-        "imap_info": json.dumps(data.get("imap_info", {})) if data.get("imap_info") else None,
-        "imap_security": str(data.get("imap_security", "")),
+        "imap_details": json.dumps(data.get("imap_info", {})) if data.get("imap_info") else None,
         "pop3_status": str(data.get("pop3_status", "")),
-        "pop3_info": json.dumps(data.get("pop3_info", {})) if data.get("pop3_info") else None,
-        "pop3_security": str(data.get("pop3_security", "")),
+        "pop3_details": json.dumps(data.get("pop3_info", {})) if data.get("pop3_info") else None,
 
         # SPF/DKIM/DMARC/server policies
         "spf_status": data.get("spf_status", ""),
@@ -203,6 +208,7 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
         "dkim_status": data.get("dkim_status", ""),
         "dkim_details": json.dumps(dkim_details) if dkim_details else None,
         "dmarc_status": data.get("dmarc_status", ""),
+        "dmarc_details": json.dumps(dmarc_details) if dmarc_details else None,
         "server_policies": json.dumps(data.get("server_policies", {})) if data.get("server_policies") else None,
 
         # Validation status and scoring
@@ -245,14 +251,15 @@ def _get_provider_name(db, email_provider_dict):
 def _insert_validation_record(db, values: Dict[str, Any]) -> Optional[int]:
     """Insert or upsert the main validation record and return its ID."""
     columns = [
-        "trace_id", "timestamp", "email", "domain",
+        "trace_id", "timestamp", "lastscan", "email", "domain",
         "smtp_result", "smtp_banner", "smtp_vrfy", "smtp_supports_tls", "smtp_supports_auth",
         "smtp_flow_success", "smtp_error_code", "smtp_server_message", "port",
         "mx_records", "mx_ip", "mx_preferences", "mx_analysis",
         "email_provider_id", "email_provider_info", "reverse_dns", "whois_info",
-        "catch_all", "imap_status", "imap_info", "imap_security",
-        "pop3_status", "pop3_info", "pop3_security",
-        "spf_status", "spf_details", "dkim_status", "dmarc_status", "server_policies",
+        "catch_all", "imap_status", "imap_details",
+        "pop3_status", "pop3_details",
+        "spf_status", "spf_details", "dkim_status", "dkim_details",
+        "dmarc_status", "dmarc_details", "server_policies",
         "disposable", "blacklist_info", "error_message",
         "is_valid", "confidence_score", "execution_time", "timing_details",
         "check_count", "batch_id", "raw_result", "validation_complete"

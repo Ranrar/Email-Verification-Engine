@@ -15,7 +15,7 @@ def process_validation_results(result: EmailValidationResult, validation_results
     """Process validation results and update the EmailValidationResult object"""
     logger.debug(f"[{result.trace_id}] Processing validation results: {validation_results.keys()}")
     
-    # Black/White list check processing - NEW CODE
+    # Black/White list check processing
     if 'black_white_check' in validation_results:
         bw_check = validation_results.get('black_white_check', {})
         if bw_check.get('blacklisted', False):
@@ -43,7 +43,7 @@ def process_validation_results(result: EmailValidationResult, validation_results
                 'whitelisted': False
             }
     
-    # Domain check processing - UPDATED CODE
+    # Domain check processing
     if 'domain_check' in validation_results:
         domain_check = validation_results.get('domain_check', {})
         # Handle the nested domain_check structure from validate_domain
@@ -128,7 +128,7 @@ def process_validation_results(result: EmailValidationResult, validation_results
             if result.email_provider and result.email_provider.get('provider_detected'):
                 logger.debug(f"[{result.trace_id}] Email provider: {result.email_provider.get('provider_name')}")
     
-    # SPF check processing - NEW CODE
+    # SPF check processing
     if 'spf_check' in validation_results:
         spf_data = validation_results.get('spf_check', {})
         
@@ -274,6 +274,42 @@ def process_validation_results(result: EmailValidationResult, validation_results
         # Additional fields
         result.connection_success = smtp_result.get('connection_success', False)
     
+    # IMAP validation check processing
+    if 'imap_validation' in validation_results:
+        imap_data = validation_results.get('imap_validation', {})
+        
+        # Update basic IMAP status
+        result.imap_status = "available" if imap_data.get("has_imap", False) else "unavailable"
+        if imap_data.get("error"):
+            result.imap_status = "error"
+            
+        # Store detailed IMAP information
+        result.imap_details = {
+            'has_imap': imap_data.get('has_imap', False),
+            'servers_found': len(imap_data.get('imap_servers', [])),
+            'security_level': imap_data.get('security_level', 'none'),
+            'supports_ssl': imap_data.get('supports_ssl', False),
+            'supports_starttls': imap_data.get('supports_starttls', False),
+            'supports_oauth': imap_data.get('supports_oauth', False),
+            'servers': imap_data.get('imap_servers', []),
+            'recommendations': imap_data.get('recommendations', []),
+            'error': imap_data.get('error', ''),
+            'execution_time_ms': imap_data.get('duration_ms', 0)
+        }        
+        # Log IMAP validation result
+        if result.imap_status == "available":
+            logger.info(f"[{result.trace_id}] IMAP available for {result.domain}: " 
+                       f"security={imap_data.get('security_level', 'none')}, "
+                       f"servers={len(imap_data.get('imap_servers', []))}")
+        else:
+            logger.info(f"[{result.trace_id}] IMAP {result.imap_status} for {result.domain}")
+            
+        # Log detailed information at debug level
+        if result.imap_status == "available":
+            logger.debug(f"[{result.trace_id}] IMAP details: SSL={imap_data.get('supports_ssl', False)}, "
+                        f"STARTTLS={imap_data.get('supports_starttls', False)}, "
+                        f"OAuth={imap_data.get('supports_oauth', False)}")
+    
     if 'disposable_check' in validation_results:
         disposable_check = validation_results.get('disposable_check', {})
         result.is_disposable = disposable_check.get('is_disposable', False)
@@ -320,7 +356,7 @@ def calculate_validity_and_confidence(result: EmailValidationResult, validation_
     scoring_rows = db.fetch("SELECT check_name, score_value, is_penalty FROM validation_scoring")
     scoring = {row['check_name']: row for row in scoring_rows} if scoring_rows else {}
 
-    # Prepare checks based on result object
+    # Update checks based on result object to include IMAP
     checks = {
         'valid_format': result.is_format_valid,
         'not_disposable': not result.is_disposable,
@@ -338,7 +374,7 @@ def calculate_validity_and_confidence(result: EmailValidationResult, validation_
         'dmarc_found': bool(result.dmarc_status) and result.dmarc_details.get('has_dmarc', False),
         'dmarc_strong_policy': result.dmarc_details.get('policy_strength', '') in ['strong', 'moderate'],
     }
-
+    
     score = 0
     max_score = 0
 

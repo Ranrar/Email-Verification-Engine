@@ -35,8 +35,14 @@ def custom_record_factory(*args, **kwargs):
         module = frame.f_globals.get('__name__', '')
         # Get just the last part of the module name
         record.moduleoverride = module.split('.')[-1]
+        
+        # Capture the actual filename and line number
+        record.filenameoverride = os.path.basename(frame.f_code.co_filename)
+        record.linenooverride = frame.f_lineno
     else:
         record.moduleoverride = record.module
+        record.filenameoverride = record.filename
+        record.linenooverride = record.lineno
     
     return record
 
@@ -57,9 +63,13 @@ class LogFormatter(logging.Formatter):
         else:
             record.function_name = record.funcName
         
-        # Extract just the filename from the full path
-        record.filename = os.path.basename(record.pathname)
+        # Use the overridden filename if available, else fallback
+        filename = getattr(record, 'filenameoverride', os.path.basename(record.pathname))
+        record.filename = filename
         
+        # Use the overridden line number if available
+        record.lineno = getattr(record, 'linenooverride', record.lineno)
+    
         # Extract exception info if present to prevent it from breaking our format
         exc_text = None
         if record.exc_info and not record.exc_text:

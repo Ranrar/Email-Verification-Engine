@@ -1,6 +1,3 @@
--- Start a transaction to make sure all operations succeed or fail together
-BEGIN;
-
 -- 1. First, drop all views
 DO $$ 
 DECLARE
@@ -119,6 +116,3 @@ BEGIN
         EXECUTE 'DROP INDEX IF EXISTS ' || quote_ident(idx_rec.indexname) || ' CASCADE';
     END LOOP;
 END $$;
-
--- Commit the transaction
-COMMIT;

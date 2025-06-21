@@ -30,7 +30,7 @@ A simple development roadmap for the Email Verification Engine.
 - [X] SPF
 - [X] DKIM
 - [X] DMARC
-- [ ] IMAP check
+- [X] IMAP check
 - [ ] POP3 check
 - [ ] Catch-all check
 - [ ] Disposable detection

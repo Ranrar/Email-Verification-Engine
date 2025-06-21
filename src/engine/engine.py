@@ -189,6 +189,10 @@ class EmailValidationEngine:
                     if result.dkim_details.get('security_level'):
                         validation_details.append(f"\"dkim_security\": \"{result.dkim_details.get('security_level')}\"")
                 
+                # Add IMAP details to logs
+                if result.imap_status:
+                    validation_details.append(f"\"imap\": {{\"status\": \"{result.imap_status}\"}}")
+                
                 if validation_details:
                     logger.info(f"[{trace_id}] VALIDATION_DETAILS {{{', '.join(validation_details)}}}")
                     
@@ -220,7 +224,6 @@ class EmailValidationEngine:
                 logger.info(f"{trace_id} | {email} | {current_time} | {result.confidence_score}")
             
             # Log SMTP details - always log them regardless of result
-            # Remove the condition that checks for result.smtp_details
             smtp_success = "SUCCESS" if result.smtp_result else "FAILURE"
             smtp_banner = str(result.smtp_banner)
             smtp_code = result.smtp_error_code if result.smtp_error_code is not None else 'N/A'

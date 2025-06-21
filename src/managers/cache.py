@@ -71,16 +71,20 @@ class CacheKeys:
     RATE_LIMIT_STATE = "rate_limit:{category}:{resource_id}"
     VALIDATION_QUEUE_CONFIG = "validation_queue:config"
     FORMAT_VALIDATION = "format_validation:{email}"
-    # New keys needed for MX functionality
+    IMAP_RECORD = "imap:{domain}"
+    IMAP_CAPABILITIES = "imap_capabilities:{server}"
+    IMAP_STARTTLS = "imap_starttls:{server}"
     A_RECORDS = "a_records:{domain}"
     IP_ADDRESS = "ip_address:{host}:{ip_type}"
     GEO_INFO = "geo_info:{ip}"
     PTR_RECORD = "ptr_record:{ip}"
     VALIDATION_RESULT = "validation_result:{email}"
     SMTP_BLOCKED = "smtp_blocked:{domain}"
+    POP3_RECORD = "pop3:{domain}"
+    POP3_CAPABILITIES = "pop3_capabilities:{server}"
+    POP3_STARTTLS = "pop3_starttls:{server}"
     
     # ...add more as needed...
-
     @staticmethod
     def mx_records(domain): return CacheKeys.MX_RECORDS.format(domain=domain)
     @staticmethod
@@ -171,6 +175,29 @@ class CacheKeys:
     def format_validation(email):
         """Generate cache key for format validation by email"""
         return CacheKeys.FORMAT_VALIDATION.format(email=email)
+    
+    @staticmethod
+    def pop3(domain): return CacheKeys.POP3_RECORD.format(domain=domain)
+    
+    @staticmethod
+    def pop3_capabilities(server): return CacheKeys.POP3_CAPABILITIES.format(server=server)
+    
+    @staticmethod
+    def pop3_starttls(server): return CacheKeys.POP3_STARTTLS.format(server=server)
+
+    @staticmethod
+    def imap(domain): return CacheKeys.IMAP_RECORD.format(domain=domain)
+    
+    @staticmethod
+    def imap_capabilities(server): return CacheKeys.IMAP_CAPABILITIES.format(server=server)
+    
+    @staticmethod
+    def imap_starttls(server): return CacheKeys.IMAP_STARTTLS.format(server=server)
+
+    @staticmethod
+    def host_exists(hostname: str) -> str:
+        """Create a cache key for host existence check"""
+        return f"host_exists:{hostname}"
 
 class CacheManager:
     """

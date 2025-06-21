@@ -35,6 +35,7 @@ from src.helpers.tracer import (
     validate_trace_id,
     create_child_trace_id
 )
+from src.managers.port import port_manager  # New import for port manager
 
 # Initialize logging
 logger = get_logger()
@@ -267,6 +268,22 @@ def fetch_mx_records(context):
     
     # Extract domain from email
     domain = email.split('@')[1].strip().lower()
+    
+    # Apply rate limiting before proceeding
+    is_allowed, _ = apply_category_based_rate_limiting(domain, 'dns', 'mx_lookup', trace_id)
+    if not is_allowed:
+        return {
+            "valid": False,
+            "error": "Rate limit exceeded for DNS operations",
+            "records": None,
+            "has_mx": False,
+            "execution_time": 0,
+            "is_rate_limited": True
+        }
+    
+    # Get DNS ports optimized for MX lookups
+    dns_ports = get_optimized_ports_for_operation('dns')
+    logger.debug(f"[{trace_id}] Using optimized DNS ports: {dns_ports}")
     
     # Use existing MXCacher to lookup records
     mx_cacher = MXCacher()
@@ -905,3 +922,110 @@ def fetch_whois_info(context):
             "domain": domain,
             "whois_info": None
         }
+
+def get_optimized_ports_for_operation(operation_type, security_requirement=None):
+    """
+    Get optimized ports for a specific operation based on port table settings.
+    
+    Args:
+        operation_type: Type of operation ('smtp', 'dns', 'whois', 'mail', etc.)
+        security_requirement: Optional security level requirement ('None', 'STARTTLS', 'SSL/TLS')
+        
+    Returns:
+        List of port numbers sorted by priority
+    """
+    try:
+        # Initialize port manager if needed
+        if not port_manager._initialized:
+            port_manager.initialize()
+        
+        # Get ports based on operation type
+        all_ports = []
+        if operation_type == 'smtp':
+            all_ports = port_manager.get_smtp_ports() or []
+        elif operation_type == 'dns':
+            all_ports = port_manager.get_dns_only_ports() or []
+        elif operation_type == 'whois':
+            all_ports = port_manager.get_whois_ports() or []
+        elif operation_type == 'mail':
+            all_ports = port_manager.get_mail_ports() or []
+        else:
+            logger.warning(f"Unknown operation type: {operation_type}, using SMTP as default")
+            all_ports = port_manager.get_smtp_ports() or []
+        
+        # Filter disabled ports
+        enabled_ports = [p for p in all_ports if p.get('enabled', False)]
+        
+        # If no security requirement, return all enabled ports sorted by priority
+        if not security_requirement:
+            return [p['port'] for p in sorted(enabled_ports, key=lambda x: x['priority'])]
+        
+        # Filter by security requirement if specified - using available fields directly
+        matching_ports = []
+        for port_data in enabled_ports:
+            # Check if description contains the security requirement (workaround without get_port_details)
+            description = port_data.get('description', '').lower()
+            if security_requirement.lower() in description:
+                matching_ports.append(port_data)
+        
+        # Return ports sorted by priority
+        return [p['port'] for p in sorted(matching_ports, key=lambda x: x['priority'])]
+    
+    except Exception as e:
+        logger.error(f"Error getting optimized ports: {str(e)}")
+        # Fallback to standard ports
+        if operation_type == 'smtp':
+            return [25, 587, 465]
+        elif operation_type == 'dns':
+            return [53]
+        elif operation_type == 'whois':
+            return [43]
+        return []
+
+# Add this function before the fetch_mx_records function
+def apply_category_based_rate_limiting(domain, category, operation, trace_id=None):
+    """
+    Apply enhanced category-based rate limiting using the new schema.
+    
+    Args:
+        domain: Domain being operated on
+        category: Rate limit category (smtp, dom_mx, dns, etc.)
+        operation: Specific operation name
+        trace_id: Trace ID for logging
+        
+    Returns:
+        Tuple of (is_allowed, wait_time_seconds)
+    """
+    from src.managers.rate_limit import rate_limit_manager
+    
+    # Ensure initialization - use a safer approach to check and load limits
+    method_name = f"_load_{category}_limits"
+    if hasattr(rate_limit_manager, method_name):
+        load_method = getattr(rate_limit_manager, method_name)
+        if callable(load_method):
+            load_method()
+    else:
+        logger.warning(f"[{trace_id}] No loader method found for category: {category}")
+    
+    # Check if operation exceeds rate limits
+    is_exceeded, limit_info = rate_limit_manager.check_rate_limit(category, domain, operation)
+    
+    if is_exceeded:
+        # Get backoff time based on category
+        if category == 'smtp':
+            wait_time = rate_limit_manager.get_rate_limit_block_duration()
+        elif category == 'dns':
+            wait_time = 10  # 10 seconds for DNS operations
+        elif category == 'dom_mx':
+            wait_time = 5   # 5 seconds for domain/MX operations
+        else:
+            wait_time = 30  # Default 30 seconds
+            
+        logger.warning(f"[{trace_id}] Rate limit exceeded for {domain} ({category}.{operation}). "
+                     f"Current: {limit_info.get('current')}/{limit_info.get('limit')}. "
+                     f"Backing off for {wait_time}s")
+        return False, wait_time
+    
+    # Record usage for future limit checks
+    rate_limit_manager.record_usage(category, domain)
+    return True, 0

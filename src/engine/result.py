@@ -82,8 +82,8 @@ class EmailValidationResult:
         self.batch_id = None
         self.span_id = ""
         
-        # Log trace ID for correlation
-        logger.debug(f"Validation trace ID: {self.trace_id} for {email}")
+        # Add port field to match database schema
+        self.port = ""
         
         # Timing information
         self.validation_start = datetime.now()
@@ -164,7 +164,7 @@ class EmailValidationResult:
             'execution_time': 0
         }
         
-        # SMTP validation - update to include all required fields
+        # SMTP validation
         self.smtp_result = False      # Overall SMTP validation result
         self.smtp_banner = ''         # SMTP server banner
         self.smtp_vrfy = False        # VRFY command supported
@@ -180,9 +180,25 @@ class EmailValidationResult:
         self.blacklist_info = {}
         self.catch_all = False
         self.imap_status = ""
-        self.imap_info = {}
+        self.imap_details = {}
         self.pop3_status = ""
-        self.pop3_info = {}
+        self.pop3_details = {}
+        
+        # security related fields
+        self.dmarc_details = {
+            'valid': False,
+            'has_dmarc': False,
+            'policy': 'none',
+            'policy_strength': 'none',
+            'alignment_mode': '',
+            'percentage_covered': 0,
+            'aggregate_reporting': False,
+            'forensic_reporting': False, 
+            'organizational_domain': '',
+            'recommendations': [],
+            'record': '',
+            'execution_time': 0
+        }
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the result to a dictionary."""
@@ -206,6 +222,7 @@ class EmailValidationResult:
             'domain': self.domain,
             'trace_id': self.trace_id,
             'batch_id': self.batch_id,
+            'port': self.port,
             
             # Timing information
             'execution_time': self.execution_time,
@@ -255,9 +272,9 @@ class EmailValidationResult:
             'blacklist_info': self.blacklist_info,
             'catch_all': self.catch_all,
             'imap_status': self.imap_status,
-            'imap_info': self.imap_info,
+            'imap_details': self.imap_details,
             'pop3_status': self.pop3_status,
-            'pop3_info': self.pop3_info,
+            'pop3_details': self.pop3_details,
             
             # Include DKIM details
             'dkim_details': self.dkim_details,

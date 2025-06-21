@@ -15,6 +15,29 @@ from src.managers.log import get_logger
 
 logger = get_logger()
 
+class Port:
+    """Port record with attributes from the database"""
+    def __init__(self, port: int, category: str, name: str, priority: int, security: str, protocol: str, enabled: bool, description: str):
+        self.port = port
+        self.category = category
+        self.name = name
+        self.priority = priority
+        self.security = security
+        self.protocol = protocol
+        self.enabled = enabled
+        self.description = description
+    
+    @property
+    def uses_ssl(self) -> bool:
+        """Determine if this port uses SSL/TLS by default"""
+        return bool(self.security) and "SSL/TLS" in self.security
+    
+    @property
+    def supports_starttls(self) -> bool:
+        """Determine if this port supports STARTTLS"""
+        return bool(self.security) and "STARTTLS" in self.security
+
+
 class PortManager:
     """
     Central manager for port configurations across the EVE system.
@@ -48,7 +71,67 @@ class PortManager:
         
         # No initial loading - will load on demand
         logger.debug("Port manager instance created, awaiting proper initialization")
-    
+
+    def initialize(self) -> bool:
+        """Load ports from database"""
+        if self._initialized:
+            return True
+        
+        try:
+            # Query for new schema
+            sql = """
+            SELECT 
+                port, category, name, priority, security, 
+                protocol, enabled, description 
+            FROM ports 
+            ORDER BY category, priority
+            """
+            
+            results = sync_db.fetch(sql)
+            if not results:
+                logger.error("No ports found in database")
+                return False
+                
+            # Process results
+            ports_dict = {}
+            categories_dict = {}
+            
+            for row in results:
+                # Create Port object
+                port_obj = Port(
+                    port=int(row['port']),
+                    category=row['category'],
+                    name=row['name'],
+                    priority=int(row['priority']),
+                    security=row['security'],
+                    protocol=row['protocol'],
+                    enabled=row['enabled'],
+                    description=row['description']
+                )
+                
+                # Add to ports dictionary
+                ports_dict[port_obj.port] = port_obj
+                
+                # Add to categories dictionary
+                if port_obj.category not in categories_dict:
+                    categories_dict[port_obj.category] = []
+                categories_dict[port_obj.category].append(port_obj)
+            
+            self.smtp_ports = ports_dict.get('smtp')
+            self.dns_ports = ports_dict.get('dns')
+            self.auth_ports = ports_dict.get('auth')
+            self.mail_ports = ports_dict.get('mail')
+            self._initialized = True
+            
+            port_count = len(ports_dict)
+            category_count = len(categories_dict)
+            logger.info(f"Port manager initialized with {port_count} ports in {category_count} categories")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error initializing port manager: {e}")
+            return False
+
     def _should_reload(self, cache_name):
         """Check if cache should be reloaded based on TTL"""
         now = time.time()
