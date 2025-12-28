@@ -200,7 +200,7 @@ def _prepare_db_fields(data: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
         "imap_status": str(data.get("imap_status", "")),
         "imap_details": json.dumps(data.get("imap_info", {})) if data.get("imap_info") else None,
         "pop3_status": str(data.get("pop3_status", "")),
-        "pop3_details": json.dumps(data.get("pop3_info", {})) if data.get("pop3_info") else None,
+        "pop3_details": json.dumps(data.get("pop3_details", {})) if data.get("pop3_details") else None,
 
         # SPF/DKIM/DMARC/server policies
         "spf_status": data.get("spf_status", ""),

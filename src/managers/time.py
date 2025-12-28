@@ -28,13 +28,14 @@ import json
 import threading
 import uuid
 import time
+from venv import logger
 import pytz
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
-from src.managers.log import get_logger
 
-logger = get_logger()
+
+
 
 def now_utc() -> datetime:
     """
@@ -648,3 +649,12 @@ def trace_function(operation_name=None, start_new_trace=False):
 
 # Create global instance
 time_manager = TimeManager.get_instance()
+
+def get_logger_lazy():
+    """Lazy import to avoid circular dependency"""
+    try:
+        from src.managers.log import get_logger
+        return get_logger()
+    except ImportError:
+        import logging
+        return logging.getLogger(__name__)

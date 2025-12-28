@@ -193,6 +193,18 @@ class EmailValidationEngine:
                 if result.imap_status:
                     validation_details.append(f"\"imap\": {{\"status\": \"{result.imap_status}\"}}")
                 
+                # Add POP3 details to logs
+                if result.pop3_status:
+                    validation_details.append(f"\"pop3\": {{\"status\": \"{result.pop3_status}\"}}")
+                    
+                    # Add security level if available
+                    if result.pop3_details.get('security_level'):
+                        validation_details.append(f"\"pop3_security\": \"{result.pop3_details.get('security_level')}\"")
+                    
+                    # Add server count if available
+                    if result.pop3_details.get('servers_found', 0) > 0:
+                        validation_details.append(f"\"pop3_servers\": {result.pop3_details.get('servers_found')}")
+                
                 if validation_details:
                     logger.info(f"[{trace_id}] VALIDATION_DETAILS {{{', '.join(validation_details)}}}")
                     

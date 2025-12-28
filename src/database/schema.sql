@@ -72,10 +72,10 @@ INSERT INTO email_validation_functions (function_name, display_name, description
 ('spf_check', 'SPF Validation', 'Checks Sender Policy Framework records', 50, true, 'src.engine.functions.spf', 'spf_check'),
 ('dkim_check', 'DKIM Validation', 'Checks DomainKeys Identified Mail status', 60, true, 'src.engine.functions.dkim', 'dkim_check'),
 ('dmarc_check', 'DMARC Policy', 'Checks Domain-based Message Authentication policy', 70, true, 'src.engine.functions.dmarc', 'dmarc_check'),
-('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.imap', 'imap_check')
+('imap_check', 'IMAP Verification', 'Checks if domain has IMAP service', 90, true, 'src.engine.functions.imap', 'imap_check'),
+('pop3_check', 'POP3 Verification', 'Checks if domain has POP3 service', 100, true, 'src.engine.functions.pop3', 'check_pop3')
 -- not implementet yet
 -- ('catch_all_check', 'Catch-All Detection', 'Checks if domain accepts all emails', 80, true, 'src.engine.functions.4', '4'),
--- ('pop3_check', 'POP3 Verification', 'Checks if domain has POP3 service', 100, true, 'src.engine.functions.6', '6'),
 -- ('disposable_check', 'Disposable Email', 'Checks if email is from disposable email service', 110, true, 'src.engine.engine.7', '7')
 ON CONFLICT (function_name) DO NOTHING;
 
@@ -98,7 +98,7 @@ INSERT INTO email_validation_function_dependencies (function_name, depends_on) V
 ('dkim_check', 'mx_records'),
 ('imap_check', 'mx_records'),
 -- ('catch_all_check', 'smtp_validation'),
--- ('pop3_check', 'mx_records'),
+('pop3_check', 'mx_records'),
 -- ('disposable_check', 'email_format_resaults'),
 ('validate_domain', 'email_format_resaults'),
 ('mx_records', 'validate_domain'),
@@ -195,6 +195,8 @@ INSERT INTO app_settings (category, sub_category, name, value, description) VALU
 ('Settings', 'Cache', 'cache purge', '300', 'Seconds between cache check TTL to purge for L1, L2 and L3 cache'),
 ('Settings', 'Debug', 'Enable', '1', 'Enable Debug menu 1=True 0=False'),
 ('Settings', 'Start', 'Enable', '0', 'Enable Auto-benchmark during start 1=True 0=False'),
+('Settings', 'Log', 'Enable', '1', 'Enable Database log 1=True 0=False'),
+('Settings', 'Log', 'Enable', '1', 'Enable console log 1=True 0=False'),
 ('Database', 'Backup', 'Enable', '1', 'Enable database backup 1=True 0=False'),
 ('Database', 'Backup', 'Count', '5', 'Number of backups to keep'),
 ('Database', 'Backup', 'TimeUTC', '02:00', 'Time (UTC) to run backup (HH:MM)')
@@ -681,7 +683,7 @@ CREATE TABLE IF NOT EXISTS dkim_validation_statistics (
     processing_time_ms FLOAT,
     errors TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_dkim_validation_trace FOREIGN KEY (trace_id) 
+    CONSTRAINT fk_dkim_validation_trace FOREIGN KEY (trace_id)
         REFERENCES email_validation_records(trace_id)
         ON DELETE SET NULL
 );
@@ -701,7 +703,7 @@ CREATE TABLE IF NOT EXISTS imap_validation_statistics (
     processing_time_ms FLOAT,
     errors TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_imap_validation_trace FOREIGN KEY (trace_id) 
+    CONSTRAINT fk_imap_validation_trace FOREIGN KEY (trace_id)
         REFERENCES email_validation_records(trace_id)
         ON DELETE SET NULL
 );
@@ -726,7 +728,52 @@ CREATE TABLE IF NOT EXISTS imap_validation_history (
     validation_date DATE DEFAULT CURRENT_DATE,
     last_validated_at TIMESTAMPTZ,
     CONSTRAINT unique_domain_daily_imap UNIQUE(domain, validation_date),
-    CONSTRAINT fk_imap_validation_history_trace FOREIGN KEY (trace_id) 
+    CONSTRAINT fk_imap_validation_history_trace FOREIGN KEY (trace_id)
+        REFERENCES email_validation_records(trace_id)
+        ON DELETE SET NULL
+);
+
+-- POP3 validation statistics table
+CREATE TABLE IF NOT EXISTS pop3_validation_statistics (
+    id SERIAL PRIMARY KEY,
+    trace_id TEXT,
+    domain VARCHAR(255) NOT NULL,
+    has_pop3 BOOLEAN NOT NULL DEFAULT false,
+    servers_found INTEGER NOT NULL DEFAULT 0,
+    security_level VARCHAR(20) NOT NULL DEFAULT 'none',
+    supports_ssl BOOLEAN NOT NULL DEFAULT false,
+    supports_starttls BOOLEAN NOT NULL DEFAULT false,
+    supports_oauth BOOLEAN NOT NULL DEFAULT false,
+    dns_lookups INTEGER NOT NULL DEFAULT 0,
+    processing_time_ms NUMERIC(10,3) NOT NULL DEFAULT 0,
+    errors TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_pop3_validation_trace FOREIGN KEY (trace_id)
+        REFERENCES email_validation_records(trace_id)
+        ON DELETE SET NULL
+);
+
+-- POP3 validation history table
+CREATE TABLE IF NOT EXISTS pop3_validation_history (
+    id SERIAL PRIMARY KEY,
+    domain VARCHAR(255) NOT NULL,
+    has_pop3 BOOLEAN NOT NULL DEFAULT false,
+    servers_found INTEGER NOT NULL DEFAULT 0,
+    security_level VARCHAR(20) NOT NULL DEFAULT 'none',
+    supports_ssl BOOLEAN NOT NULL DEFAULT false,
+    supports_starttls BOOLEAN NOT NULL DEFAULT false,
+    supports_oauth BOOLEAN NOT NULL DEFAULT false,
+    dns_lookups INTEGER NOT NULL DEFAULT 0,
+    processing_time_ms NUMERIC(10,3) NOT NULL DEFAULT 0,
+    errors JSONB,
+    warnings JSONB,
+    recommendations JSONB,
+    trace_id TEXT,
+    validated_at TIMESTAMPTZ NOT NULL,
+    validation_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    last_validated_at TIMESTAMPTZ,
+    CONSTRAINT unique_domain_daily_pop3 UNIQUE(domain, validation_date),
+    CONSTRAINT fk_pop3_validation_history_trace FOREIGN KEY (trace_id) 
         REFERENCES email_validation_records(trace_id)
         ON DELETE SET NULL
 );
@@ -1083,6 +1130,31 @@ CREATE INDEX IF NOT EXISTS idx_public_suffix_list_suffix ON public_suffix_list(s
 CREATE INDEX IF NOT EXISTS idx_public_suffix_list_category ON public_suffix_list(category);
 CREATE INDEX IF NOT EXISTS idx_public_suffix_list_country ON public_suffix_list(country_code);
 
+-- Application logs table for frontend log viewer
+CREATE TABLE IF NOT EXISTS application_logs (
+    id SERIAL PRIMARY KEY,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    level VARCHAR(16) NOT NULL,         -- e.g. INFO, WARNING, ERROR, DEBUG
+    module VARCHAR(64),                 -- Python module name
+    function VARCHAR(64),               -- Function name
+    message TEXT NOT NULL,              -- Log message
+    file VARCHAR(128),                  -- Source file name
+    line INTEGER,                       -- Line number in source file
+    exception TEXT,                     -- Exception details (if any)
+    trace_id TEXT,
+    CONSTRAINT fk_log_trace FOREIGN KEY (trace_id) 
+        REFERENCES email_validation_records(trace_id)
+);
+
+-- for fast retrieval by timestamp
+CREATE INDEX IF NOT EXISTS idx_application_logs_timestamp ON application_logs(timestamp DESC);
+
+-- Index for log level filtering
+CREATE INDEX IF NOT EXISTS idx_application_logs_level ON application_logs(level);
+
+-- Index for module filtering
+CREATE INDEX IF NOT EXISTS idx_application_logs_module ON application_logs(module);
+
 -- Version tracking table to manage updates from the official source
 CREATE TABLE IF NOT EXISTS public_suffix_list_version (
     id SERIAL PRIMARY KEY,
@@ -1316,7 +1388,7 @@ CREATE INDEX IF NOT EXISTS idx_spf_dns_lookup_validation ON spf_dns_lookup_log(s
 CREATE INDEX IF NOT EXISTS idx_dmarc_validation_stats_domain ON dmarc_validation_statistics(domain);
 CREATE INDEX IF NOT EXISTS idx_dmarc_validation_stats_trace_id ON dmarc_validation_statistics(trace_id);
 CREATE INDEX IF NOT EXISTS idx_dmarc_validation_stats_created_at ON dmarc_validation_statistics(created_at);
-CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_domain ON dmarc_validation_history(domain);
+CREATE INDEX IF NOT EXISTS idx_dmarc_valtrace_ididation_history_domain ON dmarc_validation_history(domain);
 CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_policy ON dmarc_validation_history(policy);
 CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_strength ON dmarc_validation_history(policy_strength);
 CREATE INDEX IF NOT EXISTS idx_dmarc_validation_history_trace ON dmarc_validation_history(trace_id);
@@ -1346,6 +1418,25 @@ CREATE INDEX IF NOT EXISTS idx_imap_validation_history_errors_gin ON imap_valida
 CREATE INDEX IF NOT EXISTS idx_imap_validation_history_warnings_gin ON imap_validation_history USING GIN(warnings);
 CREATE INDEX IF NOT EXISTS idx_imap_validation_history_recommendations_gin ON imap_validation_history USING GIN(recommendations);
 
+-- POP3 Statistics indexes
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_statistics_trace_id ON pop3_validation_statistics(trace_id);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_statistics_domain ON pop3_validation_statistics(domain);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_statistics_created_at ON pop3_validation_statistics(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_statistics_domain_created ON pop3_validation_statistics(domain, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_statistics_has_pop3_security ON pop3_validation_statistics(has_pop3, security_level) WHERE has_pop3 = true;
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_statistics_processing_time ON pop3_validation_statistics(processing_time_ms DESC) WHERE processing_time_ms > 1000;
+
+-- POP3 History indexes
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_domain ON pop3_validation_history(domain);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_validation_date ON pop3_validation_history(validation_date DESC);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_trace_id ON pop3_validation_history(trace_id);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_domain_date ON pop3_validation_history(domain, validation_date DESC);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_validated_at ON pop3_validation_history(validated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_security_level ON pop3_validation_history(security_level) WHERE security_level IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_has_pop3 ON pop3_validation_history(has_pop3, validation_date DESC) WHERE has_pop3 = true;
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_errors_gin ON pop3_validation_history USING GIN(errors);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_warnings_gin ON pop3_validation_history USING GIN(warnings);
+CREATE INDEX IF NOT EXISTS idx_pop3_validation_history_recommendations_gin ON pop3_validation_history USING GIN(recommendations);
 
 -- =============================================
 -- View
@@ -1661,3 +1752,28 @@ SELECT
     ) AS top_mechanisms
 FROM domain_stats ds
 ORDER BY ds.total_validations DESC;
+
+-- POP3 security analysis view
+CREATE OR REPLACE VIEW pop3_security_analysis AS
+SELECT 
+    d.domain,
+    d.has_pop3,
+    d.security_level,
+    d.supports_ssl,
+    d.supports_starttls,
+    d.supports_oauth,
+    d.servers_found,
+    d.dns_lookups,
+    d.processing_time_ms,
+    COUNT(*) OVER (PARTITION BY d.domain) as validation_count,
+    FIRST_VALUE(d.validated_at) OVER (PARTITION BY d.domain ORDER BY d.validated_at DESC) as last_validation,
+    FIRST_VALUE(d.validated_at) OVER (PARTITION BY d.domain ORDER BY d.validated_at ASC) as first_validation,
+    CASE 
+        WHEN d.has_pop3 = false THEN 'No POP3'
+        WHEN d.supports_ssl AND d.supports_oauth THEN 'Excellent'
+        WHEN d.supports_ssl OR d.supports_starttls THEN 'Good'
+        WHEN d.has_pop3 THEN 'Basic'
+        ELSE 'Poor'
+    END as security_rating
+FROM pop3_validation_history d
+ORDER BY d.domain, d.validated_at DESC;

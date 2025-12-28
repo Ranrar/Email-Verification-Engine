@@ -1,0 +1,56 @@
+# Docker ignore file for Email Verification Engine
+.git
+.gitignore
+README.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+.env.docker
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.pytest_cache
+.mypy_cache
+
+# Virtual environment
+.venv
+.env
+venv/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Database backups (keep in source but not in container)
+src/database/backups/*.dump
+
+# Temporary files
+*.tmp
+*.temp

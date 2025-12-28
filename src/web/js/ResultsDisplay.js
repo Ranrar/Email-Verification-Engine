@@ -190,8 +190,11 @@ class ResultsDisplay {
         // SMTP Details
         this.populateSMTPDetails(data);
         
-        // IMAP Details - Add this line
+        // IMAP Details
         this.populateIMAPDetails(data);
+
+        // POP3 Details
+        this.populatePOP3Details(data);
         
         // MX Infrastructure
         this.populateMXDetails(data);
@@ -1359,115 +1362,146 @@ class ResultsDisplay {
     }
 
     /**
-     * Populate IMAP details table with server capabilities
+     * Populate POP3 details table with server capabilities
      */
-    populateIMAPDetails(data) {
-        console.log("populateIMAPDetails called with data:", data);
+    populatePOP3Details(data) {
+        console.log("populatePOP3Details called with data:", data);
         
-        const imapTable = document.getElementById('imapDetailsTable');
-        if (!imapTable) {
-            console.warn("imapDetailsTable element not found in DOM");
+        const pop3Table = document.getElementById('pop3DetailsTable');
+        if (!pop3Table) {
+            console.warn("pop3DetailsTable element not found in DOM");
             return;
         }
         
-        imapTable.innerHTML = '';
-        imapTable.className = 'details-table';
+        pop3Table.innerHTML = '';
+        pop3Table.className = 'details-table';
         
         if (!data || !data.email_validation_record) {
-            this.addTableRow(imapTable, 'IMAP Information', 'No IMAP data available');
+            this.addTableRow(pop3Table, 'POP3 Information', 'No POP3 data available');
             return;
         }
         
         const record = data.email_validation_record;
         const domain = record.domain;
         
-        // Get IMAP details from the record
-        let imapStatus = record.imap_status || 'unknown';
-        let imapDetails = record.imap_details;
+        // Get POP3 details from the record
+        let pop3Status = record.pop3_status || 'unknown';
+        let pop3Details = record.pop3_details;
         
-        if (typeof imapDetails === 'string') {
+        if (typeof pop3Details === 'string') {
             try {
-                imapDetails = JSON.parse(imapDetails);
+                pop3Details = JSON.parse(pop3Details);
             } catch(e) {
-                console.error('Error parsing IMAP details:', e);
-                imapDetails = {};
+                console.error('Error parsing POP3 details:', e);
+                pop3Details = {};
             }
         }
         
-        console.log("IMAP details:", imapDetails);
+        console.log("POP3 details:", pop3Details);
         
-        // Add IMAP status header with appropriate styling
-        this.addHeaderRow(imapTable, 'IMAP Status');
+        // Add POP3 status header with appropriate styling
+        this.addHeaderRow(pop3Table, 'POP3 Status');
         
         let statusClass = 'text-muted';
-        if (imapStatus === 'available') statusClass = 'valid-result';
-        else if (imapStatus === 'unavailable' || imapStatus === 'error') statusClass = 'invalid-result';
+        if (pop3Status === 'available') statusClass = 'valid-result';
+        else if (pop3Status === 'unavailable' || pop3Status === 'error') statusClass = 'invalid-result';
         
         const statusCell = document.createElement('td');
-        statusCell.innerHTML = `<span class="${statusClass}">${imapStatus.toUpperCase()}</span>`;
-        this.addTableRow(imapTable, 'IMAP Service', '', statusCell);
+        statusCell.innerHTML = `<span class="${statusClass}">${pop3Status.toUpperCase()}</span>`;
+        this.addTableRow(pop3Table, 'POP3 Service', '', statusCell);
         
-        if (imapDetails) {
+        if (pop3Details && pop3Details.has_pop3) {
             // Add security level with appropriate styling
-            let securityLevel = imapDetails.security_level || 'unknown';
+            let securityLevel = pop3Details.security_level || 'unknown';
             let securityClass = 'text-muted';
             
-            if (securityLevel === 'high') securityClass = 'valid-result';
-            else if (securityLevel === 'medium') securityClass = 'warning-color';
-            else if (securityLevel === 'low' || securityLevel === 'none') securityClass = 'invalid-result';
+            if (securityLevel === 'excellent' || securityLevel === 'high') securityClass = 'valid-result';
+            else if (securityLevel === 'good' || securityLevel === 'medium') securityClass = 'warning-color';
+            else if (securityLevel === 'basic' || securityLevel === 'low' || securityLevel === 'none') securityClass = 'invalid-result';
             
             const securityCell = document.createElement('td');
             securityCell.innerHTML = `<span class="${securityClass}">${securityLevel.toUpperCase()}</span>`;
-            this.addTableRow(imapTable, 'Security Level', '', securityCell);
+            this.addTableRow(pop3Table, 'Security Level', '', securityCell);
             
             // Add protocol support information
-            this.addTableSeparator(imapTable);
-            this.addSubheaderRow(imapTable, 'Protocol Support');
-            this.addStatusRow(imapTable, 'SSL/TLS', imapDetails.supports_ssl, 'Supported', 'Not Supported');
-            this.addStatusRow(imapTable, 'STARTTLS', imapDetails.supports_starttls, 'Supported', 'Not Supported');
-            this.addStatusRow(imapTable, 'OAuth 2.0', imapDetails.supports_oauth, 'Supported', 'Not Supported');
+            this.addTableSeparator(pop3Table);
+            this.addSubheaderRow(pop3Table, 'Protocol Support');
+            this.addStatusRow(pop3Table, 'SSL/TLS', pop3Details.supports_ssl, 'Supported', 'Not Supported');
+            this.addStatusRow(pop3Table, 'STARTTLS', pop3Details.supports_starttls, 'Supported', 'Not Supported');
+            this.addStatusRow(pop3Table, 'OAuth 2.0', pop3Details.supports_oauth, 'Supported', 'Not Supported');
             
             // Show server information if available
-            if (imapDetails.servers && imapDetails.servers.length > 0) {
-                this.addTableSeparator(imapTable);
-                this.addHeaderRow(imapTable, 'IMAP Servers');
+            if (pop3Details.servers && pop3Details.servers.length > 0) {
+                this.addTableSeparator(pop3Table);
+                this.addHeaderRow(pop3Table, 'POP3 Servers');
                 
-                imapDetails.servers.forEach((server, index) => {
-                    this.addSubheaderRow(imapTable, `Server ${index + 1}`);
-                    this.addTableRow(imapTable, 'Host', server.host || 'N/A');
-                    this.addTableRow(imapTable, 'Port', server.port || 'N/A');
-                    this.addStatusRow(imapTable, 'Secure Connection', server.secure_connection, 'Yes', 'No');
+                pop3Details.servers.forEach((server, index) => {
+                    this.addSubheaderRow(pop3Table, `Server ${index + 1}`);
+                    this.addTableRow(pop3Table, 'Host', server.host || 'N/A');
+                    this.addTableRow(pop3Table, 'Port', server.port || 'N/A');
+                    this.addTableRow(pop3Table, 'Protocol', server.protocol || 'N/A');
+                    this.addStatusRow(pop3Table, 'Secure Connection', server.secure_connection, 'Yes', 'No');
                     
+                    // POP3-specific capabilities
                     if (server.capabilities && server.capabilities.length > 0) {
-                        this.addTableRow(imapTable, 'Capabilities', server.capabilities.join(', '));
+                        this.addTableRow(pop3Table, 'Capabilities', server.capabilities.join(', '));
                     }
                     
-                    if (index < imapDetails.servers.length - 1) {
-                        this.addTableSeparator(imapTable, false, true);
+                    // POP3-specific features
+                    this.addStatusRow(pop3Table, 'USER/PASS Auth', server.supports_user_pass, 'Supported', 'Not Supported');
+                    this.addStatusRow(pop3Table, 'APOP Auth', server.supports_apop, 'Supported', 'Not Supported');
+                    this.addStatusRow(pop3Table, 'TOP Command', server.supports_top, 'Supported', 'Not Supported');
+                    this.addStatusRow(pop3Table, 'UIDL Command', server.supports_uidl, 'Supported', 'Not Supported');
+                    
+                    if (server.banner) {
+                        this.addCodeRow(pop3Table, 'Server Banner', server.banner);
+                    }
+                    
+                    if (index < pop3Details.servers.length - 1) {
+                        this.addTableSeparator(pop3Table, false, true);
                     }
                 });
             }
             
             // Show recommendations if available
-            if (imapDetails.recommendations && imapDetails.recommendations.length > 0) {
-                this.addTableSeparator(imapTable);
-                this.addHeaderRow(imapTable, 'Recommendations');
+            if (pop3Details.recommendations && pop3Details.recommendations.length > 0) {
+                this.addTableSeparator(pop3Table);
+                this.addHeaderRow(pop3Table, 'Recommendations');
                 
-                imapDetails.recommendations.forEach((rec, index) => {
-                    this.addTableRow(imapTable, `${index + 1}.`, rec);
+                pop3Details.recommendations.forEach((rec, index) => {
+                    this.addTableRow(pop3Table, `${index + 1}.`, rec);
                 });
             }
             
             // Add execution time if available
-            if (imapDetails.execution_time_ms) {
-                this.addTableSeparator(imapTable);
-                this.addTableRow(imapTable, 'Analysis Time', `${(imapDetails.execution_time_ms / 1000).toFixed(2)}s`);
+            if (pop3Details.execution_time_ms) {
+                this.addTableSeparator(pop3Table);
+                this.addTableRow(pop3Table, 'Analysis Time', `${(pop3Details.execution_time_ms / 1000).toFixed(2)}s`);
             }
             
             // Add error message if available
-            if (imapDetails.error) {
-                this.addTableSeparator(imapTable);
-                this.addWarningRow(imapTable, 'Error', imapDetails.error);
+            if (pop3Details.error) {
+                this.addTableSeparator(pop3Table);
+                this.addWarningRow(pop3Table, 'Error', pop3Details.error);
+            }
+            
+            // Servers checked information
+            if (pop3Details.servers_checked && pop3Details.servers_checked.length > 0) {
+                this.addTableSeparator(pop3Table);
+                this.addTableRow(pop3Table, 'Servers Checked', pop3Details.servers_checked.join(', '));
+            }
+            
+        } else if (pop3Details && !pop3Details.has_pop3) {
+            // POP3 not available but we have details
+            this.addTableSeparator(pop3Table);
+            this.addTableRow(pop3Table, 'POP3 Available', 'No');
+            
+            if (pop3Details.error) {
+                this.addWarningRow(pop3Table, 'Error', pop3Details.error);
+            }
+            
+            if (pop3Details.servers_checked && pop3Details.servers_checked.length > 0) {
+                this.addTableRow(pop3Table, 'Servers Checked', pop3Details.servers_checked.join(', '));
             }
         }
     }

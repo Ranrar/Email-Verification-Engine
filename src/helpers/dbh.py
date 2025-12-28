@@ -6,6 +6,7 @@ Handles connection pooling, asynchronous queries, and multi-process thread safet
 """
 
 import os
+from venv import logger
 import asyncpg
 import dotenv
 import asyncio
@@ -16,9 +17,6 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 from src.managers.time import now_utc, normalize_datetime, to_iso8601, from_iso8601
 from concurrent.futures import ThreadPoolExecutor
-from src.managers.log import get_logger
-# Set up logging
-logger = get_logger()
 
 class TimeoutHandler:
     """Utility for tracking elapsed time with proper timezone handling"""
@@ -774,3 +772,12 @@ sync_db = SyncDBHandler()
 
 # If this is imported elsewhere, only one instance will be created
 __all__ = ['sync_db', 'DBHandler', 'SyncDBHandler']
+
+def get_logger_lazy():
+    """Lazy import to avoid circular dependency"""
+    try:
+        from src.managers.log import get_logger
+        return get_logger()
+    except ImportError:
+        import logging
+        return logging.getLogger(__name__)

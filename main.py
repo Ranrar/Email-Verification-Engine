@@ -17,15 +17,15 @@ Email Verification Engine V 0.4
 # Commercial use prohibited without explicit permission.
 """
 
+from src.managers.log import get_logger
+logger = get_logger()
+
 import eel
-import json
 import sys
 import threading
 import socket
 import multiprocessing
-import time
 from src.helpers.Initialization import start_initialization_process
-from src.managers.log import get_logger
 from src.engine.engine import get_engine
 from src.helpers.dbh import sync_db
 from src.utils.debug import get_setting, debug_action
@@ -34,7 +34,6 @@ from src.utils.notifier import Notifier
 from src.utils import settings
 
 notify = Notifier()
-logger = get_logger()
 
 # Find an available port
 def find_free_port():
@@ -557,6 +556,21 @@ def list_documentation_files():
             "error": str(e)
         }
 
+@eel.expose
+def get_db_logs(limit=0):
+    """Get application logs from the database"""
+    try:
+        rows = sync_db.fetch("""
+            SELECT timestamp, level, module, function, message, file, line, exception, trace_id
+            FROM application_logs
+            ORDER BY timestamp DESC
+            LIMIT $1
+        """, limit)
+        return [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"Error fetching logs: {e}")
+        return {"success": False, "error": str(e)}
+
 # Main function - Non-async for better multiprocessing compatibility
 def main():
     # Initialize Eel
@@ -566,17 +580,29 @@ def main():
     port = find_free_port()
     print(f"Starting Eel on port {port}")
     
-    # Start Eel with the port
-    try:
-        # Use block=True for cleaner operation with multiprocessing
-        eel.start('init.html', size=(800, 600), mode='firefox', port=port, block=True)
-    except Exception as e:
-        print(f"Error starting with firefox: {e}")
+    # Check if running in Docker (by checking for environment variables or other indicators)
+    import os
+    is_docker = os.path.exists('/.dockerenv') or os.environ.get('DOCKER_ENV') == 'true'
+    
+    if is_docker:
+        print("Detected Docker environment - starting in headless mode")
+        # Start Eel in headless mode for Docker
         try:
-            # Try with default browser
-            eel.start('index.html', size=(800, 600), mode=None, port=port, block=True)
+            eel.start('init.html', size=(800, 600), mode=False, port=port, host='0.0.0.0', block=True)
         except Exception as e:
-            print(f"Failed to start Eel: {e}")
+            print(f"Failed to start Eel in Docker mode: {e}")
+    else:
+        # Start Eel with browser for local development
+        try:
+            # Use block=True for cleaner operation with multiprocessing
+            eel.start('init.html', size=(800, 600), mode='firefox', port=port, block=True)
+        except Exception as e:
+            print(f"Error starting with firefox: {e}")
+            try:
+                # Try with default browser
+                eel.start('index.html', size=(800, 600), mode=None, port=port, block=True)
+            except Exception as e:
+                print(f"Failed to start Eel: {e}")
 
 # Entry point
 if __name__ == "__main__":

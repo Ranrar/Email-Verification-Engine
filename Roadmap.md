@@ -31,7 +31,7 @@ A simple development roadmap for the Email Verification Engine.
 - [X] DKIM
 - [X] DMARC
 - [X] IMAP check
-- [ ] POP3 check
+- [X] POP3 check
 - [ ] Catch-all check
 - [ ] Disposable detection
 - [ ] Encrypt database connection file
@@ -51,7 +51,7 @@ A simple development roadmap for the Email Verification Engine.
 - [x] Single mail validation `works with all implemented functions above`
 - [x] System logs
 - [x] Cache stats and hit rates
-- [x] Notification
+- [ ] Notification `was made but now broken, because of log changes`
 - [ ] Statistics page
 - [ ] Server performance information page
 - [ ] Validation report export
@@ -62,6 +62,7 @@ A simple development roadmap for the Email Verification Engine.
 - [ ] Database backup
 - [ ] Reports
 - [ ] Validations analyze
+- [ ] Replade `EEL` with `FastAPI`
 
 
 ### Frontend (Web UI)
@@ -70,7 +71,6 @@ A simple development roadmap for the Email Verification Engine.
 - [ ] Submit single/batch email jobs  
 - [ ] View own job progress & results  
 - [ ] API key management 
-- [ ] Replade `EEL` with `FastAPI`
 
 ---
 
@@ -78,8 +78,8 @@ A simple development roadmap for the Email Verification Engine.
 
 - [ ] Role-based access (Admin, Operator, Viewer)  
 - [ ] Audit logs (who did what & when)
-- [ ] Move log from files to DB
-- [ ] Live Log for admin
+- [x] Move log from files to DB
+- [x] Console Log for admin
 - [ ] RFC documentation
 - [ ] GDPR compliance  
   - [ ] Right to delete user data  

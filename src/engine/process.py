@@ -310,6 +310,42 @@ def process_validation_results(result: EmailValidationResult, validation_results
                         f"STARTTLS={imap_data.get('supports_starttls', False)}, "
                         f"OAuth={imap_data.get('supports_oauth', False)}")
     
+    # POP3 validation check processing
+    if 'pop3_validation' in validation_results:
+        pop3_data = validation_results.get('pop3_validation', {})
+        
+        # Update basic POP3 status
+        result.pop3_status = "available" if pop3_data.get("has_pop3", False) else "unavailable"
+        if pop3_data.get("error"):
+            result.pop3_status = "error"
+            
+        # Store detailed POP3 information
+        result.pop3_details = {
+            'has_pop3': pop3_data.get('has_pop3', False),
+            'servers_found': len(pop3_data.get('pop3_servers', [])),
+            'security_level': pop3_data.get('security_level', 'none'),
+            'supports_ssl': pop3_data.get('supports_ssl', False),
+            'supports_starttls': pop3_data.get('supports_starttls', False),
+            'supports_oauth': pop3_data.get('supports_oauth', False),
+            'servers': pop3_data.get('pop3_servers', []),
+            'recommendations': pop3_data.get('recommendations', []),
+            'error': pop3_data.get('error', ''),
+            'execution_time_ms': pop3_data.get('duration_ms', 0)
+        }        
+        # Log POP3 validation result
+        if result.pop3_status == "available":
+            logger.info(f"[{result.trace_id}] POP3 available for {result.domain}: " 
+                       f"security={pop3_data.get('security_level', 'none')}, "
+                       f"servers={len(pop3_data.get('pop3_servers', []))}")
+        else:
+            logger.info(f"[{result.trace_id}] POP3 {result.pop3_status} for {result.domain}")
+            
+        # Log detailed information at debug level
+        if result.pop3_status == "available":
+            logger.debug(f"[{result.trace_id}] POP3 details: SSL={pop3_data.get('supports_ssl', False)}, "
+                        f"STARTTLS={pop3_data.get('supports_starttls', False)}, "
+                        f"OAuth={pop3_data.get('supports_oauth', False)}")
+
     if 'disposable_check' in validation_results:
         disposable_check = validation_results.get('disposable_check', {})
         result.is_disposable = disposable_check.get('is_disposable', False)

@@ -603,9 +603,9 @@ function formatCacheSection(title, data, color) {
 }
 
 /**
- * Show debug log viewer with enhanced CSS styling and structure
+ * Show debug log viewer with database logs only
  */
-function showDebugLogViewer(logs) {
+function showDebugLogViewer() {
     // Create overlay using standard CSS classes
     const overlay = document.createElement('div');
     overlay.className = 'dialog-overlay';
@@ -614,38 +614,43 @@ function showDebugLogViewer(logs) {
     // Create dialog with improved sizing and CSS classes
     const dialog = document.createElement('div');
     dialog.className = 'dialog debug-log-viewer';
-    dialog.style.width = '800px';
+    dialog.style.width = '900px';
     dialog.style.height = '80vh';
-    dialog.style.maxWidth = '90%';
+    dialog.style.maxWidth = '95%';
     
-    // Get today's date for default selection
-    const today = new Date().toISOString().split('T')[0];
-    
-    // Create log viewer content with improved CSS structure
+    // Create log viewer content with database-only controls
     dialog.innerHTML = `
-        <div class="dialog-title">Log Viewer</div>
+        <div class="dialog-title">Database Log Viewer</div>
         <div class="debug-log-controls p-10" style="background-color: var(--surface-alt); border-bottom: 1px solid var(--border-color);">
-            <div class="flex flex-gap-10 align-center">
-                <select id="log-date-select" class="debug-log-select">
-                    <option value="${today}">${today}</option>
-                </select>
+            <div class="flex flex-gap-10 align-center mb-10">
                 <select id="log-level-select" class="debug-log-select">
                     <option value="all">All Levels</option>
-                    <option value="error">Errors</option>
-                    <option value="warning">Warnings</option>
-                    <option value="info">Info</option>
-                    <option value="debug">Debug</option>
-                    <option value="email">Email</option>
-                    <option value="sql">SQL</option>
-                    <option value="stats">Stats</option>
+                    <option value="ERROR">Errors</option>
+                    <option value="WARNING">Warnings</option>
+                    <option value="INFO">Info</option>
+                    <option value="DEBUG">Debug</option>
+                </select>
+                <select id="log-limit-select" class="debug-log-select">
+                    <option value="100">Last 100</option>
+                    <option value="500" selected>Last 500</option>
+                    <option value="1000">Last 1000</option>
+                    <option value="2000">Last 2000</option>
                 </select>
                 <input type="text" id="log-search" placeholder="Search logs..." style="flex: 1;">
                 <button id="log-refresh" class="btn btn-secondary">Refresh</button>
             </div>
+            <div class="flex flex-gap-10 align-center">
+                <span class="text-muted" style="font-size: 0.9em;">
+                    Source: <span id="log-source-info">PostgreSQL Database (Live)</span>
+                </span>
+                <span class="text-muted" style="font-size: 0.9em;" id="log-count-info">
+                    Entries: Loading...
+                </span>
+            </div>
         </div>
         <div class="dialog-body debug-log-content" style="height: 60vh; overflow-y: auto; background-color: var(--surface-alt); font-family: monospace; padding: 10px;">
             <div id="log-content">
-                <p class="text-center text-muted">Loading logs...</p>
+                <p class="text-center text-muted">Loading database logs...</p>
             </div>
         </div>
         <div class="dialog-buttons">
@@ -658,7 +663,7 @@ function showDebugLogViewer(logs) {
     document.body.appendChild(overlay);
     
     // Setup elements and initialize the log viewer
-    initializeLogViewer(dialog, today);
+    initializeLogViewer(dialog);
     
     // Setup close button
     dialog.querySelector('.confirm').addEventListener('click', () => {
@@ -667,130 +672,127 @@ function showDebugLogViewer(logs) {
 }
 
 /**
- * Initialize log viewer functionality
+ * Initialize database log viewer functionality
  */
-function initializeLogViewer(dialog, today) {
-    const dateSelect = dialog.querySelector('#log-date-select');
+function initializeLogViewer(dialog) {
     const logLevel = dialog.querySelector('#log-level-select');
+    const logLimit = dialog.querySelector('#log-limit-select');
     const logSearch = dialog.querySelector('#log-search');
     const logRefresh = dialog.querySelector('#log-refresh');
     const logContent = dialog.querySelector('#log-content');
+    const countInfo = dialog.querySelector('#log-count-info');
     
     // State tracking
-    let currentDate = today;
     let currentLevel = 'all';
+    let currentLimit = 500;
     let rawLogLines = [];
     
     // Load initial logs
-    loadAvailableLogs();
+    loadDatabaseLogs();
     
     // Event listeners
-    dateSelect.addEventListener('change', function() {
-        currentDate = this.value;
-        loadLogByLevelAndDate();
-    });
-    
     logLevel.addEventListener('change', function() {
         currentLevel = this.value;
-        loadLogByLevelAndDate();
+        loadDatabaseLogs();
+    });
+    
+    logLimit.addEventListener('change', function() {
+        currentLimit = parseInt(this.value);
+        loadDatabaseLogs();
     });
     
     logSearch.addEventListener('input', filterLogContent);
-    logRefresh.addEventListener('click', loadAvailableLogs);
+    logRefresh.addEventListener('click', loadDatabaseLogs);
     
-    // Load available logs function
-    async function loadAvailableLogs() {
+    // Load database logs function
+    async function loadDatabaseLogs() {
         try {
-            logContent.innerHTML = '<p class="text-center text-muted">Loading logs...</p>';
+            logContent.innerHTML = '<p class="text-center text-muted">Loading database logs...</p>';
+            countInfo.textContent = 'Entries: Loading...';
             
-            const result = await eel.debug_action('get-logs')();
+            const result = await eel.get_db_logs(currentLimit)();
             
-            if (result && typeof result === 'object' && result.files && result.files.length > 0) {
-                const availableDates = [...new Set(result.files.map(file => file.date))].sort().reverse();
-                
-                dateSelect.innerHTML = availableDates.map(date => 
-                    `<option value="${date}" ${date === currentDate ? 'selected' : ''}>${date}</option>`
-                ).join('');
-                
-                if (!availableDates.includes(currentDate)) {
-                    currentDate = availableDates[0];
-                }
-                
-                loadLogByLevelAndDate();
-            } else {
-                logContent.innerHTML = '<p class="text-center text-muted">No log files found</p>';
-            }
-        } catch (error) {
-            logContent.innerHTML = `<p class="invalid-result text-center">Error loading logs: ${error.message}</p>`;
-        }
-    }
-    
-    // Load logs by level and date
-    async function loadLogByLevelAndDate() {
-        try {
-            const safeMessage = document.createElement('p');
-            safeMessage.className = "text-center text-muted";
-            safeMessage.textContent = `Loading ${currentLevel} logs for ${currentDate}...`;
-            logContent.innerHTML = '';
-            logContent.appendChild(safeMessage);
-            
-            let filename;
-            if (currentLevel === 'all') {
-                const priorities = ['info', 'debug', 'warning', 'error', 'email', 'stats', 'sql'];
-                
-                for (const level of priorities) {
-                    const testFilename = `${level}.${currentDate}.log`;
-                    try {
-                        const testResult = await eel.debug_action('get-logs', testFilename)();
-                        if (!testResult.error) {
-                            filename = testFilename;
-                            break;
-                        }
-                    } catch (e) {
-                        console.log(`Log file ${testFilename} not available`);
-                    }
-                }
-                
-                if (!filename) {
-                    const safeMessage = document.createElement('p');
-                    safeMessage.className = "text-center text-muted";
-                    safeMessage.textContent = `No log files found for ${currentDate}`;
-                    logContent.innerHTML = '';
-                    logContent.appendChild(safeMessage);
-                    return;
-                }
-            } else {
-                filename = `${currentLevel}.${currentDate}.log`;
-            }
-            
-            const result = await eel.debug_action('get-logs', filename)();
-            
-            if (result.error) {
-                const safeMessage = document.createElement('p');
-                safeMessage.className = "invalid-result text-center";
-                safeMessage.textContent = `Error: ${result.error}`;
-                logContent.innerHTML = '';
-                logContent.appendChild(safeMessage);
+            if (result && result.success === false) {
+                logContent.innerHTML = `<p class="invalid-result text-center">Database Error: ${result.error}</p>`;
+                countInfo.textContent = 'Entries: Error';
                 return;
             }
             
-            rawLogLines = (result.content || '').split('\n').filter(line => line.trim());
+            if (!result || result.length === 0) {
+                logContent.innerHTML = '<p class="text-center text-muted">No database logs found</p>';
+                countInfo.textContent = 'Entries: 0';
+                return;
+            }
+            
+            // Filter by level if not 'all'
+            let filteredLogs = result;
+            if (currentLevel !== 'all') {
+                filteredLogs = result.filter(log => {
+                    const logLevel = log.level ? log.level.replace(/[\[\]]/g, '').toUpperCase() : '';
+                    return logLevel === currentLevel.toUpperCase();
+                });
+            }
+            
+            // Convert database logs to the format expected by the display function
+            rawLogLines = filteredLogs.map(log => {
+                return JSON.stringify({
+                    timestamp: formatDbTimestamp(log.timestamp),
+                    level: formatLogLevel(log.level),
+                    module: log.module || '',
+                    function: log.function || '',
+                    message: log.message || '',
+                    file: log.file || '',
+                    line: log.line || '',
+                    exception: log.exception || null,
+                    trace_id: log.trace_id || null
+                });
+            });
+            
             formatAndDisplayLogContent(rawLogLines);
             filterLogContent();
+            countInfo.textContent = `Entries: ${filteredLogs.length}${currentLevel !== 'all' ? ` (${currentLevel} only)` : ''}`;
+            
         } catch (error) {
-            const safeMessage = document.createElement('p');
-            safeMessage.className = "invalid-result text-center";
-            safeMessage.textContent = `Error loading log file: ${error.message}`;
-            logContent.innerHTML = '';
-            logContent.appendChild(safeMessage);
+            logContent.innerHTML = `<p class="invalid-result text-center">Error loading database logs: ${error.message}</p>`;
+            countInfo.textContent = 'Entries: Error';
+            console.error('Database log loading error:', error);
         }
+    }
+    
+    // Format database timestamp for consistency
+    function formatDbTimestamp(timestamp) {
+        if (!timestamp) return '';
+        
+        try {
+            const date = new Date(timestamp);
+            return date.toISOString().replace('T', ' ').substring(0, 23);
+        } catch (e) {
+            return timestamp;
+        }
+    }
+    
+    // Format log level for consistency
+    function formatLogLevel(level) {
+        if (!level) return '[INFO]';
+        
+        // If already formatted with brackets, return as-is
+        if (level.startsWith('[') && level.endsWith(']')) {
+            return level;
+        }
+        
+        // Add brackets if missing
+        return `[${level.toUpperCase()}]`;
     }
     
     // Format and display log content
     function formatAndDisplayLogContent(logLines) {
-        const reversedLines = [...logLines].reverse();
+        if (!logLines || logLines.length === 0) {
+            logContent.innerHTML = '<p class="text-center text-muted">No logs to display</p>';
+            return;
+        }
         
-        const formattedLines = reversedLines.map(line => {
+        // Show most recent logs first (they're already sorted DESC from database)
+        const formattedLines = logLines.map(line => {
             try {
                 if (!line.trim()) return '';
                 
@@ -798,29 +800,33 @@ function initializeLogViewer(dialog, today) {
                 
                 const levelColors = {
                     '[ERROR]': 'var(--error-color)',
-                    '[WARNING]': 'var(--warning-color)',
+                    '[WARNING]': 'var(--warning-color)', 
                     '[INFO]': 'var(--success-color)',
                     '[DEBUG]': 'var(--info-color)',
                     '[EMAIL]': 'var(--primary-color)',
                     '[SQL]': 'var(--text-muted)',
-                    '[STATS]': 'var(--text-muted)'
+                    '[STATS]': 'var(--text-muted)',
+                    '[CRITICAL]': 'var(--error-color)'
                 };
                 
                 const levelColor = levelColors[logEntry.level?.trim()] || 'var(--text-muted)';
                 
                 return `
-                    <div class="debug-log-entry" data-raw='${JSON.stringify(logEntry)}' style="padding: 5px 0; border-bottom: 1px solid var(--surface-border); cursor: pointer;">
-                        <span class="text-muted">${logEntry.timestamp}</span>
-                        ${logEntry.level ? `<span style="color: ${levelColor};">${logEntry.level}</span>` : ''}
-                        ${logEntry.module ? `<span style="color: var(--info-color);">${logEntry.module}</span>.` : ''}
-                        ${logEntry.function ? `<span style="color: var(--success-color);">${logEntry.function}</span>` : ''}
-                        <span style="color: var(--text-color);">${logEntry.message}</span>
-                        ${logEntry.file && logEntry.line ? `<span class="text-muted" style="font-size: 0.9em;"> (${logEntry.file}:${logEntry.line})</span>` : ''}
-                        ${logEntry.exception ? `<div style="color: var(--error-color); margin-top: 3px; margin-left: 15px; border-left: 2px solid var(--error-color); padding-left: 5px;">${logEntry.exception}</div>` : ''}
+                    <div class="debug-log-entry" data-raw='${JSON.stringify(logEntry)}' style="padding: 8px 0; border-bottom: 1px solid var(--surface-border); cursor: pointer;">
+                        <div class="debug-log-main" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span class="text-muted" style="font-size: 0.9em; min-width: 180px;">${logEntry.timestamp}</span>
+                            ${logEntry.level ? `<span style="color: ${levelColor}; font-weight: bold; min-width: 70px;">${logEntry.level}</span>` : ''}
+                            ${logEntry.module ? `<span style="color: var(--info-color); font-weight: 500;">${logEntry.module}</span>${logEntry.function ? '.' : ''}` : ''}
+                            ${logEntry.function ? `<span style="color: var(--success-color); font-weight: 500;">${logEntry.function}()</span>` : ''}
+                            <span style="color: var(--text-color); flex: 1;">${logEntry.message}</span>
+                            ${logEntry.trace_id ? `<span style="color: var(--primary-color); font-size: 0.8em; font-family: monospace; background: var(--surface-border); padding: 2px 4px; border-radius: 3px;">${logEntry.trace_id.substring(0, 8)}...</span>` : ''}
+                        </div>
+                        ${logEntry.file && logEntry.line ? `<div style="color: var(--text-muted); font-size: 0.8em; margin-top: 2px; margin-left: 188px;">${logEntry.file}:${logEntry.line}</div>` : ''}
+                        ${logEntry.exception ? `<div style="color: var(--error-color); margin-top: 5px; margin-left: 188px; border-left: 3px solid var(--error-color); padding-left: 8px; white-space: pre-wrap; font-size: 0.9em; background: var(--surface-border); padding: 5px 8px; border-radius: 3px;">${logEntry.exception}</div>` : ''}
                     </div>
                 `;
             } catch (e) {
-                return `<div class="debug-log-entry" style="padding: 5px 0;">${line}</div>`;
+                return `<div class="debug-log-entry" style="padding: 8px 0; color: var(--text-muted);">${line}</div>`;
             }
         });
         
@@ -833,21 +839,20 @@ function initializeLogViewer(dialog, today) {
                     const rawData = JSON.parse(this.getAttribute('data-raw'));
                     
                     if (this.classList.contains('raw-view')) {
-                        // Restore formatted view - would need to reconstruct
-                        this.classList.remove('raw-view');
-                        // Re-format entry...
+                        // Would need to restore formatted view - for now just reload
+                        loadDatabaseLogs();
                     } else {
                         // Show raw view
-                        this.textContent = ''; // Clear existing content
+                        this.innerHTML = '';
                         const preElement = document.createElement('pre');
                         preElement.className = 'json-display';
-                        preElement.style.margin = '0';
+                        preElement.style.cssText = 'margin: 0; font-size: 0.85em; background: var(--surface-border); padding: 8px; border-radius: 3px; overflow-x: auto;';
                         preElement.textContent = JSON.stringify(rawData, null, 2);
                         this.appendChild(preElement);
                         this.classList.add('raw-view');
                     }
                 } catch (e) {
-                    console.error('Error toggling log entry format', e);
+                    console.error('Error toggling log entry format:', e);
                 }
             });
         });
@@ -855,16 +860,23 @@ function initializeLogViewer(dialog, today) {
     
     // Filter log content
     function filterLogContent() {
-        const search = logSearch.value.toLowerCase();
+        const search = logSearch.value.toLowerCase().trim();
         
         if (rawLogLines.length === 0) return;
         
+        if (!search) {
+            formatAndDisplayLogContent(rawLogLines);
+            countInfo.textContent = `Entries: ${rawLogLines.length}${currentLevel !== 'all' ? ` (${currentLevel} only)` : ''}`;
+            return;
+        }
+        
         const filteredLines = rawLogLines.filter(line => {
             if (!line.trim()) return false;
-            return !search || line.toLowerCase().includes(search);
+            return line.toLowerCase().includes(search);
         });
         
         formatAndDisplayLogContent(filteredLines);
+        countInfo.textContent = `Entries: ${filteredLines.length} (filtered from ${rawLogLines.length})`;
     }
 }
 

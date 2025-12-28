@@ -32,7 +32,7 @@ from src.managers.log import get_logger
 from src.helpers.dbh import sync_db
 
 # Import our refactored modules
-from src.engine.functions.statistics import DomainStats
+from src.engine.functions.statistics import Stats
 from src.engine.functions.whois import DomainInfoExtractor
 
 # Initialize logging
@@ -66,7 +66,7 @@ class SMTPValidator:
         self.smtp_ports = self._get_smtp_ports()
         
         # Create instances of our refactored classes
-        self.stats_manager = DomainStats()
+        self.stats_manager = Stats()
         self.domain_info = DomainInfoExtractor()
         
         logger.debug(f"SMTPValidator initialized with connect_timeout={self.connect_timeout}s, "
@@ -742,14 +742,14 @@ class SMTPValidator:
     
     def _get_domain_stats(self, domain: str) -> Dict[str, Any]:
         """Get domain statistics and settings from database using UPSERT pattern"""
-        return self.stats_manager.get_domain_stats(domain)
+        return self.stats_manager.get_stats(domain)
     
     def _update_domain_stats(self, domain: str, success: bool, 
                           response_time_ms: int = 0, error_code: Optional[int] = None,
                           error_type: Optional[str] = None, trace_id: Optional[str] = None,
                           mx_host: Optional[str] = None, port: Optional[int] = None):
         """Update domain statistics after an attempt"""
-        self.stats_manager.update_domain_stats(
+        self.stats_manager.update_stats(
             domain, success, response_time_ms, error_code, error_type, trace_id, mx_host, port
         )
     

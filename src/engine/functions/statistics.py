@@ -1,7 +1,7 @@
 """
 Email Verification Engine
 =====================
-Domain Statistics Tracking Module
+Statistics Tracking Module
 
 This module handles the collection, updating and retrieval of SMTP domain statistics:
 1. Tracking success/failure rates for domains
@@ -23,10 +23,10 @@ from src.managers.time import now_utc
 # Initialize logging
 logger = get_logger()
 
-class DomainStats:
+class Stats:
     """Manages domain statistics for SMTP operations"""
 
-    def get_domain_stats(self, domain: str) -> Dict[str, Any]:
+    def get_stats(self, domain: str) -> Dict[str, Any]:
         """Get domain statistics and settings from database using UPSERT pattern"""
         try:
             # Use a single query with INSERT ... ON CONFLICT DO NOTHING
@@ -53,11 +53,11 @@ class DomainStats:
             logger.warning(f"Failed to get domain stats for {domain}: {e}")
             return {}
 
-    def update_domain_stats(self, domain: str, success: bool, 
+    def update_stats(self, domain: str, success: bool, 
                         response_time_ms: int = 0, error_code: Optional[int] = None,
                         error_type: Optional[str] = None, trace_id: Optional[str] = None,
                         mx_host: Optional[str] = None, port: Optional[int] = None):
-        """Update domain statistics after an attempt"""
+        """Update statistics after an attempt"""
         try:
             current_time = datetime.now(timezone.utc)
             
@@ -94,7 +94,7 @@ class DomainStats:
                 )
             else:
                 # Get current stats
-                stats = self.get_domain_stats(domain)
+                stats = self.get_stats(domain)
                 consecutive_failures = (stats.get('consecutive_failures', 0) or 0) + 1
                 current_backoff_level = stats.get('current_backoff_level', 0) or 0
                 
@@ -189,7 +189,7 @@ class DomainStats:
     def check_retry_availability(self, domain: str) -> Tuple[bool, Optional[datetime]]:
         """Check if domain is available for retry based on backoff settings"""
         try:
-            stats = self.get_domain_stats(domain)
+            stats = self.get_stats(domain)
             retry_after = stats.get('retry_available_after')
             
             if not retry_after:
@@ -544,7 +544,7 @@ class DNSServerStats:
                     (domain, policy, policy_strength, alignment_mode, percentage_covered,
                      aggregate_reporting, forensic_reporting, dns_lookups, processing_time_ms,
                      errors, warnings, recommendations, trace_id, validated_at, validation_date)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_DATE)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_DATE)
                     ON CONFLICT (domain, validation_date) 
                     DO UPDATE SET
                         policy = EXCLUDED.policy,
@@ -713,3 +713,48 @@ class DNSServerStats:
              
         except Exception as e:
             logger.error(f"[{trace_id}] Failed to store IMAP analysis: {e}")
+
+    def record_pop3_statistics(self, trace_id: str, domain: str, has_pop3: bool,
+                              servers_found: int, security_level: str, supports_ssl: bool,
+                              supports_starttls: bool, supports_oauth: bool, dns_lookups: int,
+                              processing_time_ms: float, errors: Optional[str] = None):
+        """Record POP3 validation statistics to database"""
+        try:
+            sync_db.execute("""
+                INSERT INTO pop3_validation_statistics 
+                (trace_id, domain, has_pop3, servers_found, security_level,
+                 supports_ssl, supports_starttls, supports_oauth, dns_lookups,
+                 processing_time_ms, errors)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            """, trace_id, domain, has_pop3, servers_found, security_level,
+                 supports_ssl, supports_starttls, supports_oauth, dns_lookups,
+                 processing_time_ms, errors)
+        
+        except Exception as e:
+            logger.error(f"[{trace_id}] Failed to record POP3 statistics: {e}")
+
+    def store_pop3_analysis(self, domain: str, result: dict, trace_id: str):
+        """Store POP3 analysis in history table"""
+        try:
+            import json
+            sync_db.execute("""
+                INSERT INTO pop3_validation_history 
+                (domain, has_pop3, servers_found, security_level, supports_ssl,
+                 supports_starttls, supports_oauth, dns_lookups, processing_time_ms,
+                 errors, warnings, recommendations, trace_id, validated_at, validation_date)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_DATE)
+                ON CONFLICT (domain, validation_date) 
+                DO UPDATE SET
+                    has_pop3 = EXCLUDED.has_pop3,
+                    servers_found = EXCLUDED.servers_found,
+                    security_level = EXCLUDED.security_level,
+                    last_validated_at = EXCLUDED.validated_at
+            """, domain, result.get('has_pop3', False), result.get('servers_found', 0),
+                 result.get('security_level', 'none'), result.get('supports_ssl', False),
+                 result.get('supports_starttls', False), result.get('supports_oauth', False),
+                 result.get('dns_lookups', 0), result.get('execution_time_ms', 0),
+                 json.dumps(result.get('errors', [])), json.dumps(result.get('warnings', [])),
+                 json.dumps(result.get('recommendations', [])), trace_id, now_utc())
+             
+        except Exception as e:
+            logger.error(f"[{trace_id}] Failed to store POP3 analysis: {e}")

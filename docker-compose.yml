@@ -1,0 +1,55 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16
+    container_name: eve-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eve-network
+
+  # Email Verification Engine Application
+  eve-app:
+    build: .
+    container_name: eve-app
+    environment:
+      # Database configuration
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DATABASE: postgres
+      PG_USER: postgres
+      PG_PASSWORD: password
+      # Application settings
+      PYTHONUNBUFFERED: 1
+      DOCKER_ENV: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./logs:/app/logs
+      - ./src/database/backups:/app/src/database/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - eve-network
+
+volumes:
+  postgres_data:
+
+networks:
+  eve-network:
+    driver: bridge
